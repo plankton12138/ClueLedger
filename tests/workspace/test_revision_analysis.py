@@ -287,3 +287,167 @@ def test_analysis_on_reverted_revision_is_rejected(
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "REVISION_NOT_ANALYZABLE"
+
+
+def _structure_text() -> str:
+    return (
+        "# 全书结构\n\n"
+        "## 铁律\n"
+        "- 真相必须由证据链推出。\n\n"
+        "## 章节计划\n"
+        "- 第七章：林岚在雨夜追问许砚。\n\n"
+        "## 模块索引\n"
+        "- 林岚：人物小传。\n"
+    )
+
+
+def _first_hunk_id(client: TestClient, setup: dict[str, Any]) -> str:
+    detail = client.get(f"{setup['base']}/revisions/{setup['revision_id']}").json()
+    return detail["hunks"][0]["id"]
+
+
+def _structure_payload(hunk_id: str, find: str, replace: str) -> str:
+    return json.dumps(
+        {
+            "summary": "这处改稿把证据揭露提前到了第七章结尾。",
+            "decisions": [
+                {
+                    "hunk_ids": [hunk_id],
+                    "target": "structure",
+                    "reason": "改后的对白让关键证据在这一章结尾就被点明，章节计划需要同步。",
+                    "evidence": "- 第七章：林岚在雨夜追问许砚。",
+                    "proposal": "把证据揭露写进第七章结尾。",
+                    "target_label": "章节计划",
+                    "patch_find": find,
+                    "patch_replace": replace,
+                },
+                {
+                    "hunk_ids": [hunk_id],
+                    "target": "chapter_only",
+                    "reason": "具体措辞只服务这一场。",
+                    "proposal": "",
+                    "target_label": "本章",
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def _start_structure_analysis(
+    client: TestClient, setup: dict[str, Any], holder: _Holder
+) -> dict[str, Any]:
+    (Path(setup["root"]) / "STRUCTURE.md").write_text(_structure_text(), encoding="utf-8")
+    hunk_id = _first_hunk_id(client, setup)
+    holder.text = _structure_payload(
+        hunk_id,
+        "- 第七章：林岚在雨夜追问许砚。",
+        "- 第七章：林岚在雨夜追问许砚；结尾提前揭示证据。",
+    )
+    analysis = client.post(
+        f"{setup['base']}/revisions/{setup['revision_id']}/analyses",
+        json={
+            "hunk_ids": [hunk_id],
+            "conversation_id": "conv_1",
+            "operation_id": "op_1",
+            "request_key": "analysis:structure",
+        },
+    ).json()
+    return _wait(
+        client,
+        f"{setup['base']}/revision-analyses/{analysis['id']}",
+        lambda row: row["status"] == "ready",
+    )
+
+
+def test_structure_decision_carries_patch_and_applies(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    setup = _setup_edited_chapter(client, tmp_path)
+    setup["root"] = str(tmp_path / "book")
+    ready = _start_structure_analysis(client, setup, holder)
+    decision = ready["decisions"][0]
+
+    assert decision["patch_find"] == "- 第七章：林岚在雨夜追问许砚。"
+    assert decision["patch_error"] == ""
+
+    applied = client.post(
+        f"{setup['base']}/revision-analyses/{ready['id']}/structure-applications",
+        json={
+            "decision_indexes": [0],
+            "expected_digest": ready["structure_digest"],
+            "request_key": "apply:structure",
+        },
+    )
+
+    assert applied.status_code == 200, applied.text
+    body = applied.json()
+    assert "结尾提前揭示证据" in body["structure"]["text"]
+    assert body["decision_indexes"] == [0]
+    assert body["analysis"]["decisions"][0]["applied"] is True
+    assert body["analysis"]["decisions"][1]["applied"] is False
+    written = (tmp_path / "book" / "STRUCTURE.md").read_text(encoding="utf-8")
+    assert written.count("结尾提前揭示证据") == 1
+
+    again = client.post(
+        f"{setup['base']}/revision-analyses/{ready['id']}/structure-applications",
+        json={"decision_indexes": [0], "expected_digest": body["structure"]["digest"]},
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["structure"]["text"].count("结尾提前揭示证据") == 1
+
+
+def test_structure_patch_with_ambiguous_anchor_is_disabled(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    setup = _setup_edited_chapter(client, tmp_path)
+    setup["root"] = str(tmp_path / "book")
+    (tmp_path / "book" / "STRUCTURE.md").write_text(
+        _structure_text() + "\n- 待定：雨夜。\n\n- 待定：雨夜。\n", encoding="utf-8"
+    )
+    hunk_id = _first_hunk_id(client, setup)
+    holder.text = _structure_payload(hunk_id, "- 待定：雨夜。", "- 待定：雨夜，待补。")
+    analysis = client.post(
+        f"{setup['base']}/revisions/{setup['revision_id']}/analyses",
+        json={
+            "hunk_ids": [hunk_id],
+            "conversation_id": "conv_1",
+            "operation_id": "op_1",
+            "request_key": "analysis:ambiguous",
+        },
+    ).json()
+    ready = _wait(
+        client,
+        f"{setup['base']}/revision-analyses/{analysis['id']}",
+        lambda row: row["status"] == "ready",
+    )
+
+    assert ready["decisions"][0]["patch_error"] == "补丁定位文本在全书结构中不唯一"
+    rejected = client.post(
+        f"{setup['base']}/revision-analyses/{ready['id']}/structure-applications",
+        json={"decision_indexes": [0]},
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert rejected.json()["error"]["code"] == "REVISION_APPLICATION_INVALID"
+
+
+def test_structure_apply_rejects_changed_baseline(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    setup = _setup_edited_chapter(client, tmp_path)
+    setup["root"] = str(tmp_path / "book")
+    ready = _start_structure_analysis(client, setup, holder)
+    (tmp_path / "book" / "STRUCTURE.md").write_text(
+        _structure_text().replace("人物小传", "人物小传与出场计划"), encoding="utf-8"
+    )
+
+    rejected = client.post(
+        f"{setup['base']}/revision-analyses/{ready['id']}/structure-applications",
+        json={
+            "decision_indexes": [0],
+            "expected_digest": ready["structure_digest"],
+        },
+    )
+
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["error"]["code"] == "REVISION_APPLICATION_CONFLICT"

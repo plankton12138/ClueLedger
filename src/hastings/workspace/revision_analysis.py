@@ -60,6 +60,9 @@ _SYSTEM = (
     "4. 仅当前场景、已有内容覆盖或依据不足时用 chapter_only，并在 reason 里说明。\n"
     "5. 一个片段可以影响多处；每处单独一条 decision，引用同一组 hunk_ids。\n"
     "6. 每条 decision 的 reason 必须引用具体改动或现有资料；不要泛泛而谈。\n"
+    "7. target=structure 时必须给出 patch_find 与 patch_replace：patch_find 从 "
+    "current_structure 逐字复制，在当前结构中只出现一次；不要改动无关段落。\n"
+    "8. module_entry 目前只给 proposal，不生成补丁；模块版本由作者在对话中确认。\n"
 )
 
 
@@ -74,6 +77,11 @@ class AnalysisDecision:
     module_id: str = ""
     revision_id: str = ""
     entry_id: str = ""
+    #: 结构建议的可执行补丁：从分析时的 STRUCTURE.md 原样复制一段并替换。
+    patch_find: str = ""
+    patch_replace: str = ""
+    #: 补丁无法直接应用时的原因；有值时界面禁用应用，只保留说明。
+    patch_error: str = ""
     applied: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -87,6 +95,9 @@ class AnalysisDecision:
             "module_id": self.module_id,
             "revision_id": self.revision_id,
             "entry_id": self.entry_id,
+            "patch_find": self.patch_find,
+            "patch_replace": self.patch_replace,
+            "patch_error": self.patch_error,
             "applied": self.applied,
         }
 
@@ -106,6 +117,9 @@ class AnalysisDecision:
             module_id=str(raw.get("module_id") or ""),
             revision_id=str(raw.get("revision_id") or ""),
             entry_id=str(raw.get("entry_id") or ""),
+            patch_find=str(raw.get("patch_find") or ""),
+            patch_replace=str(raw.get("patch_replace") or ""),
+            patch_error=str(raw.get("patch_error") or ""),
             applied=bool(raw.get("applied")),
         )
 
@@ -390,10 +404,13 @@ class RevisionAnalysisService:
                         final = message_text(event.message) or final
             step("模型请求完成", detail_text=f"{len(final or text)} 字")
             payload = _parse_payload(final or text)
-            decisions = _validate_decisions(payload, set(detail.active_hunk_ids))
+            structure_state = read_structure_state(self.workspace)
+            decisions = _validate_decisions(
+                payload, set(detail.active_hunk_ids), structure_state.text
+            )
             step("解析判断", detail_text=f"{len(decisions)} 条")
-            style_text = _style_after(read_style_state(self.workspace).text, decisions)
             style_state = read_style_state(self.workspace)
+            style_text = _style_after(style_state.text, decisions)
             trace["finished_at"] = _now()
             save(
                 status="ready",
@@ -401,7 +418,7 @@ class RevisionAnalysisService:
                 summary=str(payload.get("summary") or "")[:1000],
                 decisions=decisions,
                 style_digest=style_state.digest or "",
-                structure_digest=read_structure_state(self.workspace).digest or "",
+                structure_digest=structure_state.digest or "",
                 proposed_style_text=style_text,
             )
         except asyncio.CancelledError:
@@ -482,6 +499,8 @@ class RevisionAnalysisService:
                         "module_id": "",
                         "revision_id": "",
                         "entry_id": "",
+                        "patch_find": "仅 structure：从 current_structure 原样复制的待替换片段",
+                        "patch_replace": "仅 structure：替换后的片段",
                     }
                 ],
             },
@@ -560,7 +579,9 @@ def _parse_payload(text: str) -> dict[str, Any]:
     return payload
 
 
-def _validate_decisions(payload: dict[str, Any], active: set[str]) -> list[AnalysisDecision]:
+def _validate_decisions(
+    payload: dict[str, Any], active: set[str], structure_text: str
+) -> list[AnalysisDecision]:
     raw_rows = payload.get("decisions")
     if not isinstance(raw_rows, list) or not raw_rows:
         raise WorkspaceError(
@@ -580,6 +601,8 @@ def _validate_decisions(payload: dict[str, Any], active: set[str]) -> list[Analy
             continue
         if decision.target != "chapter_only" and not decision.proposal.strip():
             decision = replace(decision, target="chapter_only")
+        if decision.target == "structure":
+            decision = _checked_structure_patch(decision, structure_text)
         decisions.append(decision)
     if not decisions:
         raise WorkspaceError(
@@ -589,6 +612,23 @@ def _validate_decisions(payload: dict[str, Any], active: set[str]) -> list[Analy
             fix="重新发起分析",
         )
     return decisions
+
+
+def _checked_structure_patch(
+    decision: AnalysisDecision, structure_text: str
+) -> AnalysisDecision:
+    """结构补丁必须能在分析时的结构里唯一定位；否则保留说明、禁用应用。"""
+    find = decision.patch_find
+    replace_text = decision.patch_replace
+    if not find.strip() or not replace_text.strip():
+        return replace(decision, patch_error="模型没有给出可直接应用的结构补丁")
+    if find == replace_text:
+        return replace(decision, patch_error="补丁没有产生变化")
+    if find not in structure_text:
+        return replace(decision, patch_error="补丁定位文本已不在全书结构中")
+    if structure_text.count(find) != 1:
+        return replace(decision, patch_error="补丁定位文本在全书结构中不唯一")
+    return decision
 
 
 def _style_after(current: str, decisions: list[AnalysisDecision]) -> str:

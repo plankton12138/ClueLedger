@@ -67,6 +67,9 @@ export interface AnalysisDecision {
   module_id: string;
   revision_id: string;
   entry_id: string;
+  patch_find: string;
+  patch_replace: string;
+  patch_error: string;
   applied: boolean;
 }
 
@@ -162,6 +165,21 @@ export function applyRevisionAnalysis(
   },
 ): Promise<{ analysis_id: string; style: { path: string; digest: string; text: string } | null }> {
   return request(`/${workspaceId}/story/revision-analyses/${analysisId}/applications`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function applyStructureDecisions(
+  workspaceId: string,
+  analysisId: string,
+  input: { decision_indexes: number[]; expected_digest: string | null },
+): Promise<{
+  analysis: RevisionAnalysis;
+  structure: { path: string; digest: string; text: string };
+  decision_indexes: number[];
+}> {
+  return request(`/${workspaceId}/story/revision-analyses/${analysisId}/structure-applications`, {
     method: "POST",
     body: JSON.stringify(input),
   });

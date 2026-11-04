@@ -24,6 +24,7 @@ from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.index_confirmation import confirm_index_candidate
 from hastings.workspace.revision_analysis import RevisionAnalysisService, RevisionAnalysisStore
+from hastings.workspace.revision_apply import apply_structure_decisions
 from hastings.workspace.revision_diff import active_hunk_ids
 from hastings.workspace.revision_store import RevisionStore, sync_chapter_revisions
 from hastings.workspace.service_hub import WorkspaceServices
@@ -104,6 +105,14 @@ class AnalysisApplyRequest(BaseModel):
     text: str
     expected_digest: str | None = Field(default=None, max_length=128)
     decision_indexes: list[int] = Field(default_factory=list, max_length=50)
+    request_key: str = Field(default="", max_length=200)
+
+
+class StructureApplyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    decision_indexes: list[int] = Field(default_factory=list, max_length=50)
+    expected_digest: str | None = Field(default=None, max_length=128)
     request_key: str = Field(default="", max_length=200)
 
 
@@ -657,7 +666,7 @@ def create_story_router(
     def apply_revision_analysis(
         workspace_id: str, analysis_id: str, body: AnalysisApplyRequest
     ) -> dict[str, Any]:
-        """把作者确认的写作约定建议写回 `STYLE.md`；模块与结构建议继续在对话确认。"""
+        """把作者确认的写作约定建议写回 `STYLE.md`。"""
         workspace = workspaces.workspace(workspace_id)
         state_root = conversation_root(workspaces.root, workspace_id)
         service = RevisionAnalysisService(
@@ -716,6 +725,32 @@ def create_story_router(
             "style": {"path": view.path, "digest": view.digest, "text": view.text},
             "receipts": receipts,
             "decision_indexes": style_indexes,
+        }
+
+    @router.post(
+        "/{workspace_id}/story/revision-analyses/{analysis_id}/structure-applications"
+    )
+    def apply_structure_analysis(
+        workspace_id: str, analysis_id: str, body: StructureApplyRequest
+    ) -> dict[str, Any]:
+        """把作者勾选的结构建议写入 `STRUCTURE.md`；应用前再核对一次结构指纹。"""
+        workspace = workspaces.workspace(workspace_id)
+        state_root = conversation_root(workspaces.root, workspace_id)
+        result = apply_structure_decisions(
+            RevisionAnalysisStore(state_root),
+            workspace,
+            analysis_id=analysis_id,
+            decision_indexes=body.decision_indexes,
+            expected_digest=body.expected_digest,
+        )
+        return {
+            "analysis": result.analysis.to_dict(),
+            "structure": {
+                "path": result.view.path,
+                "digest": result.view.digest,
+                "text": result.view.text,
+            },
+            "decision_indexes": result.applied_indexes,
         }
 
     return router
