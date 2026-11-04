@@ -135,6 +135,8 @@ export interface ProseSaveResult {
   index: ChapterInformationIndex;
   analysis_job_id: string | null;
   committed_change_id: string;
+  /** 本次保存产生的修订；首次起草、纯追加或内容未变时为空。 */
+  revision_id: string | null;
 }
 
 export type CandidateStatus = "streaming" | "ready" | "stale" | "failed" | "discarded";
