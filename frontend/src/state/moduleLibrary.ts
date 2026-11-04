@@ -90,6 +90,8 @@ export interface ModuleLibraryStore {
   create(input: { kind: ModuleKind; name: string; title: string; body: string; draftId?: string }): Promise<boolean>;
   fork(name: string): Promise<boolean>;
   trashSelected(): Promise<void>;
+  /** 逐个删除选中的模块；单个失败不阻断其余项，返回是否全部成功。 */
+  trashMany(moduleIds: string[]): Promise<boolean>;
   restoreSelected(): Promise<void>;
   saveToLibrary(entries: EntryInput[]): Promise<boolean>;
   saveAndUse(entries: EntryInput[]): Promise<boolean>;
@@ -557,6 +559,39 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
       if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
+  },
+
+  async trashMany(moduleIds) {
+    const operationSession = get().session;
+    const ids = new Set(moduleIds);
+    const infos = get().modules.filter(item => ids.has(item.module_id) && !item.deleted);
+    if (infos.length === 0) return false;
+    set({ busy: true, error: null, notice: null });
+    let removed = 0;
+    const failures: string[] = [];
+    for (const info of infos) {
+      try {
+        const updated = await trashModule(info.module_id, {
+          expected_head: info.head,
+          request_key: requestKey("trash"),
+        });
+        if (get().session !== operationSession) return false;
+        if (get().selectedModuleId === info.module_id) set({ selectedInfo: updated });
+        removed += 1;
+      } catch (error) {
+        failures.push(`${info.name}：${describe(error)}`);
+      }
+    }
+    if (get().session !== operationSession) return false;
+    set({ busy: false });
+    await get().refresh();
+    if (get().session !== operationSession) return false;
+    if (failures.length > 0) {
+      set({ error: `已删除 ${removed} 个模块，${failures.length} 个未删除。${failures[0]}` });
+      return false;
+    }
+    set({ notice: `已删除 ${removed} 个模块；已装入的作品仍可读取固定版本。` });
+    return true;
   },
 
   async restoreSelected() {

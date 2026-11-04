@@ -44,6 +44,7 @@ import {
   postModuleUpdate,
   publishRevision,
   putAssembly,
+  trashModule,
 } from "../api/moduleLibrary";
 import { useModuleLibraryStore } from "./moduleLibrary";
 import { useModuleEditorStore, moduleDraftKey, draftEntries } from "./moduleEditor";
@@ -60,6 +61,7 @@ const completeRecordMock = vi.mocked(fetchCompleteRecord);
 const updateMock = vi.mocked(postModuleUpdate);
 const putMock = vi.mocked(putAssembly);
 const deriveMock = vi.mocked(deriveWorkspace);
+const trashMock = vi.mocked(trashModule);
 
 function reset(): void {
   listMock.mockReset();
@@ -74,6 +76,7 @@ function reset(): void {
   updateMock.mockReset();
   putMock.mockReset();
   deriveMock.mockReset();
+  trashMock.mockReset();
   vi.mocked(publishRevision).mockReset();
   useModuleEditorStore.setState(useModuleEditorStore.getInitialState(), true);
   useModuleLibraryStore.setState(useModuleLibraryStore.getInitialState(), true);
@@ -176,6 +179,44 @@ describe("浏览", () => {
     await useModuleLibraryStore.getState().refresh();
 
     expect(listMock).toHaveBeenCalledWith(expect.objectContaining({ includeDeleted: true }));
+  });
+});
+
+describe("批量删除", () => {
+  it("逐个删除选中模块并刷新列表", async () => {
+    const second = { ...moduleInfo, module_id: "mod_2", name: "配角团", head: "rev_2" };
+    listMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({ workspaceId: "ws1", modules: [moduleInfo, second] });
+    trashMock
+      .mockResolvedValueOnce({ ...moduleInfo, deleted: true })
+      .mockResolvedValueOnce({ ...second, deleted: true });
+
+    const ok = await useModuleLibraryStore.getState().trashMany(["mod_1", "mod_2"]);
+
+    expect(ok).toBe(true);
+    expect(trashMock).toHaveBeenCalledTimes(2);
+    expect(trashMock).toHaveBeenCalledWith("mod_1", expect.objectContaining({ expected_head: "rev_1" }));
+    expect(trashMock).toHaveBeenCalledWith("mod_2", expect.objectContaining({ expected_head: "rev_2" }));
+    expect(useModuleLibraryStore.getState().notice).toContain("已删除 2 个模块");
+    expect(listMock).toHaveBeenCalled();
+  });
+
+  it("单个失败不阻断其余项，并保留失败原因", async () => {
+    const second = { ...moduleInfo, module_id: "mod_2", name: "配角团", head: "rev_2" };
+    listMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({ workspaceId: "ws1", modules: [moduleInfo, second] });
+    trashMock
+      .mockResolvedValueOnce({ ...moduleInfo, deleted: true })
+      .mockRejectedValueOnce(new Error("[MODULE_STALE_CONFLICT] 模块：版本已变化。建议：刷新后重试。"));
+
+    const ok = await useModuleLibraryStore.getState().trashMany(["mod_1", "mod_2"]);
+
+    expect(ok).toBe(false);
+    expect(trashMock).toHaveBeenCalledTimes(2);
+    const error = useModuleLibraryStore.getState().error;
+    expect(error).toContain("已删除 1 个模块");
+    expect(error).toContain("配角团");
+    expect(error).toContain("MODULE_STALE_CONFLICT");
   });
 });
 

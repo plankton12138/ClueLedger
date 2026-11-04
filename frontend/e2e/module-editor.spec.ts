@@ -115,3 +115,29 @@ test("窄窗口模块预览与编辑可返回列表，失败变体保留名称",
   await expect(dialog.getByRole("alert")).toContainText("MODULE_HEAD_STALE_CONFLICT");
   await expect(dialog.getByLabel("变体名称")).toHaveValue("仍要保留的名称");
 });
+
+test("批量选择模块后一次确认删除", async ({ page, book, request }) => {
+  const names = [`批量甲-${book.id}`, `批量乙-${book.id}`];
+  const ids: string[] = [];
+  for (const name of names) {
+    const created = await request.post("/api/module-library/modules", {
+      data: { kind: "reference", name, request_key: crypto.randomUUID(), entries: [{ entry_id: "first", title: name, body: "## 条目\n\n批量删除用。" }] },
+    }).then(response => response.json());
+    ids.push(created.module.module_id);
+  }
+  await page.goto(`/#/library?workspace=${book.id}`);
+  const library = page.getByRole("region", { name: "模块库", exact: true });
+  await library.getByLabel("搜索模块").fill(book.id);
+  await library.getByLabel("搜索模块").press("Enter");
+  for (const name of names) await library.getByLabel(`选择 ${name}`, { exact: true }).check();
+  await library.getByRole("button", { name: "删除所选（2）", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "批量删除模块", exact: true });
+  await expect(dialog.getByText("删除所选的 2 个模块？", { exact: false })).toBeVisible();
+  await dialog.getByRole("button", { name: "确认删除", exact: true }).click();
+  await expect(library.getByText("已删除 2 个模块；已装入的作品仍可读取固定版本。", { exact: true })).toBeVisible();
+  for (const name of names) await expect(library.getByLabel(`选择 ${name}`, { exact: true })).toHaveCount(0);
+  for (const id of ids) {
+    const info = await request.get(`/api/module-library/modules?include_deleted=true&limit=50`).then(response => response.json());
+    expect(info.items.find((item: { module_id: string }) => item.module_id === id)?.deleted).toBe(true);
+  }
+});

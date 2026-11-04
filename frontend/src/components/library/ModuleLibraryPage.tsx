@@ -10,7 +10,6 @@ import type { ModuleInfo } from "../../api/moduleLibrary";
 import { Button } from "../ui/Button";
 import { AppDialog } from "../ui/AppDialog";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
-import WorkspaceFileTree from "../workspace/WorkspaceFileTree";
 import LibraryBrowser from "./LibraryBrowser";
 import ModulePreview from "./ModulePreview";
 import ModuleEditor from "./ModuleEditor";
@@ -22,6 +21,7 @@ import NewModuleForm from "./NewModuleForm";
 export default function ModuleLibraryPage({onClose}:{onClose:()=>void}) {
   const store=useModuleLibraryStore(),editor=useModuleEditorStore(),page=useWorkspacePage();
   const [creating,setCreating]=useState(false),[editing,setEditing]=useState(false),[assemblyOpen,setAssemblyOpen]=useState(false);
+  const [selected,setSelected]=useState<Set<string>>(new Set()),[batchDeleting,setBatchDeleting]=useState(false);
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const scale = useLayoutStore(state => state.fontScale);
@@ -34,11 +34,20 @@ export default function ModuleLibraryPage({onClose}:{onClose:()=>void}) {
   const showDetail=creating||(page?.kind==="library"&&Boolean(page.moduleId));
   useEffect(()=>{setEditing(false);setCreating(false);},[store.selectedModuleId]);
   useEffect(()=>{if(!store.open){setEditing(false);setCreating(false);}},[store.open]);
+  // 列表刷新或换成另一页后，只保留仍可见且未删除的选中项。
+  useEffect(()=>{setSelected(current=>{
+    const visible=new Set(store.modules.filter(item=>!item.deleted).map(item=>item.module_id));
+    const next=new Set([...current].filter(id=>visible.has(id)));
+    return next.size===current.size?current:next;
+  });},[store.modules]);
+  useEffect(()=>{if(selected.size===0)setBatchDeleting(false);},[selected]);
   const detail=store.detail,info=store.modules.find(item=>item.module_id===store.selectedModuleId)??store.selectedInfo;
   const key=detail?moduleDraftKey(detail):null,draft=key?editor.drafts[key]:undefined,rows=draft?.rows??[];
   const dirty=draftDirty(draft),preset=store.presets.find(item=>item.kind===detail?.kind);
   const problem=rows.map(row=>fieldProblem(row,preset)).find(Boolean),atHead=Boolean(info&&detail?.revision_id===info.head);
   const bound=store.assembly?.bindings.find(item=>item.module.module_id===store.selectedModuleId);
+  const selectedNames=store.modules.filter(item=>selected.has(item.module_id)).map(item=>item.name);
+  function toggleSelected(moduleId:string){setSelected(current=>{const next=new Set(current);if(next.has(moduleId))next.delete(moduleId);else next.add(moduleId);return next;});}
   function select(moduleId:string,revisionId?:string|null){setCreating(false);setEditing(false);navigate({kind:"library",moduleId,revisionId:revisionId??undefined,workspaceContextId:store.workspaceId??undefined});}
   function browse(){setCreating(false);setEditing(false);navigate({kind:"library",workspaceContextId:store.workspaceId??undefined});}
   async function add(item:Pick<ModuleInfo,"module_id"|"head">){
@@ -51,10 +60,10 @@ export default function ModuleLibraryPage({onClose}:{onClose:()=>void}) {
     if(binding){useWorkspaceModulesStore.getState().select(workspaceId,binding.id);navigate({kind:"writing",workspaceId});}
   }
   return <div className="library-page module-library-page" ref={root} data-narrow={narrow} role="region" aria-label="模块库" hidden={!store.open}>
-    {store.open&&store.workspaceId&&<aside className="library-workspace-sidebar module"><WorkspaceFileTree onChoose={()=>{if(store.workspaceId)navigate({kind:"writing",workspaceId:store.workspaceId});}}/></aside>}
     <div className="library-frame">
       <header className="library-header"><Button size="compact" onClick={onClose}><ArrowLeft size={16} aria-hidden="true" />返回写作</Button><h1>{creating?"新建模块":"模块库"}</h1><div className="library-header-actions">
         {!creating&&<Button variant="primary" size="compact" onClick={()=>setCreating(true)}>新建模块</Button>}
+        {!creating&&selected.size>0&&<Button variant="danger" size="compact" busy={store.busy} onClick={()=>setBatchDeleting(true)}>删除所选（{selected.size}）</Button>}
         <details className="library-more"><summary>更多</summary><div className="library-more-content">
           <Button size="compact" disabled={!store.workspaceId} onClick={()=>setAssemblyOpen(true)}>作品模块管理</Button>
           <Button size="compact" disabled={!store.workspaceId||store.busy} onClick={()=>void store.importLegacy()}>导入旧资料</Button>
@@ -63,7 +72,7 @@ export default function ModuleLibraryPage({onClose}:{onClose:()=>void}) {
       </div></header>
       {(store.notice||store.error)&&<StatusMessage tone={store.error?"error":"info"} action={<Button size="compact" variant="quiet" onClick={store.clearNotice}>知道了</Button>}>{store.notice&&<p>{store.notice}</p>}{store.error&&<p>{store.error}</p>}</StatusMessage>}
       <div className="library-body" data-narrow={narrow}>
-        <LibraryBrowser hidden={narrow && showDetail} onSelect={id=>select(id)} onAdd={item=>void add(item)}/>
+        <LibraryBrowser hidden={narrow && showDetail} onSelect={id=>select(id)} onAdd={item=>void add(item)} selected={selected} onToggle={toggleSelected}/>
         <section className="library-detail module" aria-label="模块详情" hidden={narrow && !showDetail}>
           {!showDetail ? <EmptyState>选择一份模块，预览内容。</EmptyState> : <>
           <div className="library-detail-back"><Button variant="quiet" size="compact" onClick={browse}>返回列表</Button></div>
@@ -84,6 +93,16 @@ export default function ModuleLibraryPage({onClose}:{onClose:()=>void}) {
         </section>
       </div>
     </div>
+    <AppDialog title="批量删除模块" open={batchDeleting} onOpenChange={open=>{if(!open&&!store.busy)setBatchDeleting(false);}}>
+      <div className="ui-action-list">
+        <p>删除所选的 {selected.size} 个模块？已装入的作品仍可读取固定版本，模块可恢复。</p>
+        {selectedNames.length>0&&<ul className="batch-delete-names">{selectedNames.slice(0,8).map((name,index)=><li key={`${name}:${index}`}>{name}</li>)}{selectedNames.length>8&&<li>另有 {selectedNames.length-8} 个</li>}</ul>}
+        <Button variant="danger" busy={store.busy} disabled={selected.size===0} onClick={()=>{
+          void useModuleLibraryStore.getState().trashMany([...selected]).then(ok=>{if(ok){setSelected(new Set());setBatchDeleting(false);}});
+        }}>确认删除</Button>
+        {store.error&&<p role="alert" className="ui-field-error">{store.error}</p>}
+      </div>
+    </AppDialog>
     <AppDialog title="作品模块管理" open={assemblyOpen} onOpenChange={setAssemblyOpen}><AssemblyPanel onSelect={id=>{setAssemblyOpen(false);select(id);}}/></AppDialog>
   </div>;
 }

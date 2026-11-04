@@ -70,6 +70,15 @@ test("空作品只有对话可创作，章节正文以只读稿纸呈现", async
   await expect(page.getByRole("button", { name: /保存|续写|起草|方向建议/ })).toHaveCount(0);
   await shot(page, "02-readonly-chapter-and-chat");
 
+  // 侧栏模块区提示让模型补充长期资料；只填草稿，不发送。
+  const extras = page.locator(".writing-nav-extras");
+  if (!(await extras.evaluate(node => (node as HTMLDetailsElement).open))) await extras.locator("summary").click();
+  await expect(page.getByText("人物小传、故事背景等长期资料，可以让模型判断并创建。", { exact: true })).toBeVisible();
+  await chat.fill("");
+  await page.getByRole("button", { name: "让模型补充资料", exact: true }).click();
+  await expect(chat).toHaveValue("帮我判断这个故事还需要哪些长期资料，比如人物小传、故事背景；需要的话请创建并装入。");
+  await expect(chat).toBeFocused();
+
   await page.setViewportSize({ width: 760, height: 800 });
   const chatButton = page.getByRole("button", { name: "对话", exact: true });
   await expect(chatButton).toBeVisible();

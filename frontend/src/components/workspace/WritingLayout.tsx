@@ -29,6 +29,8 @@ import { useWritingStore } from "../../state/writing";
 import { STRUCTURE_PATH } from "../../api/structure";
 import EmptyWritingGuide from "../writing/EmptyWritingGuide";
 
+const MODULE_REQUEST = "帮我判断这个故事还需要哪些长期资料，比如人物小传、故事背景；需要的话请创建并装入。";
+
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const prefs = useLayoutStore();
   const { file, loading, currentId, fileLoading, openingPath, ready } = useWorkspaceStore();
@@ -177,7 +179,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       true,
     );
   }
-  function chooseStarter(text: string) {
+  function prefillChat(text: string) {
     const conversations = useConversationsStore.getState();
     const currentDraft = conversations.drafts[draftKeyOf(conversations)] ?? "";
     if (!currentDraft.trim()) conversations.setDraft(text);
@@ -185,6 +187,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     requestAnimationFrame(() => {
       container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
     });
+  }
+  function chooseStarter(text: string) {
+    prefillChat(text);
+  }
+  function askForModules() {
+    prefillChat(MODULE_REQUEST);
+    // 窄屏时侧栏是覆盖层，填完草稿就退回对话并收起覆盖层。
+    if (!canDockDirectory) setDirectory(false);
   }
   const chatLabel = running ? "对话 · 进行中" : "对话";
 
@@ -259,6 +269,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             onStructure={selectStructure}
             onChapter={selectChapter}
             onProse={selectProse}
+            onAskModules={askForModules}
           />
         </div>
       </aside>

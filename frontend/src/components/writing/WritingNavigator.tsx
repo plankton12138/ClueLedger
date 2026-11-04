@@ -1,10 +1,13 @@
-/** 写作页只读目录（v1.2）。内容修改只从对话发起。 */
+/** 写作页只读目录（v1.2）。内容修改只从对话发起；模块只在此处装入和阅读。 */
 
+import { useEffect, useRef } from "react";
 import { BookOpenText, ListTree } from "lucide-react";
 
 import type { WritingBookView } from "../../api/writing";
 import { STRUCTURE_PATH } from "../../api/structure";
 import { useWorkspaceStore } from "../../state/workspace";
+import { useWorkspaceModulesStore } from "../../state/workspaceModules";
+import WorkspaceModules from "../workspace/WorkspaceModules";
 
 export default function WritingNavigator({
   book,
@@ -15,6 +18,7 @@ export default function WritingNavigator({
   onStructure,
   onChapter,
   onProse,
+  onAskModules,
 }: {
   book: WritingBookView | null;
   selectedChapterId: string | null;
@@ -24,9 +28,17 @@ export default function WritingNavigator({
   onStructure: () => void;
   onChapter: (chapterId: string) => void;
   onProse: (path: string) => void;
+  /** 把“让模型补充资料”的请求填进对话草稿，不直接发送。 */
+  onAskModules: () => void;
 }) {
   const catalog = useWorkspaceStore(state => state.catalog);
-  const bookActive = selectedChapterId === null && selectedProsePath === null;
+  const currentId = useWorkspaceStore(state => state.currentId);
+  const moduleOpen = useWorkspaceModulesStore(state => state.selected?.workspaceId === currentId);
+  const extras = useRef<HTMLDetailsElement>(null);
+  // 正在读哪份模块内容，左栏就展开到哪一条，不把当前阅读位置藏起来。
+  useEffect(() => { if (moduleOpen && extras.current) extras.current.open = true; }, [moduleOpen, currentId]);
+  // 阅读区显示模块内容时，「稿纸」不再标记为当前项，点了才看得出切换生效。
+  const bookActive = selectedChapterId === null && selectedProsePath === null && !moduleOpen;
   const structureActive = selectedProsePath === STRUCTURE_PATH;
   const chapters = book?.chapters ?? [];
   const unplanned = book?.unplanned_prose ?? [];
@@ -104,6 +116,15 @@ export default function WritingNavigator({
           </li>)}
         </ul>
       </section>}
+
+      <details className="writing-nav-extras" ref={extras}>
+        <summary>作品模块</summary>
+        <div className="writing-nav-module-hint">
+          <p>人物小传、故事背景等长期资料，可以让模型判断并创建。</p>
+          <button type="button" onClick={onAskModules}>让模型补充资料</button>
+        </div>
+        {currentId && <WorkspaceModules workspaceId={currentId} />}
+      </details>
     </div>
   </nav>;
 }

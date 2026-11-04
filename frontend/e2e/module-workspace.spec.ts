@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { resolve, join } from "node:path";
 
-/** 作品目录把模块收在「模块与导入」折叠区里；要点它的条目先展开这一节。 */
+/** 作品目录把模块收在「作品模块」折叠区里；要点它的条目先展开这一节。 */
 async function openModuleSection(directory: Locator): Promise<void> {
   const extras = directory.locator(".writing-nav-extras");
   if (!(await extras.evaluate(node => (node as HTMLDetailsElement).open))) await extras.locator("summary").click();

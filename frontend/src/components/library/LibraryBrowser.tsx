@@ -6,7 +6,7 @@ import type { ModuleInfo } from "../../api/moduleLibrary";
 import { Button } from "../ui/Button";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 
-export default function LibraryBrowser({ onSelect,onAdd,hidden = false }: { onSelect: (id:string)=>void; onAdd: (item:ModuleInfo)=>void; hidden?: boolean }) {
+export default function LibraryBrowser({ onSelect,onAdd,selected,onToggle,hidden = false }: { onSelect: (id:string)=>void; onAdd: (item:ModuleInfo)=>void; selected: Set<string>; onToggle: (id:string)=>void; hidden?: boolean }) {
   const store = useModuleLibraryStore();
   const [search,setSearch] = useState(store.query);
   const scroll = useRef<HTMLDivElement>(null);
@@ -23,7 +23,7 @@ export default function LibraryBrowser({ onSelect,onAdd,hidden = false }: { onSe
           const added=store.assembly?.bindings.some(binding=>binding.module.module_id===item.module_id);
           return <li key={item.module_id} className="module-library-card" data-selected={store.selectedModuleId === item.module_id}><button type="button" className="module-library-card-name" aria-current={store.selectedModuleId === item.module_id ? "true" : undefined} onClick={()=>onSelect(item.module_id)}><FileText size={21} aria-hidden="true" /><span>{item.name}</span></button>
             {item.preview && <p>{item.preview}</p>}
-            <div className="module-library-card-actions">{item.deleted ? <span>已删除</span> : <Button size="compact" disabled={Boolean(added)||!store.workspaceId||store.busy||!item.head} disabledReason={added ? "已添加到当前作品" : !store.workspaceId ? "先打开一个作品" : undefined} onClick={()=>onAdd(item)}>{added?"已添加":"＋ 添加"}</Button>}</div>
+            <div className="module-library-card-actions">{!item.deleted && <label className="module-library-select"><input type="checkbox" aria-label={`选择 ${item.name}`} checked={selected.has(item.module_id)} disabled={store.busy} onChange={()=>onToggle(item.module_id)} />选择</label>}{item.deleted ? <span>已删除</span> : <Button size="compact" disabled={Boolean(added)||!store.workspaceId||store.busy||!item.head} disabledReason={added ? "已添加到当前作品" : !store.workspaceId ? "先打开一个作品" : undefined} onClick={()=>onAdd(item)}>{added?"已添加":"＋ 添加"}</Button>}</div>
           </li>;
         })}</ul> : <EmptyState>还没有匹配的模块。</EmptyState>}
         {store.cursor&&<Button variant="quiet" busy={store.loadingMore} onClick={()=>void store.loadMore()}>加载更多</Button>}
