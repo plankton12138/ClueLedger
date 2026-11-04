@@ -154,3 +154,64 @@ test("章节较多时写作侧栏可以滚动，全书结构保持可见", async
   if (!(await extras.evaluate(node => (node as HTMLDetailsElement).open))) await extras.locator("summary").click();
   await expect(structure).toBeInViewport();
 });
+
+test("修订面板显示段落差异，写作约定可编辑保存", async ({ page, request }) => {
+  const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
+  mkdirSync(parent, { recursive: true });
+  const root = join(mkdtempSync(join(parent, "writing-revision-")), "作品");
+  const opened = await request.post("/api/file-workspaces", {
+    data: { path: root, create: true },
+  });
+  expect(opened.ok(), await opened.text()).toBeTruthy();
+  const book = await opened.json();
+  const base = `/api/file-workspaces/${book.id}`;
+  const created = await request.post(`${base}/story/chapters`, {
+    data: {
+      title: "雨夜",
+      expected_plan_revision: "empty",
+      request_key: "e2e-revision-chapter",
+    },
+  });
+  const chapter = await created.json();
+  const draft = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
+    data: {
+      text: "# 雨夜\n\n林岚很紧张，她害怕许砚继续追问。\n\n窗外的雨没有停。\n",
+      expected_digest: chapter.prose_digest,
+      draft_revision: "e2e-revision-draft",
+      request_key: "e2e-revision-draft",
+    },
+  });
+  const draftBody = await draft.json();
+  const edited = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
+    data: {
+      text: "# 雨夜\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n",
+      expected_digest: draftBody.prose_digest,
+      draft_revision: "e2e-revision-edit",
+      request_key: "e2e-revision-edit",
+    },
+  });
+  expect(edited.ok(), await edited.text()).toBeTruthy();
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 雨夜", exact: true }).click();
+  await page.getByRole("button", { name: "改动", exact: true }).click();
+  const drawer = page.getByRole("dialog", { name: "修订与写作约定" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("作者修订", { exact: true })).toBeVisible();
+  await expect(drawer.getByText(/林岚把杯沿转了半圈/)).toBeVisible();
+  await expect(drawer.getByText(/林岚很紧张/)).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "让模型分析" })).toBeEnabled();
+  await shot(page, "08-revision-diff");
+
+  await drawer.getByRole("button", { name: "写作约定", exact: true }).click();
+  const style = drawer.getByRole("textbox");
+  await style.fill("- 写环境先写人物能感知的细节。\n");
+  await drawer.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(drawer.getByText("写作约定已保存。", { exact: true })).toBeVisible();
+  await shot(page, "09-style-document");
+  await page.reload();
+  await page.getByRole("button", { name: "写作约定", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "修订与写作约定" }).getByRole("textbox")).toHaveValue(
+    "- 写环境先写人物能感知的细节。\n",
+  );
+});

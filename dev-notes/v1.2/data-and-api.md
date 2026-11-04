@@ -91,6 +91,12 @@ class WritingProseView(BaseModel):
 - 结构读取；
 - 章节改名：`PUT /api/file-workspaces/{id}/story/chapters/{chapter_id}`，带 `expected_plan_revision` 与 `request_key`；
 - 未挂章节正文改名：`PUT /api/file-workspaces/{id}/story/prose-title`，带 `path`、`title` 与 `expected_digest`；
+- 修订学习：`GET /{id}/story/chapters/{chapter_id}/revisions` 列出本章修订；
+  `GET /{id}/story/revisions/{revision_id}` 返回段落差异与当前可分析片段；
+  `POST /{id}/story/revisions/{revision_id}/analyses` 发起影响分析（片段、对话、请求键）；
+  `GET /{id}/story/revision-analyses/{analysis_id}` 读取判断与建议；
+  `POST /{id}/story/revision-analyses/{analysis_id}/applications` 确认写入写作约定；
+- 写作约定：`GET /{id}/story/style` 返回全文与指纹，`PUT /{id}/story/style` 带全文、基线指纹与请求键；
 - 对话发送、暂停、恢复和回答作者问题；
 - 正文候选提出与采用；
 - 模块库浏览、版本读取、创建、发布；

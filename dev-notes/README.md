@@ -84,9 +84,11 @@
 - [数据与接口契约](v1.0.7/data-and-api.md)、[分模块实现示例](v1.0.7/implementation-examples.md)：直接正文关联、精确来源、非阻断提醒、统一变更与前后端对齐。
 - [验收与在线评测](v1.0.7/acceptance.md)：确定性矩阵、真实浏览器流程、在线模型和发布门槛；在线部分未执行，见 P7 记录。
 
-## 修订学习预留计划（已归档，不占用版本号）
+## 修订学习与作品同步（首批实施，版本待定）
 
-- 修订学习方案随 2026-11-03 v1.1 合并裁决作废，契约与示例归档于 [v1.1/archive-revision-learning](v1.1/archive-revision-learning/README.md)；`STYLE.md` 契约见 [v1.1/style-document.md](v1.1/style-document.md)，顺延为后续版本方案。
+- [开发计划](revision-learning/development-plan.md)：作者直接改稿和按作者要求的模型改稿统一记录为修订。在对话中查看差异、发起分析和查看运行日志，审阅写作约定、全书结构及已装入模块的更新建议。
+- [实施记录](revision-learning/notes.md)：入口映射、已落地的修订记录与差异判定、分析接口与 `STYLE.md` 注入，以及待实施的对话回执、稿纸修订与结构／模块应用。
+- 2026-11-03 归档的 [旧修订学习方案](v1.1/archive-revision-learning/README.md) 和当时的 [`STYLE.md` 契约](v1.1/style-document.md) 保留用于追溯。
 
 ## 0.9 当前入口
 
