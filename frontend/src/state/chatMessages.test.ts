@@ -17,6 +17,7 @@ import {
   NeedsConversationReload,
   orderedBlocks,
   phaseLabel,
+  runStatusLabel,
   publicText,
   hasTaskCard,
   hasSavedStoryChanges,
@@ -638,6 +639,46 @@ describe("读取辅助", () => {
     expect(formatDuration(0)).toBe("<1 毫秒");
     expect(formatDuration(1500)).toBe("1.5 秒");
     expect(formatDuration(null)).toBe("");
+  });
+
+  it("模型收妥回复后说明服务端在收尾，不写成还在等模型", () => {
+    reset();
+    const streaming = buildTurns([
+      turnStarted(),
+      started("m1"),
+      blockStarted("b1"),
+      delta("b1", 0, "写"),
+    ])[0]!;
+    expect(runStatusLabel(streaming, "model")).toBe("等待模型响应");
+
+    const settled = buildTurns([
+      turnStarted(),
+      next({
+        type: "assistant_message",
+        turn_id: "t1",
+        message_id: "m1",
+        text: "写好了。",
+        completion: "completed",
+      }),
+      next({ type: "assistant_finished", turn_id: "t1", message_id: "m1", completion: "completed" }),
+    ])[0]!;
+    expect(runStatusLabel(settled, "model")).toBe("正在确认任务状态");
+    // 明确记录阶段时以阶段为准：模型结束后正在写历史。
+    expect(runStatusLabel(settled, "record")).toBe("正在记录历史");
+
+    // 工具还在跑：最后一件事不是回复，仍按阶段说明。
+    const tooling = buildTurns([
+      turnStarted(),
+      next({
+        type: "assistant_message",
+        turn_id: "t1",
+        message_id: "m1",
+        text: "我先看一下正文。",
+        completion: "completed",
+      }),
+      next({ type: "tool_started", turn_id: "t1", tool: "read_file", tool_call_id: "c1" }),
+    ])[0]!;
+    expect(runStatusLabel(tooling, "tool")).toBe("正在执行工具");
   });
 });
 

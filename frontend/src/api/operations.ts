@@ -5,7 +5,7 @@
  * 这里只放请求与类型，事件归并由使用方处理。
  */
 
-import { requestApi } from "./workspace";
+import { requestApi, WorkspaceApiError } from "./workspace";
 
 export type OperationStatus =
   | "accepted"
@@ -84,17 +84,39 @@ export function operationKey(prefix: string): string {
   return `${prefix}-${suffix}`;
 }
 
+// 控制面读不到时要能自己收尾：请求一直挂着，界面既发不出下一条，也停不下来。
+const CONTROL_TIMEOUT_MS = 8000;
+
+function timed<T>(path: string, init: RequestInit, where: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONTROL_TIMEOUT_MS);
+  return requestApi<T>(path, { ...init, signal: controller.signal })
+    .catch((error: unknown) => {
+      if (!controller.signal.aborted) throw error;
+      throw new WorkspaceApiError(
+        "OPERATION_TIMEOUT",
+        `${Math.round(CONTROL_TIMEOUT_MS / 1000)} 秒内没有返回`,
+        "再试一次；持续没有响应时刷新页面后查看活动记录",
+        0,
+        where,
+      );
+    })
+    .finally(() => clearTimeout(timer));
+}
+
 /** 这一会话最近的一次操作：刷新后恢复「继续」入口，不重放旧任务。 */
 export async function latestOperation(conversationId: string): Promise<Operation | null> {
-  const items = await requestApi<Operation[]>(
+  const items = await timed<Operation[]>(
     `/api/operations?conversation_id=${encodeURIComponent(conversationId)}`,
+    {},
+    "任务列表",
   );
   return items[0] ?? null;
 }
 
 /** 读取快照：只读，不触发模型。 */
 export function readOperation(operationId: string): Promise<Operation> {
-  return requestApi<Operation>(`/api/operations/${encodeURIComponent(operationId)}`);
+  return timed<Operation>(`/api/operations/${encodeURIComponent(operationId)}`, {}, "任务状态");
 }
 
 /** 读取结果：已提交收据、改动路径与待回答问题；同样不触发模型。 */
@@ -104,10 +126,11 @@ export function readOperationResult(operationId: string): Promise<OperationResul
 
 /** 暂停：先撤销这一代的写入资格，再取消远端请求。 */
 export function pauseOperation(operationId: string, requestKey: string): Promise<Operation> {
-  return requestApi<Operation>(`/api/operations/${encodeURIComponent(operationId)}/pause`, {
-    method: "POST",
-    body: JSON.stringify({ request_key: requestKey }),
-  });
+  return timed<Operation>(
+    `/api/operations/${encodeURIComponent(operationId)}/pause`,
+    { method: "POST", body: JSON.stringify({ request_key: requestKey }) },
+    "暂停任务",
+  );
 }
 
 /** 继续：开新的一代；已写出的内容保留。 */
@@ -116,10 +139,14 @@ export function continueOperation(
   requestKey: string,
   expectedGeneration: number,
 ): Promise<Operation> {
-  return requestApi<Operation>(`/api/operations/${encodeURIComponent(operationId)}/continue`, {
-    method: "POST",
-    body: JSON.stringify({ request_key: requestKey, expected_generation: expectedGeneration }),
-  });
+  return timed<Operation>(
+    `/api/operations/${encodeURIComponent(operationId)}/continue`,
+    {
+      method: "POST",
+      body: JSON.stringify({ request_key: requestKey, expected_generation: expectedGeneration }),
+    },
+    "继续任务",
+  );
 }
 
 /** 插话：暂停、追加要求、登记新代次是一次请求。 */
@@ -129,12 +156,16 @@ export function interjectOperation(
   expectedGeneration: number,
   text: string,
 ): Promise<Operation> {
-  return requestApi<Operation>(`/api/operations/${encodeURIComponent(operationId)}/interject`, {
-    method: "POST",
-    body: JSON.stringify({
-      request_key: requestKey,
-      expected_generation: expectedGeneration,
-      text,
-    }),
-  });
+  return timed<Operation>(
+    `/api/operations/${encodeURIComponent(operationId)}/interject`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        request_key: requestKey,
+        expected_generation: expectedGeneration,
+        text,
+      }),
+    },
+    "插话",
+  );
 }

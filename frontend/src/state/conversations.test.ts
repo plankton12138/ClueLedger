@@ -70,6 +70,50 @@ const FINISHED = {
   commit: "abc1234",
 } as const;
 
+/** 操作快照：只写测试关心的字段，其余按「正在执行」给默认值。 */
+function operation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "op_1",
+    conversation_id: "c1",
+    turn_id: "t1",
+    purpose: "chat",
+    target: "写作对话",
+    status: "running",
+    generation: 1,
+    phase: "model",
+    model: "",
+    connection: "",
+    note: "",
+    error: null,
+    pending_units: [],
+    last_seq: 0,
+    created_at: "",
+    updated_at: "",
+    capabilities: { pause: true, continue: false, interject: true },
+    ...overrides,
+  };
+}
+
+const COMPLETED_OPERATION = operation({
+  status: "completed",
+  phase: "done",
+  last_seq: 4,
+  capabilities: { pause: false, continue: false, interject: false },
+});
+
+/** 后端已经写完终态时，事件日志里一定有 run_finished。 */
+const LOGGED = {
+  events: [
+    { seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" },
+    { seq: 2, at: "", type: "assistant_message", turn_id: "t1", message_id: "m1", text: "写好了。" },
+    { seq: 3, at: "", type: "assistant_finished", turn_id: "t1", message_id: "m1", completion: "completed" },
+    { seq: 4, at: "", type: "run_finished", turn_id: "t1", status: "completed", recording: "no_change", changed_paths: [], commit: null },
+  ],
+  last_seq: 4,
+  active_turn: null,
+  revision: "r1",
+} as const;
+
 beforeEach(() => {
   reset();
   vi.clearAllMocks();
@@ -383,7 +427,7 @@ describe("切换会话", () => {
     expect(ops.pauseOperation).not.toHaveBeenCalled();
   });
 
-  it("暂停立即标为请求中，仍等待终态，并避免重复提交", async () => {
+  it("暂停立即标为请求中，返回后立即恢复可输入，并避免重复提交", async () => {
     api.streamEvents.mockImplementation(async function* () {
       yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
       await new Promise(() => undefined);
@@ -423,7 +467,11 @@ describe("切换会话", () => {
     await pending;
 
     expect(ops.pauseOperation).toHaveBeenCalledWith("op_1", "key-1");
-    expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
+    // 暂停返回即说明这一轮不再执行：界面立刻恢复输入与「继续」，不必再等事件流收尾。
+    const entry = useConversationsStore.getState().entries.c1;
+    expect(entry?.running).toBe(false);
+    expect(entry?.activeTurn).toBeNull();
+    expect(entry?.operation?.capabilities.continue).toBe(true);
   });
 
   it("停止请求失败时保留运行状态并恢复重试入口", async () => {
@@ -441,6 +489,139 @@ describe("切换会话", () => {
     expect(useConversationsStore.getState().entries.c1?.activeTurn?.state).not.toBe("stop_requested");
     expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
     expect(useConversationsStore.getState().error).toContain("[REQUEST_FAILED]");
+  });
+});
+
+describe("终态丢失后的对账", () => {
+  /** 模拟真实事件流：事件发完之后连接一直开着，直到订阅被取消。 */
+  function streamUntilAborted(events: Array<Record<string, unknown>>) {
+    api.streamEvents.mockImplementation(async function* (
+      _workspace: string,
+      _conversation: string,
+      _after: number,
+      signal?: AbortSignal,
+    ) {
+      for (const event of events) yield event;
+      await new Promise((_, reject) => {
+        signal?.addEventListener("abort", () =>
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+        );
+      });
+    });
+  }
+
+  /** 助手已经把完整回复写完，但客户端没有拿到整轮终态。 */
+  function withoutTerminalEvent() {
+    streamUntilAborted([
+      { seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" },
+      {
+        seq: 2,
+        at: "",
+        type: "assistant_message",
+        turn_id: "t1",
+        message_id: "m1",
+        text: "写好了。",
+      },
+      {
+        seq: 3,
+        at: "",
+        type: "assistant_finished",
+        turn_id: "t1",
+        message_id: "m1",
+        completion: "completed",
+      },
+    ]);
+    api.conversationMessages.mockResolvedValue(LOGGED);
+    ops.readOperation.mockResolvedValue(COMPLETED_OPERATION);
+  }
+
+  it("完整回复已出现但终态没被消费时，暂停返回终态立即恢复可输入", async () => {
+    withoutTerminalEvent();
+    await useConversationsStore.getState().load("w1");
+    void useConversationsStore.getState().send("写第一章");
+    await flush();
+    expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
+    // 发送仍在等这条事件流：受理状态还占着发送入口。
+    await flush();
+    expect(useConversationsStore.getState().pendingKey).not.toBeNull();
+
+    ops.pauseOperation.mockResolvedValue(COMPLETED_OPERATION);
+
+    await useConversationsStore.getState().pause();
+    await flush();
+    await flush();
+
+    const state = useConversationsStore.getState();
+    const entry = state.entries.c1;
+    expect(entry?.running).toBe(false);
+    expect(entry?.activeTurn).toBeNull();
+    expect(entry?.phase).toBeNull();
+    // 漏掉的终态按日志补齐：结果卡与「已完成」由实际记录给出。
+    expect(entry?.turns[0]?.result?.status).toBe("completed");
+    // 订阅已经结束，发送入口不再被受理状态卡住。
+    expect(state.pendingKey).toBeNull();
+  });
+
+  it("事件流关闭却没有终态时，先按快照对账再决定是否重连", async () => {
+    api.streamEvents.mockImplementation(async function* () {
+      yield { seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" };
+      yield {
+        seq: 2,
+        at: "",
+        type: "assistant_message",
+        turn_id: "t1",
+        message_id: "m1",
+        text: "写好了。",
+      };
+    });
+    api.conversationMessages.mockResolvedValue(LOGGED);
+    ops.readOperation.mockResolvedValue(COMPLETED_OPERATION);
+    await useConversationsStore.getState().load("w1");
+
+    await useConversationsStore.getState().send("写第一章");
+
+    const state = useConversationsStore.getState();
+    const entry = state.entries.c1;
+    expect(entry?.running).toBe(false);
+    expect(entry?.activeTurn).toBeNull();
+    expect(entry?.turns[0]?.result?.status).toBe("completed");
+    expect(entry?.error).toBeNull();
+    expect(state.pendingKey).toBeNull();
+    // 对账已经说明这一轮结束：不再为同一条流反复重连。
+    expect(api.streamEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("快照仍显示在跑时保留运行状态，留给作者手动重新连接", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.streamEvents.mockImplementation(async function* () {
+      yield { seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" };
+    });
+    api.conversationMessages.mockResolvedValue({
+      events: [{ seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" }],
+      last_seq: 1,
+      active_turn: {
+        conversation_id: "c1",
+        turn_id: "t1",
+        state: "running",
+        model: "",
+        connection: "",
+        started_at: "",
+        operation_id: "op_1",
+      },
+      revision: "r1",
+    });
+    ops.readOperation.mockResolvedValue(operation({ last_seq: 1 }));
+
+    void useConversationsStore.getState().send("写第一章");
+    // 首次对账：快照说这一轮还在跑，界面不能自己宣布结束。
+    await flush();
+    await flush();
+
+    const entry = useConversationsStore.getState().entries.c1;
+    expect(entry?.running).toBe(true);
+    expect(entry?.error).toContain("正在重新接收");
+    // 重连退避在后台继续；这条测试只关心首次对账的结论。
+    useConversationsStore.getState().reset();
   });
 });
 

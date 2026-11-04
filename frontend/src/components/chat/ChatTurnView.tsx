@@ -8,7 +8,7 @@
 import { memo } from "react";
 
 import type { RunPhase } from "../../api/workspace";
-import { hasLaterStorySubmission, hasSavedStoryChanges, phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
+import { hasLaterStorySubmission, hasSavedStoryChanges, runStatusLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import AssistantMessageView from "./AssistantMessageView";
 import AuthorQuestionCard from "./AuthorQuestionCard";
 import ModuleChangeCard from "./ModuleChangeCard";
@@ -127,7 +127,7 @@ function ChatTurnView({
 
       {running && (
         <div className="chat-status" role="status" aria-live="polite">
-          {phaseLabel(phase)}…
+          {runStatusLabel(turn, phase)}…
         </div>
       )}
 

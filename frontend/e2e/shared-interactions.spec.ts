@@ -72,6 +72,74 @@ test("暂停点击立即反馈，等待服务端收尾后恢复发送入口", as
   await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "正在暂停…", exact: true })).toHaveCount(0);
 });
+test("终态事件没送到时，暂停仍把界面收回可输入状态", async ({ page, book }) => {
+  const active = {
+    conversation_id: "c_lost", turn_id: "t_lost", state: "running", model: "test", connection: "test",
+    started_at: "2026-11-04T12:10:00+08:00", operation_id: "op_lost",
+  };
+  const item = { id: "c_lost", title: "终态丢失验收", created_at: active.started_at, updated_at: active.started_at };
+  const operation = {
+    id: "op_lost", conversation_id: "c_lost", turn_id: "t_lost", purpose: "chat", target: "写作对话",
+    status: "running", generation: 1, phase: "model", model: "test", connection: "test", note: "",
+    error: null, pending_units: [], last_seq: 3, created_at: "", updated_at: "",
+    capabilities: { pause: true, continue: false, interject: true },
+  };
+  const replied = "雨停之前，侦探已经看过潮汐表。";
+  const answered = [
+    { seq: 1, at: active.started_at, type: "turn_started", turn_id: "t_lost", text: "写开篇" },
+    { seq: 2, at: active.started_at, type: "assistant_started", turn_id: "t_lost", message_id: "m1" },
+    { seq: 3, at: active.started_at, type: "assistant_block_started", turn_id: "t_lost", message_id: "m1",
+      block_id: "b1", kind: "text", order: 0 },
+    { seq: 4, at: active.started_at, type: "assistant_block_finished", turn_id: "t_lost", message_id: "m1",
+      block_id: "b1", kind: "text", order: 0, text: replied, last_part: 0, completion: "completed" },
+    { seq: 5, at: active.started_at, type: "assistant_message", turn_id: "t_lost", message_id: "m1",
+      text: replied, completion: "completed" },
+    { seq: 6, at: active.started_at, type: "assistant_finished", turn_id: "t_lost", message_id: "m1",
+      completion: "completed" },
+  ];
+  const finished = [...answered, { seq: 7, at: active.started_at, type: "run_finished", turn_id: "t_lost",
+    status: "completed", recording: "no_change", changed_paths: [], commit: null, note: "" }];
+  const prefix = `**/api/file-workspaces/${book.id}`;
+  let done = false;
+  await page.route(`${prefix}/conversations`, route => route.fulfill({ json: {
+    items: [item], recent_id: item.id, active_turn: done ? null : active, revision: "r1",
+  } }));
+  await page.route(`${prefix}/conversation-ui`, route => route.fulfill({ json: {
+    recent_id: item.id, drafts: {}, revision: "r1",
+  } }));
+  await page.route(`${prefix}/conversations/${item.id}/messages?*`, route => route.fulfill({ json: {
+    events: done ? finished : answered, last_seq: done ? 7 : 6, active_turn: done ? null : active, revision: "r1",
+  } }));
+  // 客户端拿到了完整回复，但没有拿到整轮终态：连接随即关闭，事件流里也没有 run_finished。
+  await page.route(`${prefix}/events?*`, route => route.fulfill({
+    contentType: "text/event-stream",
+    body: answered.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+  }));
+  await page.route("**/api/operations**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/pause")) {
+      // 后端日志已经写完终态：暂停返回的是真实结果，不是「正在暂停」。
+      done = true;
+      await route.fulfill({ json: { ...operation, status: "completed", phase: "done", last_seq: 7,
+        capabilities: { pause: false, continue: false, interject: false } } });
+      return;
+    }
+    if (url.pathname === "/api/operations") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    await route.fulfill({ json: done ? { ...operation, status: "completed", last_seq: 7 } : operation });
+  });
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await expect(page.getByText(replied)).toBeVisible();
+  // 模型已经写完，任务还在收尾：状态行不说「等待模型响应」。
+  await expect(page.locator(".chat-status")).toContainText("正在确认任务状态");
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+  await expect(page.locator(".chat-status")).toHaveCount(0);
+  await expect(page.locator(".chat-card")).toContainText("完成");
+});
+
 async function focusWithin(page: Page, dialog: Locator) {
   for (let n = 0; n < 12; n++) {
     await page.keyboard.press("Tab"); expect(await dialog.evaluate(el => el.contains(document.activeElement))).toBe(true);

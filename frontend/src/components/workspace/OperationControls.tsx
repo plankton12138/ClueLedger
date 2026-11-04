@@ -17,13 +17,19 @@ export default function OperationControls({ operationId, probe = false, onDone }
       try {
         const [current, events] = await Promise.all([readOperation(operationId), requestApi<{ events: { type: string; text?: string; generation: number }[] }>(`/api/operations/${operationId}/events`)]);
         if (cancelled) return;
+        setError("");
         setOperation(current);
         setOutput(events.events.filter(event => event.type === "text_delta" && event.generation === current.generation).map(event => event.text ?? "").join(""));
         if (current.status === "completed" || current.status === "failed") {
           const result = await readOperationResult(operationId);
           if (!cancelled) onDone?.(result);
         } else timer = setTimeout(() => void refresh(), 600);
-      } catch (cause) { if (!cancelled) setError(errorMessage(cause, "读取任务")); }
+      } catch (cause) {
+        if (cancelled) return;
+        // 单次读取失败不结束跟随：控制面可能只是临时忙，下一轮继续读。
+        setError(errorMessage(cause, "读取任务"));
+        timer = setTimeout(() => void refresh(), 1500);
+      }
     }
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };

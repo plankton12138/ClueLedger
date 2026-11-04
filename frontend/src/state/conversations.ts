@@ -200,6 +200,14 @@ function sleep(ms: number): Promise<void> {
 // 网络中断后的有限退避：不做无限重连，连续失败就把入口交给作者。
 const RECONNECT_DELAYS = [0, 1000, 2000, 5000];
 
+// 终态核对：事件流可能漏掉整轮终态（订阅被替换、连接在终态前断开），
+// 界面不能只靠反复重连去发现。模型给出完整回复后再等这么久还没有终态，就按快照对账。
+const SETTLE_GRACE_MS = 6000;
+/** 还没有任何模型回复时的低频核对：长时间思考不该被当成卡住。 */
+const QUIET_PROBE_MS = 60000;
+/** 暂停之后留给事件流收尾的时间：超过就结束订阅，按日志收尾。 */
+const PAUSE_DRAIN_MS = 5000;
+
 /** 正在回读日志的会话：缺口一次只补一次，避免重复请求。 */
 const reloading = new Set<string>();
 /** 回读在途时收到的实时事件：快照落地后按 seq 接上，不让旧快照抹掉新事件。 */
@@ -246,6 +254,11 @@ function scheduleDraftSave(): void {
     draftTimer = null;
     void useConversationsStore.getState().saveDraft();
   }, 600);
+}
+
+/** 这一轮是否已经写入终态：事件里的 run_finished 才是「结束」的依据。 */
+function turnFinished(entry: ConversationEntry | undefined, turnId: string): boolean {
+  return Boolean(entry?.turns.find((turn) => turn.id === turnId)?.result);
 }
 
 export const useConversationsStore = create<ConversationsStore>()((set, get) => {
@@ -338,6 +351,73 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     if (again) void reloadLog(conversationId);
   }
 
+  /** 这一轮确实结束：清掉运行标记并回读磁盘，结果以实际记录为准。 */
+  function finishEntry(conversationId: string, operation: Operation | null): void {
+    patchEntry(conversationId, {
+      running: false,
+      activeTurn: null,
+      phase: null,
+      error: null,
+      operation,
+    });
+    onRunFinished?.();
+    void get().refreshList();
+  }
+
+  /**
+   * 终态对账：同时读操作快照与会话快照，把界面收回实际状态。
+   *
+   * 事件流只是加速通道，不是唯一依据：订阅被替换、连接在终态前断开时，界面要能从
+   * 服务端记录里看出「这一轮结束了」，而不是一直等一个不会再来的事件。
+   * 仍在执行时只读操作快照——会话日志可能很长，没必要每分钟整份拉一遍。
+   */
+  async function reconcile(
+    conversationId: string,
+    operationId: string | null,
+  ): Promise<"running" | "idle" | "unknown"> {
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) return "unknown";
+    const entry = get().entries[conversationId] ?? EMPTY_ENTRY;
+    const known = operationId ?? entry.activeTurn?.operation_id ?? entry.operation?.id ?? null;
+    const operation = await (known
+      ? readOperation(known)
+      : latestOperation(conversationId)
+    ).catch(() => null);
+    if (get().workspaceId !== workspaceId) return "unknown";
+    if (operation && (operation.status === "accepted" || operation.status === "running")) {
+      const current = get().entries[conversationId] ?? EMPTY_ENTRY;
+      const patch: Partial<ConversationEntry> = { running: true, operation };
+      // 暂停请求还在途中时保留「正在暂停」，不把界面拨回可暂停状态。
+      if (current.activeTurn?.turn_id !== operation.turn_id) {
+        patch.activeTurn = {
+          conversation_id: operation.conversation_id,
+          turn_id: operation.turn_id,
+          state: operation.status === "running" ? "running" : "accepted",
+          model: operation.model,
+          connection: operation.connection,
+          started_at: operation.updated_at,
+          operation_id: operation.id,
+        };
+      }
+      patchEntry(conversationId, patch);
+      return "running";
+    }
+    // 操作快照说已经结束（或读不到）：用会话快照核对活动轮次，并补齐漏掉的终态。
+    const snapshot = await conversationMessages(workspaceId, conversationId, 0).catch(() => null);
+    if (get().workspaceId !== workspaceId) return "unknown";
+    if (!operation && !snapshot) return "unknown";
+    const current = get().entries[conversationId] ?? EMPTY_ENTRY;
+    if (snapshot && snapshot.last_seq > current.lastSeq) await reloadLog(conversationId);
+    const active = snapshot?.active_turn ?? null;
+    // 同一轮的操作已经结束，活动记录只是还没清干净；换了另一轮才说明真的还在跑。
+    if (active && (!operation || active.turn_id !== operation.turn_id)) {
+      patchEntry(conversationId, { running: true, activeTurn: active });
+      return "running";
+    }
+    finishEntry(conversationId, operation ?? current.operation);
+    return "idle";
+  }
+
   async function consume(conversationId: string, after: number): Promise<void> {
     const workspaceId = get().workspaceId;
     if (!workspaceId) return;
@@ -354,11 +434,55 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     let finished = false;
     let finishedOperation: string | null = null;
     let finishedGeneration = 0;
-    for (const delay of RECONNECT_DELAYS) {
+    // 已按快照收尾并结束订阅：不再重复收尾，也不再重连。
+    let settled = false;
+    let lastActivity = Date.now();
+    let probes = 0;
+    let fast = false;
+    let probeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearProbe = (): void => {
+      if (probeTimer !== null) clearTimeout(probeTimer);
+      probeTimer = null;
+    };
+    const armProbe = (delay: number): void => {
+      if (settled || finished || controller.signal.aborted) return;
+      clearProbe();
+      probeTimer = setTimeout(() => void probe(), delay);
+    };
+    // 静默核对：事件流既没有终态、也没有新事件时，按快照确认这一轮是否还在执行。
+    const probe = async (): Promise<void> => {
+      probeTimer = null;
+      if (settled || finished || controller.signal.aborted) return;
+      if (!isCurrentSubscription(conversationId, generation)) return;
+      const wait = fast ? SETTLE_GRACE_MS : QUIET_PROBE_MS;
+      const quiet = Date.now() - lastActivity;
+      if (quiet < wait) {
+        armProbe(Math.max(250, wait - quiet));
+        return;
+      }
+      const outcome = await reconcile(conversationId, finishedOperation);
+      if (settled || finished || controller.signal.aborted) return;
+      if (!isCurrentSubscription(conversationId, generation)) return;
+      if (outcome === "idle") {
+        // 快照说明这一轮已经结束：结束订阅，发送入口不再被受理状态卡住。
+        settled = true;
+        controller.abort();
+        return;
+      }
+      probes += 1;
+      armProbe(Math.min(QUIET_PROBE_MS, wait * (probes + 1)));
+    };
+
+    armProbe(QUIET_PROBE_MS);
+    for (const [attempt, delay] of RECONNECT_DELAYS.entries()) {
       if (delay) await sleep(delay);
       if (controller.signal.aborted) break;
       // 事件只属于发起订阅的那个会话：代次不符就停，避免旧流污染新视图。
-      if (!isCurrentSubscription(conversationId, generation)) return;
+      if (!isCurrentSubscription(conversationId, generation)) {
+        clearProbe();
+        return;
+      }
       try {
         for await (const event of streamEvents(
           workspaceId,
@@ -367,8 +491,14 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           controller.signal,
         )) {
           if (!isCurrentSubscription(conversationId, generation)) break;
+          lastActivity = Date.now();
           batcher.push(event);
           cursor = Math.max(cursor, event.seq);
+          if (event.type === "assistant_finished" && event.completion === "completed" && !fast) {
+            // 模型这一条已经收妥：整轮终态再不来就按快照对账，不再显示成还在等模型。
+            fast = true;
+            armProbe(SETTLE_GRACE_MS);
+          }
           if (event.type === "run_finished") {
             finished = true;
             finishedOperation = event.operation_id ?? null;
@@ -386,15 +516,28 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         continue;
       }
       batcher.flush();
-      if (finished) break;
-      // 流正常结束却没有整轮终态：服务端可能重启过，按最后确认的位置再接一次。
+      if (finished || settled) break;
+      // 流正常结束却没有整轮终态：先按快照对账，仍未结束才重连，不盲目反复重连。
+      const outcome = await reconcile(conversationId, finishedOperation);
+      if (settled || finished || controller.signal.aborted) break;
+      if (outcome === "idle") {
+        settled = true;
+        break;
+      }
       if (isCurrentSubscription(conversationId, generation)) {
-        patchEntry(conversationId, { error: "连接中断，正在重新接收…" });
+        patchEntry(conversationId, {
+          error:
+            attempt === RECONNECT_DELAYS.length - 1
+              ? "[STREAM_UNCONFIRMED] 事件流：没有收到整轮终态。建议：任务仍在后台执行，点「重新连接」再核对一次。"
+              : "连接中断，正在重新接收…",
+        });
       }
     }
     batcher.flush();
+    clearProbe();
     if (controllers.get(conversationId) === controller) controllers.delete(conversationId);
     if (!isCurrentSubscription(conversationId, generation)) return;
+    if (settled) return;
     if (finished) {
       // 这一代结束不等于整个操作结束：继续或插话之后，新的一代还在写。
       // 操作快照是唯一依据，不能凭「收到 run_finished」就宣布整件事做完了。
@@ -425,15 +568,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         }
         return;
       }
-      patchEntry(conversationId, {
-        running: false,
-        activeTurn: null,
-        phase: null,
-        error: null,
-        operation,
-      });
-      onRunFinished?.();
-      void get().refreshList();
+      finishEntry(conversationId, operation);
     }
   }
 
@@ -574,7 +709,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         if (workspaceLoadEpoch !== loadEpoch || get().workspaceId !== workspaceId) return;
         set({ items: list.items, recentId: list.recent_id });
         const active = list.active_turn;
-        if (active) {
+        // 列表可能比终态事件晚一步返回：这一轮已经写入结果就不再标回运行中。
+        if (active && !turnFinished(get().entries[active.conversation_id], active.turn_id)) {
           patchEntry(active.conversation_id, { running: true, activeTurn: active });
         }
       } catch (error) {
@@ -795,8 +931,39 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         const operation = await pauseOperation(operationId, key);
         if (get().workspaceId !== workspaceId) return;
         const current = get().entries[selected];
-        if (current?.activeTurn?.turn_id === active.turn_id) {
+        // 迟到的请求结果不能覆盖已经结束的轮次、另一作品或另一轮次。
+        if (current?.activeTurn?.turn_id !== active.turn_id) return;
+        if (operation.status === "accepted" || operation.status === "running") {
+          // 服务端还在撤销这一代：保留「正在暂停」，等事件流的终态。
           patchEntry(selected, { operation });
+          return;
+        }
+        // 已经是终态或已暂停：这一轮不再等待，立即恢复输入与「继续」入口。
+        patchEntry(selected, {
+          operation,
+          running: false,
+          activeTurn: null,
+          phase: null,
+          error: null,
+        });
+        if (operation.status === "completed" || operation.status === "failed") {
+          // 终态说明事件已经写完：结束这条订阅，发送入口不再停在「受理中」；
+          // 再读一次日志，把客户端漏掉的终态卡片补上。
+          const running = controllers.get(selected);
+          if (running) running.abort();
+          await reconcile(selected, operation.id);
+          return;
+        }
+        // 已暂停：事件流通常很快送来终态；迟迟不收尾就结束订阅并按日志收尾，
+        // 不让输入框一直等在「受理中」。
+        const drain = controllers.get(selected);
+        if (drain) {
+          setTimeout(() => {
+            if (get().entries[selected]?.running) return;
+            if (controllers.get(selected) !== drain) return;
+            drain.abort();
+            void reconcile(selected, operation.id);
+          }, PAUSE_DRAIN_MS);
         }
       } catch (error) {
         // 迟到的请求结果不能覆盖已经结束的轮次、另一作品或另一轮次。
@@ -892,20 +1059,19 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const workspaceId = get().workspaceId;
       const selected = get().selectedId;
       if (!workspaceId || !selected) return;
-      // 先取活动快照，再从最后确认的位置继续：断开期间保存的事件不会丢。
-      try {
-        const snapshot = await conversationMessages(workspaceId, selected, 0);
+      // 先取操作快照与会话快照，再从最后确认的位置继续：断开期间保存的事件不会丢。
+      const outcome = await reconcile(selected, null);
+      if (get().workspaceId !== workspaceId || get().selectedId !== selected) return;
+      if (outcome === "running") {
+        patchEntry(selected, { error: null });
+        await consume(selected, get().entries[selected]?.lastSeq ?? 0);
+        return;
+      }
+      if (outcome === "unknown") {
         patchEntry(selected, {
-          turns: buildTurns(snapshot.events),
-          lastSeq: snapshot.last_seq,
-          running: Boolean(snapshot.active_turn),
-          activeTurn: snapshot.active_turn,
-          error: null,
-          needsReload: false,
+          error:
+            "[STREAM_UNCONFIRMED] 任务状态：没有读到当前快照。建议：稍后再点「重新连接」；任务仍在后台执行。",
         });
-        if (snapshot.active_turn) await consume(selected, snapshot.last_seq);
-      } catch (error) {
-        patchEntry(selected, { error: describe(error) });
       }
     },
 

@@ -150,6 +150,7 @@ export interface TurnStoryCommit {
 export interface TurnQuestion {
   questionId: string;
   question: string;
+  kind: string;
   options: string[];
   related: string[];
   createdAt: string;
@@ -851,6 +852,7 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
         question: {
           questionId: event.question_id,
           question: event.question,
+          kind: event.kind ?? "decision",
           options: event.options ?? [],
           related: event.related ?? [],
           createdAt: event.created_at ?? event.at,
@@ -1001,6 +1003,23 @@ const PHASE_LABEL: Record<RunPhase, string> = {
 /** 阶段说明；没有可靠阶段时不显示占位进度。 */
 export function phaseLabel(phase: RunPhase | null): string {
   return phase ? PHASE_LABEL[phase] : "等待模型响应";
+}
+
+/**
+ * 最后一件事是不是一条已经收妥的回复。
+ *
+ * 之后没有新的增量、也没有工具在跑，说明模型不再产出，剩下的只是服务端收尾：
+ * 结果卡、历史记录与文件提交。这时不该继续显示「等待模型响应」。
+ */
+export function turnAwaitsCompletion(turn: ChatTurn): boolean {
+  const last = turn.items.at(-1);
+  return Boolean(last && last.kind === "message" && last.message.completion !== "streaming");
+}
+
+/** 运行中的状态说明：模型已收妥、任务还在收尾时说清是在确认任务状态。 */
+export function runStatusLabel(turn: ChatTurn, phase: RunPhase | null): string {
+  if (phase === "record") return PHASE_LABEL.record;
+  return turnAwaitsCompletion(turn) ? "正在确认任务状态" : phaseLabel(phase);
 }
 
 /** 耗时展示：不足一秒给毫秒，超过给一位小数的秒；没有记录时不显示。 */
