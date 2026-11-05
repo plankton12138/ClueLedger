@@ -72,7 +72,10 @@ _PLAN_TITLE = re.compile(r"^CL-\d+\s*([^：:]+)")
 
 Kind = Literal["伏笔", "悬念", "象征", "物件", "信息"]
 Status = Literal["planted", "advanced", "resolved", "retired"]
-Origin = Literal["planned", "emergent"]
+#: ``migrated`` 是 P3 迁移专用：从手写伏笔账迁入的草稿条目，锚留空，
+#: 由该章下一次修订逐条重锚（提案 §7）。它不是新的创作来源，只是「已知
+#: 没锚、待重锚」的显式标记——放宽锚校验会让「忘了锚」和「还没锚」混为一谈。
+Origin = Literal["planned", "emergent", "migrated"]
 
 _KINDS: frozenset[str] = frozenset({"伏笔", "悬念", "象征", "物件", "信息"})
 _STATUSES: frozenset[str] = frozenset({"planted", "advanced", "resolved", "retired"})
@@ -125,12 +128,25 @@ def anchor_findings(
     """锚失联检测（``CLUE_ORPHANED_ANCHOR``）：登记里的锚在本章正文找不到对应段。
 
     只报告不自动重建——重锚是认知动作（线索改写走了样和挪了个位置是两回事），
-    必须过模型或作者；prefix 只用于辅助重新定位。
+    必须过模型或作者；prefix 只用于辅助重新定位。迁移条目的「没锚」也算失联：
+    它本来就是等着被重锚的，不提醒就会一直空着。
     """
     findings: list[ClueFinding] = []
     for entry in entries:
         anchor = entry.anchor or (entry.resolves.anchor if entry.resolves else None)
-        if anchor is None or resolve_anchor(anchor, prose_text):
+        if anchor is None:
+            if entry.origin == "migrated":
+                findings.append(
+                    ClueFinding(
+                        code="CLUE_ORPHANED_ANCHOR",
+                        message=(
+                            f"第 {chapter} 章 {entry.id} 是迁移条目，尚未重锚"
+                            f"（{entry.note or '无说明'}），请对照正文补一个段落锚"
+                        ),
+                    )
+                )
+            continue
+        if resolve_anchor(anchor, prose_text):
             continue
         findings.append(
             ClueFinding(
@@ -286,12 +302,12 @@ def validate_entries(entries: tuple[ClueEntry, ...] | list[ClueEntry], chapter: 
                 f"线索 {entry.id} 的 status 非法：{entry.status!r}",
                 f"status 取值限 {'/'.join(sorted(_STATUSES))}",
             )
-        if entry.origin not in {"planned", "emergent"}:
+        if entry.origin not in {"planned", "emergent", "migrated"}:
             raise _error(
                 "CLUE_ENTRY_INVALID",
                 where,
                 f"线索 {entry.id} 的 origin 非法：{entry.origin!r}",
-                "origin 取值限 planned/emergent",
+                "origin 取值限 planned/emergent/migrated",
             )
         if entry.origin == "emergent" and not (entry.note or "").strip():
             raise _error(
@@ -307,7 +323,11 @@ def validate_entries(entries: tuple[ClueEntry, ...] | list[ClueEntry], chapter: 
                 f"线索 {entry.id} 声明不收但缺少理由",
                 "retired 必须带 note 说明为什么不收（如「纯细节不收」）",
             )
-        if entry.status in {"planted", "advanced"} and entry.anchor is None:
+        if (
+            entry.status in {"planted", "advanced"}
+            and entry.anchor is None
+            and entry.origin != "migrated"
+        ):
             raise _error(
                 "CLUE_ANCHOR_REQUIRED",
                 where,
