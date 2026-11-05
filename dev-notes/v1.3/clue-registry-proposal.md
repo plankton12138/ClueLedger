@@ -135,7 +135,7 @@ anchor = {
 | `status` | 枚举：`planted`（已埋）/ `advanced`（推进）/ `resolved`（已收）/ `retired`（明确不收，须带 note 说明为什么，如「纯细节不收」） |
 | `origin` | `planned`（对应计划线索 id）/ `emergent`（须带 note） |
 | `anchor` | status ∈ {planted, advanced} 必填；resolved 时挪进 `resolves.anchor` |
-| `resolves` | 本章是回收方时填写；`planted_in` 指向埋设章号；id 必须在聚合视图里存在 planted 记录 |
+| `resolves` | 本章是回收方时填写；`planted_in` 指向埋设章号；被引用的 clue_id 必须在聚合视图里存在匹配章号的 planted 记录（提交门校验，见 §4） |
 
 ### 3.3 生命周期状态机
 
@@ -149,10 +149,14 @@ declared(计划) ──章提交确认锚点──▶ planted ──后续章推
 
 校验规则（写入时即拒绝，早失败）：
 - `status=planted/advanced` 必须有 `anchor`；
-- `resolves` 引用的 clue_id 必须存在于（聚合视图的）planted/advanced 记录，且 `planted_in < 本章号`；
+- `resolves` 引用的 clue_id 必须存在匹配章号的埋设记录（提交门校验，见 §4），且 `planted_in ≤ 本章号`；
 - `retired` 必须带 note；
 - `origin=emergent` 必须带 note；
-- id 在同一章文件内不得重复，`resolves` 不得指向本章自己埋的（埋收同章不算线索推进，只允许 status 直接 resolved 且两处均在本章条目内声明）。
+- id 在同一章文件内不得重复。
+
+**回收登记的语义（2026-11-05 可行性切片澄清，发现 1）**：跨章回收的推荐形态是**同 id 状态更新**——第 5 章的回收条目 id 就是 `CL-01` 本身，状态改 `resolved`，`resolves` 指回自己的早期埋设（§3.2 样例即此形态）。因此 `resolves.clue_id == 本条目 id` 且 `planted_in < 本章号` 是**合法路径**，不是自引用矛盾。仅两种形态拒绝：
+- `planted_in == 本章号` 且指向自己（同章自埋自收，同一条目内闭环）；
+- `planted_in == 本章号` 且指向的 id 不在本章条目内（埋收同章必须两个条目同在本章文件：一条 planted、一条用独立 id `resolves` 引用它）。
 
 ---
 
@@ -162,7 +166,7 @@ declared(计划) ──章提交确认锚点──▶ planted ──后续章推
 
 | 检测 | 条件 | 归因 |
 |---|---|---|
-| 空响 | 某章 `resolves` 指向的 id 在聚合视图无 planted 记录 | `CLUE_ORPHAN_RESOLUTION`（确定性矛盾，拦截提交；其余四项只报告不拦） |
+| 空响 | 某章 `resolves` 指向的 id 在聚合视图无匹配章号的 planted 记录 | `CLUE_ORPHAN_RESOLUTION`（确定性矛盾，**提交门在写入前拦截，矛盾数据不落盘**，见 §10 发现 2；聚合侧检测保留为兜底；其余四项只报告不拦） |
 | 哑火 | 计划线索（结构层声明埋设章 ≤ 当前已写最大章）无任何 planted 记录 | `CLUE_NOT_PLANTED`（报告项，不拦截） |
 | 悬枪 | 已写到结构层声明「收」的章，仍 planted/advanced 未收未 retired | `CLUE_UNRESOLVED`（报告项，不拦截） |
 | 失联 | 锚哈希解析失败 | `CLUE_ORPHANED_ANCHOR`（列出 prefix 供重锚） |
@@ -250,3 +254,14 @@ declared(计划) ──章提交确认锚点──▶ planted ──后续章推
 3. **章节重编号/插章 → 现在不管**：格式 5 目前不支持插章，不为不存在的能力预付复杂度；clue_id 已全局唯一，将来支持插章时迁移 `planted_in` 为机械活。
 4. **意外线索配额 → 无硬限**：用提示词约束（「意外线索应罕见，须带说明」），注入侧每章截断上限兜底噪声（上限值在 P2 实施时定），不新增「线索太多」这类创作端怪错误。
 5. **对账强制力 → 仅「空响」硬失败**：`CLUE_ORPHAN_RESOLUTION` 拦截提交（确定性矛盾）；哑火/悬枪/失联/计划未落实只进报告与注入提醒，不堵写作主路径，由模型在下一回合自行处理。
+
+---
+
+## 10. 实施记录：最小可行性切片（2026-11-05，提交 6c5a47b0）
+
+P0 动手前先做了不接事务层的纯模块验证（`workspace/chapter_clues.py` + 28 例单测 + `scripts/clue_minimal_demo.py` 端到端演示），埋设→推进→回收全生命周期与空响/失联/哑火三个反例均跑通；全量回归 1793 passed。验证撞出两个规格盲点，已回写本文：
+
+1. **回收登记的语义**（已补入 §3.3）：跨章回收是同 id 状态更新（第 5 章条目 id 就是 `CL-01`，`resolves` 指回自己的早期埋设），自引用在跨章场景是合法路径；仅同章自埋自收（同条目闭环）与同章缺 paired planted 条目两种形态拒绝。首版实现一刀切禁自引用会导致所有跨章回收无法登记。
+2. **空响拦截的时机**（已补入 §4）：拦截点必须在提交事务写入**之前**（提交门 `validate_commit` 对照此前各章聚合视图），事后聚合检测只能兜底——矛盾数据先落盘再报告，权威文件已被污染，不构成「拦截提交」。
+
+切片刻意不接入 `story_store` 事务层；接入（`_persist_locked`/`_recover_locked` 随章落盘与幂等重放、提交工具 `updates` 通道）属 P0 正式范围。
