@@ -112,8 +112,12 @@ export default function RevisionEditor({
   useLayoutEffect(() => {
     const node = textarea.current;
     if (!node || mode !== "edit") return;
+    // 量高度时 textarea 先缩到 320px，纸面 scrollTop 会被钳到 0；记下再还原，避免输入时把正在改的一行甩出视野。
+    const scroller = node.closest<HTMLElement>(".paper-sheet");
+    const top = scroller?.scrollTop ?? 0;
     node.style.height = "auto";
     node.style.height = `${Math.max(node.scrollHeight, 320)}px`;
+    if (scroller) scroller.scrollTop = top;
   }, [mode, draft?.text]);
 
   if (!draft) {
