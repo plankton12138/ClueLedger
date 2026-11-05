@@ -31,6 +31,12 @@ from uuid import uuid4
 from pydantic import JsonValue, ValidationError
 
 from hastings.workspace.atomic_io import atomic_write_bytes, atomic_write_json, locked
+from hastings.workspace.chapter_clues import (
+    ClueEntry,
+    clues_path,
+    validate_commit,
+    write_chapter_clues,
+)
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, managed_kind, normalize_newlines
 from hastings.workspace.prose_ledger import (
@@ -208,6 +214,7 @@ class StoryStore:
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
         prose_shift: bool = False,
         result_extra: dict[str, Any] | None = None,
+        clue_entries: list[ClueEntry] | None = None,
         prepare_joint: (
             Callable[
                 [StoryDocument | None],
@@ -222,7 +229,9 @@ class StoryStore:
         的那一代做出。放在查重之后——已经提交过的同一请求返回收据，不因暂停而消失。
         ``prose_shift`` 供撤销使用：正文其他段落有后续编辑时，按唯一原文重新定位，
         不要求整份文件摘要不变。``result_extra`` 随收据持久化，用于记录本次正文改动
-        的来源，后续可按变更记录补齐修订。
+        的来源，后续可按变更记录补齐修订。``clue_entries`` 随章提交的线索登记
+        （v1.3 P0）：必须随该章正文入档同一笔提交，骨架提交不产生线索条目；
+        空响在提交门拦截，登记随恢复路径幂等重放。
         """
         extra: dict[str, Any] = dict(result_extra or {})
         fingerprint = _fingerprint(
@@ -286,6 +295,7 @@ class StoryStore:
                 decision_guard=decision_guard,
                 prose_shift=prose_shift,
                 joint_target=joint_target,
+                clue_entries=clue_entries,
                 result_extra=extra,
             )
 
@@ -477,12 +487,28 @@ class StoryStore:
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
         prose_shift: bool = False,
         joint_target: JointTarget | None = None,
+        clue_entries: list[ClueEntry] | None = None,
     ) -> StoryReceipt:
         variant = document.variants[variant_id]
         self._validate_dependencies(document, change, variant_id)
         prose, inverse = self._prepare_prose(
             change.prose_patches, variant_id=variant_id, allow_shifted=prose_shift
         )
+        clue_chapter = self._clue_chapter_of(prose)
+        clues_payload: dict[str, object] | None = None
+        if clue_entries:
+            if clue_chapter is None or self.workspace is None:
+                raise WorkspaceError(
+                    code="CLUE_COMMIT_WITHOUT_PROSE",
+                    where="story.commit",
+                    why="线索登记必须随该章正文入档同一笔提交，本次提交没有可登记的正文章节",
+                    fix="在保存该章正文的同一笔提交里登记线索；骨架提交不产生线索条目",
+                )
+            validate_commit(self.workspace.root, clue_chapter, clue_entries)
+            clues_payload = {
+                "chapter": clue_chapter,
+                "entries": [entry.to_json() for entry in clue_entries],
+            }
         try:
             updated = apply_change_set(variant, change)
         except StoryInvalid as exc:
@@ -531,6 +557,14 @@ class StoryStore:
                 "revision": updated.revision,
                 "operations": len(change.operations),
                 "prose_paths": [row["path"] for row in prose],
+                **(
+                    {
+                        "clue_chapter": clue_chapter,
+                        "clue_entries": len(clue_entries),
+                    }
+                    if clue_entries
+                    else {}
+                ),
                 **(result_extra or {}),
             },
         )
@@ -543,6 +577,7 @@ class StoryStore:
             joint_target=joint_target,
             pre_decision=lambda: self._validate_commit(change, require_eligible, variant_id),
             decision_guard=decision_guard,
+            clues=clues_payload,
         )
         return receipt
 
@@ -556,6 +591,7 @@ class StoryStore:
         joint_target: JointTarget | None = None,
         pre_decision: Callable[[], None] | None = None,
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
+        clues: dict[str, object] | None = None,
     ) -> None:
         payload = document.model_dump(mode="json")
         prose = prose or []
@@ -586,6 +622,7 @@ class StoryStore:
                     "target_digest": hashlib.sha256(encoded).hexdigest(),
                     "prose": prose,
                     "joint": joint,
+                    "clues": clues,
                 },
                 prefix=".story-pending-",
             )
@@ -604,6 +641,7 @@ class StoryStore:
                             "target_digest": hashlib.sha256(encoded).hexdigest(),
                             "prose_digest": _fingerprint(prose),
                             "joint_digest": _fingerprint(joint),
+                            **({"clues_digest": _fingerprint(clues)} if clues is not None else {}),
                         }
                     ).encode(),
                     prefix=".story-decision-",
@@ -613,6 +651,7 @@ class StoryStore:
             self._apply_prose(prose)
             self._apply_joint(joint_target)
             self._update_ledger(prose, record.revision if record is not None else None)
+            self._apply_clues(prose, clues, record.revision if record is not None else None)
             atomic_write_json(self.file, payload, prefix=".story-")
             self._write_snapshot(document.revision, payload)
             if record is not None:
@@ -670,6 +709,9 @@ class StoryStore:
                     after=str(joint_raw["after"]),
                     payload=joint_raw["payload"],
                 )
+            clues = raw.get("clues")
+            if clues is not None and decision.get("clues_digest") != _fingerprint(clues):
+                raise ValueError("线索登记内容与决定不一致")
             document = StoryDocument.model_validate(raw["document"])
             encoded = (
                 json.dumps(
@@ -692,8 +734,10 @@ class StoryStore:
                 atomic_write_json(self.file, document.model_dump(mode="json"), prefix=".story-")
             self._write_snapshot(document.revision, document.model_dump(mode="json"))
             record = document.changes.get(decided)
+            revision = record.revision if record is not None else None
+            self._update_ledger(prose, revision)
+            self._apply_clues(prose, clues, revision)
             if record is not None:
-                self._update_ledger(prose, record.revision)
                 self._append_log(record)
         except OSError as exc:
             raise _state_error(self.pending, "恢复提交时无法写入") from exc
@@ -1142,6 +1186,55 @@ class StoryStore:
             changed = True
         if changed:
             save_ledger(ledger_path, ledger)
+
+    def _clue_chapter_of(self, rows: list[dict[str, Any]]) -> int | None:
+        """本笔提交里可登记线索的章号：主线、非撤销、有真正文的那一章。"""
+        if self.workspace is None:
+            return None
+        for row in rows:
+            if str(row.get("variant_id") or MAIN_VARIANT_ID) != MAIN_VARIANT_ID:
+                continue
+            chapter = chapter_number_of(str(row["path"]))
+            if chapter is None:
+                continue
+            if row["after"] == "absent" or not _has_real_prose(str(row.get("text", ""))):
+                continue
+            return chapter
+        return None
+
+    def _apply_clues(
+        self,
+        rows: list[dict[str, Any]],
+        clues: dict[str, object] | None,
+        revision: str | None,
+    ) -> None:
+        """线索文件随事务维护（v1.3 P0 契约）。
+
+        与台账同一规则：撤销（``after == "absent"``）或章节退回骨架时撤除该章
+        线索文件——锚指向的正文都没了，登记不能假装还在。带登记的提交按章
+        覆盖落盘（幂等）。恢复路径重放同一调用。空响与非法状态已在提交门
+        （``validate_commit``）拦截，这里只做落盘与撤除；写失败按 ``OSError``
+        上抛，与正文写入同一失败语义：保留 pending，恢复时补完。
+        """
+        if self.workspace is None or not rows:
+            return
+        target: int | None = None
+        entries: list[ClueEntry] = []
+        if clues is not None:
+            target = cast(int, clues["chapter"])
+            entries = [ClueEntry.from_json(item) for item in cast("list[object]", clues["entries"])]
+        for row in rows:
+            if str(row.get("variant_id") or MAIN_VARIANT_ID) != MAIN_VARIANT_ID:
+                continue
+            chapter = chapter_number_of(str(row["path"]))
+            if chapter is None:
+                continue
+            path = clues_path(self.workspace.root, chapter)
+            if row["after"] == "absent" or not _has_real_prose(str(row.get("text", ""))):
+                path.unlink(missing_ok=True)
+                continue
+            if target == chapter and revision is not None and clues is not None:
+                write_chapter_clues(self.workspace.root, chapter, revision, entries)
 
     def _head_digest(self) -> str | None:
         try:

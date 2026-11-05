@@ -265,3 +265,10 @@ P0 动手前先做了不接事务层的纯模块验证（`workspace/chapter_clue
 2. **空响拦截的时机**（已补入 §4）：拦截点必须在提交事务写入**之前**（提交门 `validate_commit` 对照此前各章聚合视图），事后聚合检测只能兜底——矛盾数据先落盘再报告，权威文件已被污染，不构成「拦截提交」。
 
 切片刻意不接入 `story_store` 事务层；接入（`_persist_locked`/`_recover_locked` 随章落盘与幂等重放、提交工具 `updates` 通道）属 P0 正式范围。
+
+### P0 已实施（2026-11-05）
+
+- **事务层**（`story_store.py`）：`commit_change` 新增 `clue_entries` 参数；提交前过提交门（schema 校验 + 空响拦截，`CLUE_COMMIT_WITHOUT_PROSE` 拒绝骨架提交带登记）；线索载荷随 pending/decision 两阶段持久化（含 `clues_digest`），`_apply_clues` 在 `_update_ledger` 之后落盘；恢复路径重放同一调用（幂等覆盖）。撤销与退回骨架时撤除该章线索文件，与台账回退同规则。
+- **保存通道**（`chapter_writing.py`）：`save_chapter_prose` 新增 `clue_entries` 参数，随同一笔章提交透传；收据 result 带 `clue_chapter` / `clue_entries`。
+- **测试**：`test_chapter_clue_transactions.py` 9 例——登记落盘、骨架带登记拒绝、非法状态整笔不落盘、空响拦截、跨章归并、撤销撤除、退回骨架撤除、不带登记重存保留文件、崩溃恢复重放补完。全量回归见提交说明。
+- **刻意不做**（后续阶段）：模型工具 `updates` 通道与提示词（P2）、聚合注入（P2）、伏笔账投影（P3）。当前模型侧尚无提交入口，登记走 `save_chapter_prose` 的 API 参数。

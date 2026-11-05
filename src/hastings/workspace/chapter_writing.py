@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
+from hastings.workspace.chapter_clues import ClueEntry
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, normalize_newlines
 from hastings.workspace.revision_store import RevisionStore, record_change_revision
@@ -56,11 +57,13 @@ def save_chapter_prose(
     draft_revision: str = "",
     source: str = "author",
     candidate_ref: str = "",
+    clue_entries: list[ClueEntry] | None = None,
 ) -> ProseSaveResult:
     """整章保存；只校验章节登记与正文摘要。
 
     ``source`` 区分作者亲手保存与采用模型候选：修订记录据此显示来源，学习范围
-    仍由作者后续的「让模型分析」决定。
+    仍由作者后续的「让模型分析」决定。``clue_entries`` 随同一笔提交登记本章线索
+    （v1.3）：必须锚定本章正文段落，空响与非法状态在提交门确定性拦截。
     """
     variant = store.require_variant(MAIN_VARIANT_ID)
     if variant.format_version != FORMAT_VERSION:
@@ -136,6 +139,7 @@ def save_chapter_prose(
         kind="prose_save",
         result_extra=revision_extra,
         prepare_joint=prepare,
+        clue_entries=clue_entries,
     )
     revision = record_change_revision(
         store,
