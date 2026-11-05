@@ -1238,6 +1238,9 @@
   .chapter-margin-empty { display: flex; align-items: flex-start; gap: 6px; color: theme("colors.ui.secondaryText"); font-size: 12px; line-height: 1.55; }
   .chapter-margin-empty svg { margin-top: 2px; flex: none; }
   .chapter-margin-panel section + section { border-top: 1px solid theme("colors.ui.edge"); padding-top: 10px; }
+  .clue-dialog { width: min(680px, calc(100vw - 24px)); }
+  .clue-dialog .chapter-margin { gap: 14px; }
+  .clue-dialog .clue-book { border-top: 1px solid theme("colors.ui.edge"); padding-top: 14px; }
   .writing-load-error { padding: 20px; }
   @container (min-width: 980px) {
     .chapter-sheet-grid { grid-template-columns: minmax(0, 46em) minmax(190px, 220px); justify-content: center; }

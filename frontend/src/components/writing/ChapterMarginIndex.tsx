@@ -8,7 +8,13 @@
 
 import { FileText, LocateFixed } from "lucide-react";
 
-import type { ChapterInformationIndex, InformationOccurrence, InformationIndexItem } from "../../api/writing";
+import type {
+  ChapterCluesView,
+  ChapterInformationIndex,
+  InformationOccurrence,
+  InformationIndexItem,
+} from "../../api/writing";
+import { ChapterClues } from "../clues/CluePanel";
 import { Button } from "../ui/Button";
 
 const OCCURRENCE_LABEL: Record<string, string> = {
@@ -30,28 +36,32 @@ const ANALYSIS_LABEL: Record<string, string> = {
 
 export default function ChapterMarginIndex({
   index,
+  clues = null,
   activeItemId,
   onLocate,
   onConfirm,
   confirmingId,
   variant = "margin",
 }: {
-  index: ChapterInformationIndex;
+  index: ChapterInformationIndex | null;
+  /** 本章线索登记（v1.3 P4）；与信息索引同panel展示，只读。 */
+  clues?: ChapterCluesView | null;
   activeItemId?: string | null;
   onLocate: (item: InformationIndexItem, occurrence: InformationOccurrence) => void;
   onConfirm?: (item: InformationIndexItem) => void;
   confirmingId?: string | null;
   variant?: "margin" | "panel";
 }) {
-  const written = index.items.filter(item => item.placement === "written");
-  const candidates = index.items.filter(item => item.placement === "observed_candidate");
-  const alignment = index.items.filter(item => item.placement === "alignment");
-  const analysisNote = ANALYSIS_LABEL[index.analysis.state];
+  const written = (index?.items ?? []).filter(item => item.placement === "written");
+  const candidates = (index?.items ?? []).filter(item => item.placement === "observed_candidate");
+  const alignment = (index?.items ?? []).filter(item => item.placement === "alignment");
+  const analysisNote = index ? ANALYSIS_LABEL[index.analysis.state] : null;
   return <aside className={`chapter-margin ${variant === "panel" ? "chapter-margin-panel" : ""}`} aria-label="本章信息">
     <header className="chapter-margin-header">
       <h2>本章信息</h2>
       {analysisNote && <p>{analysisNote}</p>}
     </header>
+    {clues && <ChapterClues clues={clues} />}
     {written.length > 0 && <section>
       <h3>已经写入</h3>
       <ul>
@@ -100,7 +110,7 @@ export default function ChapterMarginIndex({
         </li>)}
       </ul>
     </section>}
-    {index.items.length === 0 && <p className="chapter-margin-empty">
+    {index && index.items.length === 0 && <p className="chapter-margin-empty">
       <FileText size={14} strokeWidth={1.8} aria-hidden="true" />这一章还没有可核对的信息变化。
     </p>}
   </aside>;

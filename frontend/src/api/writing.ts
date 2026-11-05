@@ -85,11 +85,53 @@ export interface UnplannedProse {
   chapter_number: number | null;
 }
 
+export type ClueStatus = "planted" | "advanced" | "resolved" | "retired";
+export type ClueOrigin = "planned" | "emergent" | "migrated";
+
+/** 一条线索在只读面板里的样子（v1.3 P4）。 */
+export interface ClueEntryView {
+  id: string;
+  kind: string;
+  status: ClueStatus;
+  origin: ClueOrigin;
+  note: string | null;
+  anchor_prefix: string | null;
+  planted_in: number | null;
+  resolved_in: number | null;
+}
+
+export interface CluePlanView {
+  id: string;
+  note: string | null;
+  plant_chapter: number;
+  resolve_chapter: number | null;
+}
+
+export interface ClueFindingView {
+  code: string;
+  message: string;
+}
+
+export interface ChapterCluesView {
+  chapter: number;
+  entries: ClueEntryView[];
+  plans: CluePlanView[];
+  findings: ClueFindingView[];
+}
+
+export interface BookCluesView {
+  entries: ClueEntryView[];
+  plans: CluePlanView[];
+  findings: ClueFindingView[];
+}
+
 export interface WritingBookView {
   structure_exists: boolean;
   chapters: ChapterSummary[];
   information_threads: InformationThreadSummary[];
   unplanned_prose: UnplannedProse[];
+  /** 全书线索：聚合状态 + 结构层计划 + 对账发现项。 */
+  clues: BookCluesView;
 }
 
 export interface WritingProseView {
@@ -103,6 +145,8 @@ export interface ChapterView {
   plan: ChapterPlanView | null;
   prose: WritingProseView | null;
   index: ChapterInformationIndex | null;
+  /** 本章线索登记与发现项；未挂章节的正文为 null。 */
+  clues: ChapterCluesView | null;
 }
 
 export interface ModelSupportView {

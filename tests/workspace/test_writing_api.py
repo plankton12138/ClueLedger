@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.chapter_clues import ClueEntry, anchor_paragraph, write_chapter_clues
 from hastings.workspace.state import RecentWorkspaces
 
 from .chapter_seed import seed_chapter
@@ -213,3 +214,45 @@ def test_author_adopt_route_is_removed(client: TestClient, tmp_path: Path) -> No
     book = client.get(f"{base}/workbench").json()["book"]
     assert book["chapters"] == []
     assert [row["path"] for row in book["unplanned_prose"]] == ["正文/0001 手稿.md"]
+
+
+def test_workbench_exposes_clue_registry(client: TestClient, tmp_path: Path) -> None:
+    """v1.3 P4：全书与本章的线索面板数据随工作台一次返回。"""
+    workspace_id, root = open_workspace(client, tmp_path)
+    base = f"/api/file-workspaces/{workspace_id}/story"
+    created = seed_chapter(
+        tmp_path / "state", workspace_id, root, title="第一章", request_key="chapter:1"
+    )
+    prose_text = (root / created["path"]).read_text(encoding="utf-8")
+    write_chapter_clues(
+        root,
+        1,
+        "r1",
+        [
+            ClueEntry(
+                id="CL-01",
+                kind="伏笔",
+                status="planted",
+                origin="planned",
+                note="箱扣缺漆",
+                anchor=anchor_paragraph(prose_text.splitlines()[0], "r1"),
+            )
+        ],
+    )
+
+    book = client.get(f"{base}/workbench").json()["book"]
+    assert [entry["id"] for entry in book["clues"]["entries"]] == ["CL-01"]
+    assert book["clues"]["entries"][0]["status"] == "planted"
+    assert book["clues"]["entries"][0]["planted_in"] == 1
+
+    chapter = client.get(f"{base}/workbench", params={"chapter_id": created["chapter_id"]}).json()[
+        "chapter"
+    ]
+    assert [entry["id"] for entry in chapter["clues"]["entries"]] == ["CL-01"]
+    assert chapter["clues"]["findings"] == []
+
+
+def test_workbench_clue_panel_is_empty_without_registry(client: TestClient, tmp_path: Path) -> None:
+    workspace_id, _ = open_workspace(client, tmp_path)
+    book = client.get(f"/api/file-workspaces/{workspace_id}/story/workbench").json()["book"]
+    assert book["clues"] == {"entries": [], "plans": [], "findings": []}
