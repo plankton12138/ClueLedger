@@ -168,6 +168,75 @@ def test_update_uses_workspace_revision_and_keeps_library_head(tmp_path: Path) -
     _ = raw
 
 
+def test_update_applies_all_edits_for_the_same_entry_in_order(tmp_path: Path) -> None:
+    library, workspace, service = _setup(tmp_path)
+    module_id, base_revision_id, binding_id = _bound_module(library, workspace)
+    _raw, digest = library.storage.read_entry(module_id, base_revision_id, "lin")
+
+    prepared = service.prepare(
+        turn_id="turn-multi",
+        operations=(
+            ChangeOperation(
+                "lin-update",
+                "update",
+                binding_id=binding_id,
+                module_id=module_id,
+                base_revision=base_revision_id,
+                edits=(
+                    ChangeEdit("lin", base_digest=digest, find="法医，", replace="检察官，"),
+                    ChangeEdit("lin", base_digest=digest, find="旧识。旧识。", replace="旧识。"),
+                    ChangeEdit(
+                        "lin",
+                        base_digest=digest,
+                        find="检察官，旧识。",
+                        replace="检察官与旧识。",
+                    ),
+                ),
+            ),
+        ),
+        base_digest=AssemblyStore(workspace.root).digest(),
+    )
+    result = service.apply(
+        change_set_id=str(prepared["change_set_id"]),
+        turn_id="turn-multi",
+        expected_digest=AssemblyStore(workspace.root).digest(),
+    )
+
+    assert result["applied"] is True
+    binding = AssemblyStore(workspace.root).read().binding(binding_id)
+    assert binding is not None
+    updated, _ = library.storage.read_entry(module_id, binding.module.revision_id, "lin")
+    assert updated.endswith("检察官与旧识。")
+    assert "旧识。旧识。" not in updated
+
+
+def test_update_rejects_a_rewrite_mixed_with_other_edits(tmp_path: Path) -> None:
+    library, workspace, service = _setup(tmp_path)
+    module_id, base_revision_id, binding_id = _bound_module(library, workspace)
+    _raw, digest = library.storage.read_entry(module_id, base_revision_id, "lin")
+
+    with pytest.raises(WorkspaceError) as caught:
+        service.prepare(
+            turn_id="turn-rewrite-mixed",
+            operations=(
+                ChangeOperation(
+                    "lin-update",
+                    "update",
+                    binding_id=binding_id,
+                    module_id=module_id,
+                    base_revision=base_revision_id,
+                    edits=(
+                        ChangeEdit("lin", base_digest=digest, body="全新小传。"),
+                        ChangeEdit("lin", base_digest=digest, find="法医，", replace="医生，"),
+                    ),
+                ),
+            ),
+            base_digest=AssemblyStore(workspace.root).digest(),
+        )
+
+    assert caught.value.code == "MODULE_CHANGE_TARGET_INVALID"
+
+
 def test_update_rejects_a_non_unique_find(tmp_path: Path) -> None:
     library, workspace, service = _setup(tmp_path)
     module_id, base_revision_id, binding_id = _bound_module(library, workspace)

@@ -632,11 +632,10 @@ class ModuleChangeService:
         base_revision = str(operation.get("base_revision") or "")
         module = self.library.module(module_id)
         catalog = self.library.revision(module_id=module_id, revision_id=base_revision)
-        edits = {
-            str(item.get("entry_id") or ""): item
-            for item in operation.get("edits") or []
-            if isinstance(item, dict)
-        }
+        edits: dict[str, list[Mapping[str, Any]]] = {}
+        for item in operation.get("edits") or []:
+            if isinstance(item, dict):
+                edits.setdefault(str(item.get("entry_id") or ""), []).append(item)
         if not edits:
             raise WorkspaceError(
                 code="MODULE_CHANGE_TARGET_INVALID",
@@ -649,9 +648,8 @@ class ModuleChangeService:
         for entry in catalog.entries:
             raw, digest = self.library.storage.read_entry(module_id, base_revision, entry.entry_id)
             draft = parse_entry(raw, module_kind=module.kind)
-            change = edits.pop(entry.entry_id, None)
-            drafts.append(
-                _edited_draft(
+            for change in edits.pop(entry.entry_id, []):
+                draft = _edited_draft(
                     draft,
                     change,
                     current_digest=digest,
@@ -661,9 +659,7 @@ class ModuleChangeService:
                     revision_id=base_revision,
                     operation_id=str(operation.get("operation_id") or ""),
                 )
-                if change is not None
-                else draft
-            )
+            drafts.append(draft)
         if edits:
             raise WorkspaceError(
                 code="MODULE_CHANGE_TARGET_INVALID",
@@ -817,8 +813,19 @@ def _checked_operations(operations: Sequence[ChangeOperation]) -> tuple[ChangeOp
                 fix="先读取作品模块，再按实际绑定与版本登记",
                 details={"operation_id": operation_id},
             )
+        grouped: dict[str, list[ChangeEdit]] = {}
         for edit in operation.edits:
             _checked_edit(edit, operation_id=operation_id)
+            grouped.setdefault(edit.entry_id, []).append(edit)
+        for entry_id, group in grouped.items():
+            if len(group) > 1 and any(edit.body is not None for edit in group):
+                raise WorkspaceError(
+                    code="MODULE_CHANGE_TARGET_INVALID",
+                    where=f"changes.prepare:{operation_id}",
+                    why=f"条目 {entry_id} 的整份重写不能与其他修改同时提交",
+                    fix="整份重写单独作为一条 edit；局部改写可以多条依次提交",
+                    details={"entry_id": entry_id},
+                )
         checked.append(
             ChangeOperation(
                 operation_id=operation_id,
