@@ -1,0 +1,57 @@
+{
+  "model": "deepseek-flash",
+  "budget_rmb": 0.8,
+  "usage": {
+    "calls": 2,
+    "input": 947,
+    "output": 9616,
+    "cache_read": 256,
+    "cache_write": 0,
+    "reasoning": 6181,
+    "cost_rmb": 0.0789
+  },
+  "cases": [
+    {
+      "key": "resolve_ch3",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 604,
+        "output": 5558,
+        "cache_read": 128,
+        "reasoning": 3633,
+        "cost_rmb": 0.0457
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    },
+    {
+      "key": "no_clue_ch1",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 343,
+        "output": 4058,
+        "cache_read": 128,
+        "reasoning": 2548,
+        "cost_rmb": 0.0332
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    }
+  ]
+}

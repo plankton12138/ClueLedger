@@ -30,10 +30,27 @@ _FULL = (
 
 
 def test_template_version_is_registered() -> None:
-    assert SELF_CHECK_TEMPLATE_VERSION == 2
+    assert SELF_CHECK_TEMPLATE_VERSION == 3
     system = prose_draft_system_prompt()
     assert "核对目标章与正文台账" in system
     assert "### 自查" in system
+
+
+def test_checklist_layer_does_not_invite_missing_module_report() -> None:
+    """空必发生清单不许引导模型报「模块缺失、建议补骨架」（真模型探针实测）。"""
+    user = prose_draft_user_prompt(
+        structure_text="",
+        ledger_text="",
+        moves="",
+        prose="",
+        quote="",
+        note="",
+        continue_mode=False,
+    )
+
+    assert "本章无必发生项" in user
+    assert "不要建议补骨架" in user
+    assert "建议补骨架或模块" not in user
 
 
 def test_prose_prompt_injects_layers_and_reconcile() -> None:

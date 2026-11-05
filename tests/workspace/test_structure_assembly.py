@@ -244,8 +244,12 @@ def _clue_state(
     )
 
 
-def test_clue_context_section_empty_inputs_is_empty_text() -> None:
-    assert clue_context_section([], [], 3) == ""
+def test_clue_context_section_empty_inputs_says_none_not_failure() -> None:
+    text = clue_context_section([], [], 3)
+    assert "### 线索清单" in text
+    assert "本章没有要办的线索" in text
+    assert "不是登记失败" in text
+    assert "【未回收线索】" not in text
 
 
 def test_clue_context_section_lists_open_clues_with_plan_resolution() -> None:
@@ -286,3 +290,31 @@ def test_clue_context_section_lists_orphaned_anchors() -> None:
 def test_clue_context_section_reports_truncation() -> None:
     text = clue_context_section([_clue_state("CL-01")], [], 3, open_total=4)
     assert "另有 3 条未回收线索未列出" in text
+
+
+def test_clue_context_section_dedupes_orphan_into_open_row() -> None:
+    states = [_clue_state("CL-04", planted_in=2)]
+    findings = [
+        ClueFinding(
+            code="CLUE_ORPHANED_ANCHOR",
+            message="第 2 章 CL-04 锚失联，前缀「背面一行小字」，请重新锚定或声明 retired",
+            clue_id="CL-04",
+        )
+    ]
+
+    text = clue_context_section(states, [], 3, findings)
+
+    assert text.count("CL-04") == 1
+    assert "锚失联，先重锚再用" in text
+    assert "【失联待重锚】" not in text
+
+
+def test_clue_context_section_merges_chapter_resolution_into_open_row() -> None:
+    states = [_clue_state("CL-03", planted_in=1)]
+    plans = [CluePlan(id="CL-03", plant_chapter=1, resolve_chapter=3)]
+
+    text = clue_context_section(states, plans, 3)
+
+    assert text.count("CL-03") == 1
+    assert "计划本章收" in text
+    assert "【本章计划】" not in text

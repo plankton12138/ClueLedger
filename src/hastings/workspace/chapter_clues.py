@@ -143,6 +143,7 @@ def anchor_findings(
                             f"第 {chapter} 章 {entry.id} 是迁移条目，尚未重锚"
                             f"（{entry.note or '无说明'}），请对照正文补一个段落锚"
                         ),
+                        clue_id=entry.id,
                     )
                 )
             continue
@@ -155,6 +156,7 @@ def anchor_findings(
                     f"第 {chapter} 章 {entry.id} 锚失联，"
                     f"前缀「{anchor.para_prefix}」，请重新锚定或声明 retired"
                 ),
+                clue_id=entry.id,
             )
         )
     return findings
@@ -547,6 +549,7 @@ def missed_plans(
                     f"计划线索 {plan.id} 声明本章{'与'.join(missing)}，"
                     "但本章登记没有对应条目" + (f"（{plan.note}）" if plan.note else "")
                 ),
+                clue_id=plan.id,
             )
         )
     return findings
@@ -554,10 +557,15 @@ def missed_plans(
 
 @dataclass
 class ClueFinding:
-    """对账发现项：code + 可读说明，全部确定性推导。"""
+    """对账发现项：code + 可读说明，全部确定性推导。
+
+    ``clue_id`` 供按编号归并（提示词去重、界面后续跳锚）：随手写的说明文字
+    里编号是自由文本，别让下游再去正则抠。
+    """
 
     code: str
     message: str
+    clue_id: str | None = None
 
 
 @dataclass
@@ -641,6 +649,7 @@ def aggregate_clues(
                                 f"第 {chapter} 章 {entry.id} 声称回收第 {ref.planted_in} 章"
                                 f"埋的 {ref.clue_id}，但聚合视图里没有匹配的埋设记录（空响）"
                             ),
+                            clue_id=entry.id,
                         )
                     )
             chapter_text = prose.get(chapter)
@@ -658,6 +667,7 @@ def aggregate_clues(
                         f"计划线索 {plan.id} 声明第 {plan.plant_chapter} 章埋设，"
                         f"已写到第 {written} 章仍无 planted 记录（哑火）"
                     ),
+                    clue_id=plan.id,
                 )
             )
         if (
@@ -672,6 +682,7 @@ def aggregate_clues(
                         f"计划线索 {plan.id} 声明第 {plan.resolve_chapter} 章回收，"
                         f"已写到第 {written} 章仍未收（悬枪）"
                     ),
+                    clue_id=plan.id,
                 )
             )
     return ClueAggregate(states=states, findings=tuple(findings))

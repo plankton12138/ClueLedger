@@ -166,7 +166,7 @@ SAMPLES: tuple[Sample, ...] = (
     Sample(
         key="resolve_ch3",
         title="第 3 章回收已埋线索",
-        note="CL-01 在第 1 章埋、第 3 章收；检查「未回收 + 计划本章回收」注入，"
+        note="CL-01 在第 1 章埋、第 3 章收；检查「未回收 + 本章收」合并成一行的注入，"
         "以及模型是否写出回收动作。",
         structure=_structure("CL-01 箱扣缺漆：第1章埋、第3章收", "CL-02 湿手套：第2章埋、第4章收"),
         chapters=(
@@ -185,7 +185,7 @@ SAMPLES: tuple[Sample, ...] = (
             SeedChapter(title="账本"),
         ),
         target_index=2,
-        expect_prompt=("【未回收线索】", "CL-01", "计划本章回收", "第 1 章埋"),
+        expect_prompt=("【未回收线索】", "CL-01", "计划本章收", "第 1 章埋"),
         forbid_prompt=("【失联待重锚】",),
         expect_prose=(("箱扣", "搭扣", "铜扣"),),
         expect_clue_mentions=("CL-01",),
@@ -230,7 +230,7 @@ SAMPLES: tuple[Sample, ...] = (
             SeedChapter(title="空房"),
         ),
         target_index=3,
-        expect_prompt=("【未回收线索】", "CL-02", "CL-03", "计划本章回收"),
+        expect_prompt=("【未回收线索】", "CL-02", "CL-03", "计划本章收"),
         forbid_prompt=("CL-01（",),
         expect_prose=(("手套",),),
         expect_clue_mentions=("CL-02",),
@@ -279,7 +279,7 @@ SAMPLES: tuple[Sample, ...] = (
         target_index=4,
         expect_prompt=(
             "CLUE_ORPHANED_ANCHOR",
-            "【失联待重锚】",
+            "锚失联，先重锚再用",
             "CLUE_NOT_PLANTED",
             "CL-03",
             "CL-07",
