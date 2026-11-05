@@ -1,0 +1,381 @@
+"""章级线索登记最小切片（v1.3 P0/P1）的单元测试。"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from hastings.workspace.chapter_clues import (
+    ClueEntry,
+    CluePlan,
+    ResolvesRef,
+    aggregate_clues,
+    anchor_paragraph,
+    clues_path,
+    para_hash,
+    paragraphs,
+    read_chapter_clues,
+    resolve_anchor,
+    validate_commit,
+    validate_entries,
+    write_chapter_clues,
+)
+from hastings.workspace.errors import WorkspaceError
+
+CH1_TEXT = "老魏把箱子放在桌上。\n箱扣上的漆掉了一块，露出底下的铁色。\n他没再说话。"
+
+
+def _planted(id_: str = "CL-01", note: str | None = "箱扣缺漆，来历未明") -> ClueEntry:
+    return ClueEntry(
+        id=id_,
+        kind="伏笔",
+        status="planted",
+        origin="planned",
+        note=note,
+        anchor=anchor_paragraph("箱扣上的漆掉了一块，露出底下的铁色。", "r1"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 锚定
+
+
+def test_para_hash_ignores_surrounding_whitespace() -> None:
+    assert para_hash("  箱扣上的漆掉了一块。 ") == para_hash("箱扣上的漆掉了一块。")
+
+
+def test_paragraphs_splits_lines_and_drops_blank() -> None:
+    assert paragraphs(CH1_TEXT) == [
+        "老魏把箱子放在桌上。",
+        "箱扣上的漆掉了一块，露出底下的铁色。",
+        "他没再说话。",
+    ]
+
+
+def test_anchor_resolves_against_prose() -> None:
+    anchor = anchor_paragraph("箱扣上的漆掉了一块，露出底下的铁色。", "r1")
+    assert resolve_anchor(anchor, CH1_TEXT)
+
+
+def test_anchor_breaks_when_paragraph_rewritten() -> None:
+    anchor = anchor_paragraph("箱扣上的漆掉了一块，露出底下的铁色。", "r1")
+    rewritten = CH1_TEXT.replace("露出底下的铁色", "露出斑驳的锈迹")
+    assert not resolve_anchor(anchor, rewritten)
+
+
+# ---------------------------------------------------------------------------
+# 写入校验（早失败）
+
+
+def test_valid_entries_pass() -> None:
+    validate_entries([_planted()], chapter=1)
+
+
+def test_planted_requires_anchor() -> None:
+    entry = ClueEntry(id="CL-01", kind="伏笔", status="planted", origin="planned")
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([entry], chapter=1)
+    assert excinfo.value.code == "CLUE_ANCHOR_REQUIRED"
+
+
+def test_retired_requires_note() -> None:
+    entry = ClueEntry(
+        id="CL-02",
+        kind="信息",
+        status="retired",
+        origin="planned",
+        anchor=anchor_paragraph("他没再说话。", "r1"),
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([entry], chapter=1)
+    assert excinfo.value.code == "CLUE_RETIRED_NOTE_REQUIRED"
+
+
+def test_emergent_requires_note() -> None:
+    entry = ClueEntry(
+        id="EM-1-1",
+        kind="物件",
+        status="planted",
+        origin="emergent",
+        anchor=anchor_paragraph("老魏把箱子放在桌上。", "r1"),
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([entry], chapter=1)
+    assert excinfo.value.code == "CLUE_EMERGENT_NOTE_REQUIRED"
+
+
+def test_duplicate_id_rejected() -> None:
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([_planted(), _planted()], chapter=1)
+    assert excinfo.value.code == "CLUE_DUPLICATE_ID"
+
+
+def test_resolved_requires_resolves() -> None:
+    entry = ClueEntry(id="CL-01", kind="伏笔", status="resolved", origin="planned")
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([entry], chapter=2)
+    assert excinfo.value.code == "CLUE_RESOLVES_REQUIRED"
+
+
+def test_self_resolution_rejected() -> None:
+    entry = ClueEntry(
+        id="CL-01",
+        kind="伏笔",
+        status="resolved",
+        origin="planned",
+        resolves=ResolvesRef(clue_id="CL-01", planted_in=1),
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([entry], chapter=1)
+    assert excinfo.value.code == "CLUE_SELF_RESOLUTION"
+
+
+def test_resolution_ahead_of_chapter_rejected() -> None:
+    entry = ClueEntry(
+        id="CL-09",
+        kind="伏笔",
+        status="resolved",
+        origin="planned",
+        resolves=ResolvesRef(clue_id="CL-01", planted_in=3),
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([entry], chapter=2)
+    assert excinfo.value.code == "CLUE_RESOLUTION_AHEAD"
+
+
+def test_same_chapter_resolution_requires_local_planted() -> None:
+    resolve_entry = ClueEntry(
+        id="CL-01",
+        kind="伏笔",
+        status="resolved",
+        origin="planned",
+        resolves=ResolvesRef(
+            clue_id="CL-01",
+            planted_in=1,
+            anchor=anchor_paragraph("箱扣上的漆掉了一块，露出底下的铁色。", "r1"),
+        ),
+    )
+    # 同章自埋自收（同一条目指向自己本章埋设）→ 拒绝
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([resolve_entry], chapter=1)
+    assert excinfo.value.code == "CLUE_SELF_RESOLUTION"
+    # 同章回收他条线索但缺 planted 条目 → 空响
+    stray = ClueEntry(
+        id="CL-77",
+        kind="悬念",
+        status="resolved",
+        origin="planned",
+        resolves=ResolvesRef(clue_id="CL-01", planted_in=1),
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_entries([stray], chapter=1)
+    assert excinfo.value.code == "CLUE_ORPHAN_RESOLUTION"
+    # 同章文件内既有 planted 又有 resolved（两个条目）→ 合法
+    planted = _planted()
+    resolved = ClueEntry(
+        id="CL-01-收",
+        kind="伏笔",
+        status="resolved",
+        origin="planned",
+        resolves=ResolvesRef(clue_id="CL-01", planted_in=1),
+    )
+    validate_entries([planted, resolved], chapter=1)
+
+
+# ---------------------------------------------------------------------------
+# 落盘与读取
+
+
+def test_write_and_read_roundtrip(tmp_path) -> None:
+    write_chapter_clues(tmp_path, 1, "r1", [_planted()])
+    document = read_chapter_clues(tmp_path, 1)
+    assert document is not None
+    assert document.revision == "r1"
+    assert document.entries[0].id == "CL-01"
+    assert document.entries[0].anchor is not None
+    assert resolve_anchor(document.entries[0].anchor, CH1_TEXT)
+
+
+def test_missing_file_reads_as_none(tmp_path) -> None:
+    assert read_chapter_clues(tmp_path, 3) is None
+
+
+def test_corrupt_file_raises_with_code(tmp_path) -> None:
+    path = clues_path(tmp_path, 1)
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(WorkspaceError) as excinfo:
+        read_chapter_clues(tmp_path, 1)
+    assert excinfo.value.code == "CLUE_FILE_CORRUPT"
+
+
+def test_write_rejects_invalid_entries(tmp_path) -> None:
+    entry = ClueEntry(id="CL-01", kind="伏笔", status="planted", origin="planned")
+    with pytest.raises(WorkspaceError) as excinfo:
+        write_chapter_clues(tmp_path, 1, "r1", [entry])
+    assert excinfo.value.code == "CLUE_ANCHOR_REQUIRED"
+    assert not clues_path(tmp_path, 1).exists()
+
+
+def test_file_is_machine_readable_json(tmp_path) -> None:
+    write_chapter_clues(tmp_path, 1, "r1", [_planted()])
+    raw = json.loads(clues_path(tmp_path, 1).read_text(encoding="utf-8"))
+    assert raw["schema"] == 1
+    assert raw["chapter"] == 1
+    assert raw["entries"][0]["anchor"]["para_prefix"].startswith("箱扣上的漆掉了一块")
+
+
+# ---------------------------------------------------------------------------
+# 聚合与对账
+
+
+def _retired_style_planted(id_: str, note: str) -> ClueEntry:
+    return ClueEntry(
+        id=id_,
+        kind="信息",
+        status="planted",
+        origin="planned",
+        note=note,
+        anchor=anchor_paragraph("他没再说话。", "r1"),
+    )
+
+
+def _write_ch1(tmp_path) -> None:
+    write_chapter_clues(
+        tmp_path, 1, "r1", [_planted(), _retired_style_planted("CL-04", "老周随身带怀表")]
+    )
+
+
+def _resolve_entry(id_: str, planted_in: int, note: str) -> ClueEntry:
+    return ClueEntry(
+        id=id_,
+        kind="伏笔",
+        status="resolved",
+        origin="planned",
+        note=note,
+        resolves=ResolvesRef(clue_id="CL-01", planted_in=planted_in),
+    )
+
+
+def test_cross_chapter_resolution_merges(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    write_chapter_clues(tmp_path, 5, "r5", [_resolve_entry("CL-01", 1, "老魏说出箱子来历")])
+    aggregate = aggregate_clues(tmp_path, [1, 5])
+    state = aggregate.states["CL-01"]
+    assert state.status == "resolved"
+    assert state.planted_in == 1
+    assert state.resolved_in == 5
+    assert not any(f.code == "CLUE_ORPHAN_RESOLUTION" for f in aggregate.findings)
+
+
+def test_orphan_resolution_reported(tmp_path) -> None:
+    write_chapter_clues(
+        tmp_path,
+        2,
+        "r2",
+        [_resolve_entry("CL-99", 1, "无中生有的回收")],
+    )
+    aggregate = aggregate_clues(tmp_path, [2])
+    assert any(f.code == "CLUE_ORPHAN_RESOLUTION" for f in aggregate.findings)
+
+
+def test_orphaned_anchor_detected_against_prose(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    rewritten = CH1_TEXT.replace("露出底下的铁色", "露出斑驳的锈迹")
+    aggregate = aggregate_clues(tmp_path, [1], prose_by_chapter={1: rewritten})
+    assert any(f.code == "CLUE_ORPHANED_ANCHOR" for f in aggregate.findings)
+    intact = aggregate_clues(tmp_path, [1], prose_by_chapter={1: CH1_TEXT})
+    assert not any(f.code == "CLUE_ORPHANED_ANCHOR" for f in intact.findings)
+
+
+def test_not_planted_and_unresolved_reported(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    plans = [
+        CluePlan(id="CL-01", plant_chapter=1, resolve_chapter=2),
+        CluePlan(id="CL-03", plant_chapter=2, resolve_chapter=5),
+        CluePlan(id="CL-04", plant_chapter=1, resolve_chapter=None),
+    ]
+    aggregate = aggregate_clues(tmp_path, [1, 2], plans=plans)
+    codes = {f.code for f in aggregate.findings}
+    assert "CLUE_NOT_PLANTED" in codes  # CL-03 哑火
+    assert "CLUE_UNRESOLVED" in codes  # CL-01 悬枪（计划第 2 章收）
+    # CL-04 只声明埋、未声明收，且已落实 → 不报
+    assert all("CL-04" not in f.message for f in aggregate.findings)
+
+
+def test_retired_stops_the_gun(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    write_chapter_clues(
+        tmp_path,
+        2,
+        "r2",
+        [
+            ClueEntry(
+                id="CL-01",
+                kind="伏笔",
+                status="retired",
+                origin="planned",
+                note="作者裁决：改为纯细节不收",
+            )
+        ],
+    )
+    aggregate = aggregate_clues(
+        tmp_path, [1, 2], plans=[CluePlan(id="CL-01", plant_chapter=1, resolve_chapter=3)]
+    )
+    assert aggregate.states["CL-01"].status == "retired"
+    assert not any(f.code == "CLUE_UNRESOLVED" for f in aggregate.findings)
+
+
+def test_missing_chapter_file_is_silent_in_aggregate(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    aggregate = aggregate_clues(tmp_path, [1, 2, 3])
+    assert set(aggregate.states) == {"CL-01", "CL-04"}
+    assert not aggregate.findings
+
+
+# ---------------------------------------------------------------------------
+# 提交门（空响拦截点）
+
+
+def test_commit_gate_blocks_orphan_resolution(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    stray = ClueEntry(
+        id="CL-99",
+        kind="悬念",
+        status="resolved",
+        origin="planned",
+        resolves=ResolvesRef(clue_id="CL-99", planted_in=1),
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_commit(tmp_path, 2, [stray])
+    assert excinfo.value.code == "CLUE_ORPHAN_RESOLUTION"
+
+
+def test_commit_gate_allows_cross_chapter_resolution(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    validate_commit(tmp_path, 5, [_resolve_entry("CL-01", 1, "老魏说出箱子来历")])
+
+
+def test_commit_gate_allows_same_chapter_pair(tmp_path) -> None:
+    validate_commit(
+        tmp_path,
+        1,
+        [
+            _planted(),
+            ClueEntry(
+                id="CL-01-收",
+                kind="伏笔",
+                status="resolved",
+                origin="planned",
+                resolves=ResolvesRef(clue_id="CL-01", planted_in=1),
+            ),
+        ],
+    )
+
+
+def test_commit_gate_checks_chapter_rules_first(tmp_path) -> None:
+    entry = ClueEntry(id="CL-01", kind="伏笔", status="planted", origin="planned")
+    with pytest.raises(WorkspaceError) as excinfo:
+        validate_commit(tmp_path, 1, [entry])
+    assert excinfo.value.code == "CLUE_ANCHOR_REQUIRED"
