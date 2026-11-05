@@ -1,0 +1,29 @@
+{
+  "key": "emergent_ch2",
+  "title": "第 2 章新埋计划外线索并按格式登记",
+  "note": "结构里没有计划线索；作者补充要求新写一只停摆的怀表。检查模型是否在「### 线索登记」里按 类型｜说明｜「短引」 提交、短引能否定位到正文段落。",
+  "status": "完成",
+  "error": null,
+  "seconds": 45.1,
+  "usage": {
+    "input": 677,
+    "output": 6444,
+    "cache_read": 0,
+    "reasoning": 5136,
+    "cost_rmb": 0.0529
+  },
+  "score": {
+    "prompt_missing": [],
+    "prompt_leaks": [],
+    "self_check_present": true,
+    "self_check_missing_layers": [],
+    "self_check_missing_terms": [],
+    "prose_missing_groups": [],
+    "clue_mentions_missing": [],
+    "proposal_count": 2,
+    "proposal_missing": 0,
+    "proposal_rejects": [],
+    "proposal_anchored": 2,
+    "proposal_unanchored": false
+  }
+}

@@ -23,6 +23,7 @@ from hastings.prompts.self_check import (
     split_self_check,
 )
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.clue_proposals import split_clue_proposals
 from hastings.workspace.creative_candidates import (
     CandidateBase,
     CreativeCandidate,
@@ -212,9 +213,14 @@ class CreativeAssistService:
             if final:
                 text = final
             # 写后自查（M5）：起草/续写候选必须带自查段，缺失按确定性失败归因。
+            # 计划外线索登记（P5）先切出去，免得登记行混进自查层的条目里。
             self_check: dict[str, object] | None = None
+            proposals: list[dict[str, object]] = []
+            proposal_rejects: list[str] = []
             if request.kind in {"prose_draft", "prose_continue"}:
-                block = split_self_check(text)
+                body, parsed, proposal_rejects = split_clue_proposals(text)
+                proposals = [proposal.to_json() for proposal in parsed]
+                block = split_self_check(body)
                 if not block.present:
                     error = self_check_error("creative-assist", block.missing_layers)
                     await asyncio.to_thread(
@@ -233,6 +239,8 @@ class CreativeAssistService:
                 text=text,
                 status="stale" if stale else "ready",
                 self_check=self_check,
+                clue_proposals=proposals,
+                clue_proposal_rejects=proposal_rejects,
             )
         except asyncio.CancelledError:
             await asyncio.to_thread(

@@ -147,6 +147,12 @@ class Sample:
     expect_self_check: tuple[str, ...] = ()
     #: 自查第 4 层应提到的线索编号（观察项）。
     expect_clue_mentions: tuple[str, ...] = ()
+    #: 作者补充指令（随请求下发）：用来稳定触发某个写作动作。
+    author_note: str = ""
+    #: 「### 线索登记」小节至少要解析出的条数（v1.3 P5，硬检查）。
+    expect_proposals: int = 0
+    #: 至少一条建议的短引能定位到正文段落（硬检查）。
+    expect_proposals_anchored: bool = False
     extra: dict[str, str] = field(default_factory=dict)
 
 
@@ -314,6 +320,22 @@ SAMPLES: tuple[Sample, ...] = (
         expect_prompt=("CLUE_NOT_PLANTED", "CL-07", "计划本章回收"),
         expect_self_check=("CL-07",),
         expect_clue_mentions=("CL-07",),
+    ),
+    Sample(
+        key="emergent_ch2",
+        title="第 2 章新埋计划外线索并按格式登记",
+        note="结构里没有计划线索；作者补充要求新写一只停摆的怀表。检查模型是否在"
+        "「### 线索登记」里按 类型｜说明｜「短引」 提交、短引能否定位到正文段落。",
+        structure=_structure(),
+        chapters=(SeedChapter(title="雨夜", text=_CH1), SeedChapter(title="走廊")),
+        target_index=1,
+        author_note=(
+            "本章让林远在抽屉底层发现一只停摆的怀表，表盖内侧刻着「三点十分」。"
+            "这只表是全新的细节，之前的章节没有出现过。"
+        ),
+        expect_proposals=1,
+        expect_proposals_anchored=True,
+        expect_prose=(("怀表", "表"),),
     ),
 )
 

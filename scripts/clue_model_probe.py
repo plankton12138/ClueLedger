@@ -47,6 +47,7 @@ from hastings.server.file_app import configured_provider_factory
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.chapter_clues import ClueEntry, ResolvesRef, anchor_paragraph
 from hastings.workspace.chapter_writing import save_chapter_prose
+from hastings.workspace.clue_proposals import locate_paragraph, split_clue_proposals
 from hastings.workspace.creative_assist import CreativeAssistInput, CreativeAssistService
 from hastings.workspace.creative_candidates import (
     CandidateBase,
@@ -266,6 +267,7 @@ def _request(setup: BookSetup) -> CreativeAssistInput:
             plan_revision=setup.target.plan_revision,
             prose_digest=setup.target.prose_digest,
         ),
+        author_note=setup.sample.author_note,
         request_key=f"{setup.sample.key}:draft",
     )
 
@@ -298,8 +300,11 @@ def _missing(text: str, needles: tuple[str, ...]) -> list[str]:
 
 
 def score(sample: Sample, prompt: str, output: str) -> dict[str, Any]:
-    block = split_self_check(output)
+    # 登记小节先切出去，免得条目行混进自查第 4 层（与产品解析同序）。
+    body, proposals, rejects = split_clue_proposals(output)
+    block = split_self_check(body)
     clue_text = "\n".join(block.clue_items)
+    anchored = sum(1 for item in proposals if locate_paragraph(item.quote, block.prose) is not None)
     prose_miss = [
         list(group)
         for group in sample.expect_prose
@@ -314,6 +319,13 @@ def score(sample: Sample, prompt: str, output: str) -> dict[str, Any]:
         "self_check_missing_terms": _missing(clue_text, sample.expect_self_check),
         "prose_missing_groups": prose_miss,
         "clue_mentions_missing": mentions,
+        "proposal_count": len(proposals),
+        "proposal_missing": max(0, sample.expect_proposals - len(proposals)),
+        "proposal_rejects": rejects,
+        "proposal_anchored": anchored,
+        "proposal_unanchored": bool(
+            sample.expect_proposals_anchored and proposals and not anchored
+        ),
     }
 
 
@@ -325,6 +337,8 @@ def verdict(row: dict[str, Any]) -> str:
         and not row["score"]["prompt_leaks"]
         and row["score"]["self_check_present"]
         and not row["score"]["self_check_missing_terms"]
+        and not row["score"].get("proposal_missing")
+        and not row["score"].get("proposal_unanchored")
     )
     soft = not row["score"]["prose_missing_groups"] and not row["score"]["clue_mentions_missing"]
     if not hard:

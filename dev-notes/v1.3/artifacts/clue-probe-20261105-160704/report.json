@@ -1,0 +1,41 @@
+{
+  "model": "deepseek-flash",
+  "budget_rmb": 0.5,
+  "usage": {
+    "calls": 1,
+    "input": 677,
+    "output": 6444,
+    "cache_read": 0,
+    "cache_write": 0,
+    "reasoning": 5136,
+    "cost_rmb": 0.0529
+  },
+  "cases": [
+    {
+      "key": "emergent_ch2",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 677,
+        "output": 6444,
+        "cache_read": 0,
+        "reasoning": 5136,
+        "cost_rmb": 0.0529
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": [],
+        "proposal_count": 2,
+        "proposal_missing": 0,
+        "proposal_rejects": [],
+        "proposal_anchored": 2,
+        "proposal_unanchored": false
+      }
+    }
+  ]
+}

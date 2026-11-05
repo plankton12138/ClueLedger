@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.chapter_clues import clues_path
 from hastings.workspace.creative_assist import CreativeAssistService
 from hastings.workspace.creative_candidates import (
     CandidateBase,
@@ -470,6 +472,72 @@ def test_prose_candidate_adoption_and_stale_rejection(
     )
     assert with_stale.status_code == 409, with_stale.text
     assert with_stale.json()["error"]["code"] == "ASSIST_TARGET_STALE"
+
+
+def test_candidate_registers_emergent_clues_on_adoption(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    """v1.3 P5：计划外线索随候选采用落进章登记，短引定位不到的不登记。"""
+    setup = _setup_chapter(client, tmp_path)
+    holder.text = (
+        "林砚走进旅馆，柜台上有一双湿手套。\n\n"
+        "老人摸出钥匙，铜牌上缺了一角。\n\n"
+        "### 自查\n"
+        "1. 必发生核对：湿手套出现——「柜台上有一双湿手套」。\n"
+        "2. 铁律自查：本章无违例。\n"
+        "3. 读者认知：误读立住；建议：手套特写再冷一拍。\n"
+        "4. 线索核对：本章无线索登记。\n"
+        "### 线索登记\n"
+        "- 伏笔｜铜牌缺角｜老人开抽屉时露出，先埋下｜「老人摸出钥匙，铜牌上缺了一角」\n"
+        "- 物件｜停摆的钟｜时间线可疑｜「钟面裂了一道缝」\n"
+    )
+    response = client.post(
+        f"/api/file-workspaces/{setup['workspace_id']}/creative-assists",
+        json={
+            "kind": "prose_draft",
+            "target": {
+                "kind": "prose",
+                "workspace_id": setup["workspace_id"],
+                "chapter_id": setup["chapter_id"],
+            },
+            "base": {
+                "plan_revision": setup["plan_revision"],
+                "prose_digest": setup["prose_digest"],
+            },
+            "request_key": "assist:clue-proposal",
+        },
+    )
+    assert response.status_code == 202, response.text
+    candidate_id = response.json()["candidate_id"]
+    ready = _wait_for(
+        client,
+        f"/api/file-workspaces/{setup['workspace_id']}/creative-assists/{candidate_id}",
+        lambda row: row["status"] == "ready",
+    )
+    assert [row["kind"] for row in ready["clue_proposals"]] == ["伏笔", "物件"]
+    # 登记小节不影响自查层：第 4 层仍是模型自己写的那一句。
+    assert ready["self_check"]["clue_items"] == ["本章无线索登记。"]
+
+    saved = client.put(
+        f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
+        json={
+            "text": ready["text"],
+            "expected_digest": setup["prose_digest"],
+            "draft_revision": "local_candidate",
+            "candidate_id": candidate_id,
+            "request_key": "save:clue-proposal",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert [row["id"] for row in body["clue_registered"]] == ["CL-01"]
+    assert "找不到" in body["clue_proposal_refusals"][0]["reason"]
+
+    document = json.loads(clues_path(setup["root"], 1).read_text(encoding="utf-8"))
+    assert document["entries"][0]["id"] == "CL-01"
+    assert document["entries"][0]["origin"] == "emergent"
+    assert document["entries"][0]["status"] == "planted"
+    assert document["entries"][0]["anchor"]["para_prefix"].startswith("老人摸出钥匙")
 
 
 def test_index_review_runs_on_demand(client: TestClient, tmp_path: Path, holder: _Holder) -> None:

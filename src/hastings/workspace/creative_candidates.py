@@ -93,6 +93,11 @@ class CreativeCandidate(BaseModel):
     updated_at: str
     #: 写后自查三层（v1.1 M5）：候选生成时解析；缺失按 SELF_CHECK_MISSING_CONFLICT 失败。
     self_check: dict[str, object] | None = None
+    #: 计划外线索登记建议（v1.3 P5）：解析自输出的「### 线索登记」小节，
+    #: 采用候选保存正文时由服务端定位段落、建锚、分配编号后落盘。
+    clue_proposals: list[dict[str, object]] = Field(default_factory=list)
+    #: 解析失败的登记行（原文 + 原因）：给作者核对，不静默丢弃。
+    clue_proposal_rejects: list[str] = Field(default_factory=list)
 
 
 class CreativeCandidateStore:
@@ -172,6 +177,8 @@ class CreativeCandidateStore:
         error: str | None = None,
         proposed_bindings: list[ProposedBinding] | None = None,
         self_check: dict[str, object] | None = None,
+        clue_proposals: list[dict[str, object]] | None = None,
+        clue_proposal_rejects: list[str] | None = None,
     ) -> CreativeCandidate:
         with locked(self.lock_file):
             current = self.read(candidate_id)
@@ -188,6 +195,10 @@ class CreativeCandidateStore:
                 updates["proposed_bindings"] = proposed_bindings
             if self_check is not None:
                 updates["self_check"] = self_check
+            if clue_proposals is not None:
+                updates["clue_proposals"] = clue_proposals
+            if clue_proposal_rejects is not None:
+                updates["clue_proposal_rejects"] = clue_proposal_rejects
             updated = current.model_copy(update=updates)
             self._write(updated)
             return updated

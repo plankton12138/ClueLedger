@@ -214,6 +214,13 @@ export interface ProposedBinding {
   quote: string;
 }
 
+/** 计划外线索的登记建议（v1.3 P5）：采用候选保存时由服务端定位段落并落盘。 */
+export interface ClueProposalView {
+  kind: string;
+  note: string;
+  quote: string;
+}
+
 export interface CreativeCandidate {
   candidate_id: string;
   workspace_id: string | null;
@@ -228,6 +235,10 @@ export interface CreativeCandidate {
   request_key: string;
   created_at: string;
   updated_at: string;
+  /** 计划外线索登记建议；没有新埋线索时为空。 */
+  clue_proposals?: ClueProposalView[];
+  /** 解析失败的登记行（原文 + 原因），供作者核对。 */
+  clue_proposal_rejects?: string[];
 }
 
 export interface AssistInput {

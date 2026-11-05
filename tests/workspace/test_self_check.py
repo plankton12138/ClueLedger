@@ -30,7 +30,7 @@ _FULL = (
 
 
 def test_template_version_is_registered() -> None:
-    assert SELF_CHECK_TEMPLATE_VERSION == 3
+    assert SELF_CHECK_TEMPLATE_VERSION == 4
     system = prose_draft_system_prompt()
     assert "核对目标章与正文台账" in system
     assert "### 自查" in system
@@ -51,6 +51,9 @@ def test_checklist_layer_does_not_invite_missing_module_report() -> None:
     assert "本章无必发生项" in user
     assert "不要建议补骨架" in user
     assert "建议补骨架或模块" not in user
+    # 计划外线索登记（P5）：固定小节与三段字段。
+    assert "### 线索登记" in user
+    assert "类型｜名称与为什么埋在这里｜「正文里的短引」" in user
 
 
 def test_prose_prompt_injects_layers_and_reconcile() -> None:
