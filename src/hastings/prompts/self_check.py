@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from hastings.workspace.errors import WorkspaceError
@@ -178,23 +179,44 @@ def split_self_check(text: str) -> SelfCheckBlock:
 
 
 def _items_under(lines: list[str], keyword: str) -> tuple[str, ...]:
-    """宽松解析某一层的条目：层头是含关键词的行，其后内容行都归这一层。
+    """宽松解析某一层的条目：层头是以关键词开头的行，其后内容行都归这一层。
 
-    自由格式下措辞不设死（序号、破折号、冒号变体都接受）；宽松匹配只影响
-    自查展示，不做对错判定。
+    自由格式下措辞不设死（序号、加粗、破折号、冒号变体都接受）；宽松匹配只
+    影响自查展示，不做对错判定。
     """
     layer_lines = _layer_lines(lines)
     return tuple(layer_lines.get(keyword, ()))
+
+
+#: 层头前的装饰：序号（1. / ①）、Markdown 标记（**、-、>）、空白与冒号。
+_HEAD_DECORATION = re.compile(r"^[\s#>*_\-–—\d０-９.、)）:：①-⑳]+")
+
+
+def _layer_head(line: str) -> str | None:
+    """判断一行是不是层头：去掉序号与 Markdown 装饰后，必须以层名开头。
+
+    真模型常用 ``**必发生核对**`` 这种加粗层头，也常在正文里写「读者」——
+    按「包含关键词」判定会让后者把条目抢到别的层（v1.3 真模型探针实测：
+    线索核对层的条目被含「读者」的句子截断）。层头只在行首识别。
+    """
+    cleaned = _HEAD_DECORATION.sub("", line)
+    for key in ("必发生", "铁律", "读者", "线索核对"):
+        if cleaned.startswith(key):
+            return key
+    return None
 
 
 def _layer_lines(lines: list[str]) -> dict[str, list[str]]:
     layers: dict[str, list[str]] = {"必发生": [], "铁律": [], "读者": [], "线索核对": []}
     current: str | None = None
     for line in lines:
-        matched = next((key for key in layers if key in line), None)
+        matched = _layer_head(line)
         if matched is not None:
             current = matched
-            rest = line.split(matched, 1)[1].strip("：:；; ，,")
+            rest = _HEAD_DECORATION.sub("", line)[len(matched) :]
+            if rest.startswith("核对"):
+                rest = rest[len("核对") :]
+            rest = rest.strip("：:；; ，,*#")
             if rest:
                 layers[current].append(rest)
             continue

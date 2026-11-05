@@ -1,0 +1,24 @@
+{
+  "key": "plant_ch1",
+  "title": "第 1 章埋设计划线索",
+  "note": "计划线索 CL-01 要求本章埋设；检查「本章计划」注入与模型是否把箱扣写进正文。",
+  "status": "完成",
+  "error": null,
+  "seconds": 17.7,
+  "usage": {
+    "input": 172,
+    "output": 2200,
+    "cache_read": 384,
+    "reasoning": 274,
+    "cost_rmb": 0.0181
+  },
+  "score": {
+    "prompt_missing": [],
+    "prompt_leaks": [],
+    "self_check_present": true,
+    "self_check_missing_layers": [],
+    "self_check_missing_terms": [],
+    "prose_missing_groups": [],
+    "clue_mentions_missing": []
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "key": "carry_ch4",
+  "title": "第 4 章带两条未回收线索推进",
+  "note": "已收的 CL-01 不应再占上下文；CL-02 本章计划回收，CL-03 仍未收，检查清单取舍。",
+  "status": "完成",
+  "error": null,
+  "seconds": 44.0,
+  "usage": {
+    "input": 641,
+    "output": 5631,
+    "cache_read": 128,
+    "reasoning": 3889,
+    "cost_rmb": 0.0464
+  },
+  "score": {
+    "prompt_missing": [],
+    "prompt_leaks": [],
+    "self_check_present": true,
+    "self_check_missing_layers": [],
+    "self_check_missing_terms": [],
+    "prose_missing_groups": [],
+    "clue_mentions_missing": []
+  }
+}

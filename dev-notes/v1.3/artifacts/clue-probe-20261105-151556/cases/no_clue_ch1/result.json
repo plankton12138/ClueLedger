@@ -1,0 +1,24 @@
+{
+  "key": "no_clue_ch1",
+  "title": "无线索作品不注入线索段",
+  "note": "结构里没有计划线索、目录里没有登记；检查提示词不出现线索清单，自查如实写「本周无线索」。",
+  "status": "完成",
+  "error": null,
+  "seconds": 41.4,
+  "usage": {
+    "input": 196,
+    "output": 5316,
+    "cache_read": 256,
+    "reasoning": 3376,
+    "cost_rmb": 0.04299999999999998
+  },
+  "score": {
+    "prompt_missing": [],
+    "prompt_leaks": [],
+    "self_check_present": true,
+    "self_check_missing_layers": [],
+    "self_check_missing_terms": [],
+    "prose_missing_groups": [],
+    "clue_mentions_missing": []
+  }
+}

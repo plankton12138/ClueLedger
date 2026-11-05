@@ -140,3 +140,38 @@ def test_block_rows_are_json_serializable() -> None:
     payload = json.dumps(split_self_check(_FULL).to_rows(), ensure_ascii=False)
     assert "present" in payload
     assert "clue_items" in payload
+
+
+def test_bold_layer_headers_are_parsed() -> None:
+    """真模型常用加粗层头：只认行首层名，不把 ``**`` 留成条目。"""
+    text = (
+        "正文。\n\n"
+        f"{SELF_CHECK_MARKER}\n\n"
+        "**必发生核对**\n- 铜哨出现。\n"
+        "**铁律自查**\n- 无违例。\n"
+        "**读者认知**\n- 误读立住。\n"
+        "**线索核对**\n- CL-01 已回收。\n"
+    )
+    block = split_self_check(text)
+    assert block.present is True
+    assert block.missing_layers == ()
+    assert block.checklist_items == ("- 铜哨出现。",)
+    assert block.clue_items == ("- CL-01 已回收。",)
+
+
+def test_layer_content_mentioning_another_layer_stays_put() -> None:
+    """层内正文提到「读者」不等于新层头：条目不能被截断。"""
+    text = (
+        "正文。\n\n"
+        f"{SELF_CHECK_MARKER}\n"
+        "1. 必发生核对：手套出现。\n"
+        "2. 铁律自查：无违例。\n"
+        "3. 读者认知：误读立住。\n"
+        "4. 线索核对：CL-02 已回收。\n"
+        "- 严格说，读者的推理仍需 CL-03 补实。\n"
+    )
+    block = split_self_check(text)
+    assert block.present is True
+    assert len(block.clue_items) == 2
+    assert "CL-02" in block.clue_items[0]
+    assert "CL-03" in block.clue_items[1]

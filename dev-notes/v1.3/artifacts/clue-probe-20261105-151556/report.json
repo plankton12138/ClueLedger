@@ -1,0 +1,141 @@
+{
+  "model": "deepseek-flash",
+  "budget_rmb": 2.5,
+  "usage": {
+    "calls": 6,
+    "input": 3053,
+    "output": 49661,
+    "cache_read": 1152,
+    "cache_write": 0,
+    "reasoning": 39139,
+    "cost_rmb": 0.404
+  },
+  "cases": [
+    {
+      "key": "plant_ch1",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 172,
+        "output": 2200,
+        "cache_read": 384,
+        "reasoning": 274,
+        "cost_rmb": 0.0181
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    },
+    {
+      "key": "resolve_ch3",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 609,
+        "output": 7503,
+        "cache_read": 128,
+        "reasoning": 5994,
+        "cost_rmb": 0.06129999999999999
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    },
+    {
+      "key": "carry_ch4",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 641,
+        "output": 5631,
+        "cache_read": 128,
+        "reasoning": 3889,
+        "cost_rmb": 0.0464
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    },
+    {
+      "key": "orphan_ch5",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 822,
+        "output": 8740,
+        "cache_read": 128,
+        "reasoning": 7240,
+        "cost_rmb": 0.07170000000000001
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    },
+    {
+      "key": "no_clue_ch1",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 196,
+        "output": 5316,
+        "cache_read": 256,
+        "reasoning": 3376,
+        "cost_rmb": 0.04299999999999998
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    },
+    {
+      "key": "dormant_ch4",
+      "status": "完成",
+      "error": null,
+      "usage": {
+        "input": 613,
+        "output": 20271,
+        "cache_read": 128,
+        "reasoning": 18366,
+        "cost_rmb": 0.16350000000000003
+      },
+      "score": {
+        "prompt_missing": [],
+        "prompt_leaks": [],
+        "self_check_present": true,
+        "self_check_missing_layers": [],
+        "self_check_missing_terms": [],
+        "prose_missing_groups": [],
+        "clue_mentions_missing": []
+      }
+    }
+  ]
+}

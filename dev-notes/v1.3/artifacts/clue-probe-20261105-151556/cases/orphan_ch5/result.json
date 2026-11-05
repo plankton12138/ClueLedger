@@ -1,0 +1,24 @@
+{
+  "key": "orphan_ch5",
+  "title": "第 5 章面对失联锚与哑火",
+  "note": "改稿删掉 CL-03 的锚段 + CL-07 计划埋在第 3 章却从未登记；检查「锚失联」与「哑火」两类发现项是否进提示词。",
+  "status": "完成",
+  "error": null,
+  "seconds": 61.2,
+  "usage": {
+    "input": 822,
+    "output": 8740,
+    "cache_read": 128,
+    "reasoning": 7240,
+    "cost_rmb": 0.07170000000000001
+  },
+  "score": {
+    "prompt_missing": [],
+    "prompt_leaks": [],
+    "self_check_present": true,
+    "self_check_missing_layers": [],
+    "self_check_missing_terms": [],
+    "prose_missing_groups": [],
+    "clue_mentions_missing": []
+  }
+}

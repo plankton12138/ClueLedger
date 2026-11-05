@@ -1,0 +1,24 @@
+{
+  "key": "dormant_ch4",
+  "title": "第 4 章回收一条从未埋设的线索",
+  "note": "CL-07 计划第 3 章埋、第 4 章收，但第 3 章没有任何登记；检查「哑火」是否提示模型。",
+  "status": "完成",
+  "error": null,
+  "seconds": 139.6,
+  "usage": {
+    "input": 613,
+    "output": 20271,
+    "cache_read": 128,
+    "reasoning": 18366,
+    "cost_rmb": 0.16350000000000003
+  },
+  "score": {
+    "prompt_missing": [],
+    "prompt_leaks": [],
+    "self_check_present": true,
+    "self_check_missing_layers": [],
+    "self_check_missing_terms": [],
+    "prose_missing_groups": [],
+    "clue_mentions_missing": []
+  }
+}
