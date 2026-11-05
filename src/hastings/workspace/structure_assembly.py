@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hastings.workspace.chapter_clues import ClueFinding, CluePlan, ClueState
 from hastings.workspace.prose_ledger import ProseLedger, ReconcileDecision
 from hastings.workspace.structure_document import split_iron_rules
 
@@ -25,8 +24,6 @@ __all__ = [
     "StructureSnapshot",
     "StructureLayers",
     "chapter_number_of",
-    "clue_context_section",
-    "clue_report_section",
     "ledger_section",
     "loose_keyword_check",
     "reconcile_note",
@@ -122,122 +119,6 @@ def reconcile_note(decision: ReconcileDecision | None) -> str:
     return ""
 
 
-def clue_report_section(findings: tuple[ClueFinding, ...] | list[ClueFinding]) -> str:
-    """线索对账报告注入文本（P1）：空报告返回空文本（分区按空跳过）。
-
-    只注入确定性发现项（哑火/悬枪/失联/空响/计划未落实），不在此处展开全部
-    线索清单——「未回收线索」清单属于起草注入（P2），两者职责不同：报告说
-    「哪里不对」，清单说「现在手上还压着什么」。
-    """
-    if not findings:
-        return ""
-    rows = "\n".join(f"- [{finding.code}] {finding.message}" for finding in findings)
-    return (
-        "### 线索对账（确定性推导，报告项不拦写作）\n"
-        f"{rows}\n\n"
-        "这些是系统从章级登记聚合出来的偏差：该埋的埋、该收的收，"
-        "别让它们继续悬着；确实是故意不收的，在对应章登记 retired 并写明理由。"
-    )
-
-
-#: 三块清单都空时的固定说法。不返回空文本：真模型探针里，模型把「没有这一段」
-#: 读成「登记模块缺失」，转而去建议作者补骨架——沉默会被当成故障。
-_EMPTY_CLUE_SECTION = (
-    "### 线索清单（系统事实，只读）\n"
-    "本章没有要办的线索：账上没有未回收条目，本章也没有埋设或回收计划。"
-    "清单为空就是确实没有，不是登记失败。"
-)
-
-
-def clue_context_section(
-    states: list[ClueState],
-    plans: list[CluePlan],
-    chapter: int,
-    findings: tuple[ClueFinding, ...] | list[ClueFinding] = (),
-    *,
-    open_total: int | None = None,
-) -> str:
-    """起草注入的三类线索清单（P2，P5 起按编号去重）：未回收、本章计划、失联待重锚。
-
-    只列这三类，已收/已退役的不占上下文——长篇越写注入越膨胀的问题在这里
-    就被掐住。同一个编号只落一处：本章要收的写进未回收行的括号，锚失联的在
-    行内标注，计划块与失联块只补未回收清单没覆盖到的条目（实测三处重复报同
-    一条 CL，白占预算还分散注意力）。三块都空时给明确的「没有」而不是空文本。
-    """
-    plan_by_id = {plan.id: plan for plan in plans}
-    orphan_by_id = {
-        finding.clue_id
-        for finding in findings
-        if finding.code == "CLUE_ORPHANED_ANCHOR" and finding.clue_id
-    }
-    blocks: list[str] = []
-    rendered: set[str] = set()
-    if states:
-        rows: list[str] = []
-        for state in states:
-            plan = plan_by_id.get(state.id)
-            bits = [state.kind, f"第 {state.planted_in} 章埋"]
-            if plan is not None and plan.resolve_chapter is not None:
-                if plan.resolve_chapter == chapter:
-                    bits.append("计划本章收")
-                else:
-                    bits.append(f"计划第 {plan.resolve_chapter} 章收")
-            elif state.status == "advanced":
-                bits.append("已推进，未收")
-            else:
-                bits.append("未收")
-            if state.id in orphan_by_id:
-                bits.append("锚失联，先重锚再用")
-            row = f"- {state.id}"
-            if state.note:
-                row += f" {state.note}"
-            row += f"（{'，'.join(bits)}）"
-            if state.anchor_prefix:
-                row += f"：「{state.anchor_prefix}…」"
-            rows.append(row)
-            rendered.add(state.id)
-        total = open_total if open_total is not None else len(states)
-        tail = ""
-        if total > len(states):
-            tail = f"\n（另有 {total - len(states)} 条未回收线索未列出，可在线索对账里查看）"
-        blocks.append("【未回收线索】\n" + "\n".join(rows) + tail)
-    chapter_plans = [
-        plan
-        for plan in plans
-        if (plan.plant_chapter == chapter or plan.resolve_chapter == chapter)
-        and plan.id not in rendered
-    ]
-    if chapter_plans:
-        rows = []
-        for plan in chapter_plans:
-            actions: list[str] = []
-            if plan.plant_chapter == chapter:
-                actions.append("计划本章埋设")
-            if plan.resolve_chapter == chapter:
-                actions.append("计划本章回收")
-            row = f"- {plan.id}（{'、'.join(actions)}）"
-            if plan.note:
-                row += f"：{plan.note}"
-            rows.append(row)
-        blocks.append("【本章计划】\n" + "\n".join(rows))
-    orphans = [
-        finding
-        for finding in findings
-        if finding.code == "CLUE_ORPHANED_ANCHOR"
-        and (finding.clue_id is None or finding.clue_id not in rendered)
-    ]
-    if orphans:
-        blocks.append("【失联待重锚】\n" + "\n".join(f"- {finding.message}" for finding in orphans))
-    if not blocks:
-        return _EMPTY_CLUE_SECTION
-    return (
-        "### 线索清单（系统事实，只读）\n"
-        + "\n".join(blocks)
-        + "\n\n写本章时该推进的推进、该收的收；新埋的线索要说得出埋在哪个段落，"
-        "别只写进正文却不登记。"
-    )
-
-
 def chapter_number_of(path: str) -> int | None:
     """从正文路径解析章号；非章节路径（设定、结构等）返回 ``None``。"""
     name = path.rsplit("/", 1)[-1]
@@ -284,8 +165,14 @@ def loose_keyword_check(
     rows: list[LooseCheckRow] = []
     for item, keywords in entries:
         clean_keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
-        hits = tuple(keyword for keyword in clean_keywords if keyword.casefold() in normalized)
-        rows.append(LooseCheckRow(item=item, keywords=tuple(clean_keywords), hits=hits))
+        hits = tuple(
+            keyword
+            for keyword in clean_keywords
+            if keyword.casefold() in normalized
+        )
+        rows.append(
+            LooseCheckRow(item=item, keywords=tuple(clean_keywords), hits=hits)
+        )
     return rows
 
 

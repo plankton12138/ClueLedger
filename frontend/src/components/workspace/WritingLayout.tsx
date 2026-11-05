@@ -6,14 +6,12 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { List, MessageSquare, PanelRight, Tag } from "lucide-react";
+import { List, MessageSquare, PanelRight } from "lucide-react";
 
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
 import { draftKeyOf, runningConversation, useConversationsStore } from "../../state/conversations";
 import { Button } from "../ui/Button";
-import { AppDialog } from "../ui/AppDialog";
-import { BookClues, ChapterClues } from "../clues/CluePanel";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 import ConversationPanel from "./ConversationPanel";
 import ResizeHandle from "./ResizeHandle";
@@ -61,7 +59,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
-  const [clueOpen, setClueOpen] = useState(false);
   const [editingChapter, setEditingChapter] = useState<string | null>(null);
   const closeRevisionPanel = useRevisionPanelStore(state => state.close);
   const container = useRef<HTMLDivElement>(null);
@@ -81,12 +78,9 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
   const hasIndex = Boolean(chapter?.index);
-  const chapterClues = chapter?.clues ?? null;
-  const hasClues = Boolean(chapterClues && chapterClues.entries.length > 0);
-  const hasDetail = hasIndex || hasClues;
   const expandedPaperWidth = width - (sidebar ? plan.sidebar + 6 : 0);
   const inlineIndexAvailable = Boolean(hasIndex && !compact && expandedPaperWidth >= 980);
-  const indexAuxiliary = Boolean(indexOpen && hasDetail && !chat && !inlineIndexAvailable);
+  const indexAuxiliary = Boolean(indexOpen && hasIndex && !chat && !inlineIndexAvailable);
   const auxiliaryVisible = chat || indexAuxiliary;
   const paperVisible = !compact || !auxiliaryVisible;
 
@@ -263,21 +257,10 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         onClick={toggleSidebar} disabled={!currentId} disabledReason="先打开作品目录">
         <List size={16} strokeWidth={2} aria-hidden="true" />侧栏
       </Button>
-      {chapterId && hasDetail && !inlineIndexAvailable && <Button size="compact" variant={indexAuxiliary ? "primary" : "secondary"} aria-pressed={indexAuxiliary}
-        onClick={toggleIndex} disabled={!hasDetail} disabledReason="这一章还没有信息或线索">
+      {chapterId && hasIndex && !inlineIndexAvailable && <Button size="compact" variant={indexAuxiliary ? "primary" : "secondary"} aria-pressed={indexAuxiliary}
+        onClick={toggleIndex} disabled={!hasIndex} disabledReason="这一章还没有索引">
         <PanelRight size={16} strokeWidth={2} aria-hidden="true" />本章信息
       </Button>}
-      <AppDialog open={clueOpen} onOpenChange={setClueOpen} title="线索" className="clue-dialog"
-        trigger={<Button size="compact" disabled={!currentId} disabledReason="先打开作品目录">
-          <Tag size={16} strokeWidth={2} aria-hidden="true" />线索
-        </Button>}>
-        {chapterClues && <div className="chapter-margin clue-chapter">
-          <ChapterClues clues={chapterClues} heading={`第 ${chapterClues.chapter} 章线索`} />
-        </div>}
-        <div className="chapter-margin clue-book">
-          <BookClues clues={book?.clues ?? { entries: [], plans: [], findings: [] }} />
-        </div>
-      </AppDialog>
       {compact && <Button size="compact" variant={chat ? "primary" : "secondary"} aria-pressed={chat} aria-controls="writing-chat"
         onClick={toggleChat} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}
@@ -311,9 +294,8 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       </section>
       {indexAuxiliary && currentId && (
         <aside className="writing-detail module" role="region" aria-label="本章信息">
-          {chapter?.index || chapterClues ? <ChapterMarginIndex
-            index={chapter?.index ?? null}
-            clues={chapterClues}
+          {chapter?.index ? <ChapterMarginIndex
+            index={chapter.index}
             variant="panel"
             activeItemId={writingPage?.informationId ?? null}
             onLocate={(item) => selectInformation(item.item_id)}

@@ -59,61 +59,6 @@ from hastings.workspace.writing_view import (
 __all__ = ["create_story_router"]
 
 
-def _candidate_clue_entries(
-    store: StoryStore,
-    workspace: Any,
-    chapter_id: str,
-    text: str,
-    raw_proposals: list[dict[str, object]],
-    candidate_id: str,
-) -> tuple[list[Any], list[dict[str, str]], list[dict[str, str]]]:
-    """把候选里的计划外线索建议变成章登记条目（v1.3 P5）。
-
-    返回 ``(写入条目, 新登记, 未登记)``。编号避让全书已有编号与结构计划编号；
-    短引在本章正文里定位不到就不登记，原因随响应回报——不替作者猜，也不
-    因为一条定位失败就让整章保存失败。
-    """
-    from hastings.prompts.self_check import split_self_check
-    from hastings.workspace.chapter_clues import (
-        aggregate_clues,
-        clues_path,
-        parse_planned_clues,
-        read_chapter_clues,
-    )
-    from hastings.workspace.clue_proposals import (
-        ClueProposal,
-        materialize_proposals,
-        split_clue_proposals,
-    )
-
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    plan = variant.chapter(chapter_id)
-    if plan is None:
-        return [], [], []
-    chapter = plan.order + 1
-    existing = read_chapter_clues(workspace.root, chapter)
-    prior = [c for c in range(1, chapter) if clues_path(workspace.root, c).exists()]
-    taken = set(aggregate_clues(workspace.root, prior).states)
-    taken |= {item.id for item in parse_planned_clues(read_structure_state(workspace).text)}
-    before = {entry.id for entry in existing.entries} if existing is not None else set()
-    # 只在正文里定位：自查段与登记小节本身也含短引，不加这层会把登记行当成段落。
-    body, _, _ = split_clue_proposals(text)
-    prose_text = split_self_check(body).prose
-    entries, refusals = materialize_proposals(
-        [ClueProposal.from_json(item) for item in raw_proposals],
-        prose_text,
-        revision=f"candidate:{candidate_id}",
-        existing=existing.entries if existing is not None else (),
-        taken=taken,
-    )
-    registered = [
-        {"id": entry.id, "kind": entry.kind, "note": entry.note or ""}
-        for entry in entries
-        if entry.id not in before
-    ]
-    return entries, registered, [refusal.to_json() for refusal in refusals]
-
-
 class StoryReceiptView(BaseModel):
     variant_id: str
     base_revision: str
@@ -387,7 +332,6 @@ def create_story_router(
     ) -> dict[str, Any]:
         store = writing_store_for(workspace_id)
         workspace = workspaces.workspace(workspace_id)
-        candidate = None
         if body.candidate_id is not None:
             candidate = CreativeCandidateStore(
                 conversation_root(workspaces.root, workspace_id)
@@ -415,18 +359,6 @@ def create_story_router(
                     fix="重新读取当前正文后再决定是否采用",
                     details={"candidate_id": body.candidate_id},
                 )
-        clue_entries = None
-        registered: list[dict[str, str]] = []
-        proposal_refusals: list[dict[str, str]] = []
-        if candidate is not None and candidate.clue_proposals:
-            clue_entries, registered, proposal_refusals = _candidate_clue_entries(
-                store,
-                workspace,
-                chapter_id,
-                body.text,
-                candidate.clue_proposals,
-                body.candidate_id or "",
-            )
         result = await asyncio.to_thread(
             lambda: save_chapter_prose(
                 store,
@@ -438,7 +370,6 @@ def create_story_router(
                 draft_revision=body.draft_revision,
                 source="candidate" if body.candidate_id is not None else "author",
                 candidate_ref=body.candidate_id or "",
-                clue_entries=clue_entries or None,
             )
         )
         job_id: str | None = None
@@ -475,12 +406,6 @@ def create_story_router(
             "analysis_job_id": job_id,
             "committed_change_id": result.committed_change_id,
             "revision_id": result.revision_id or None,
-            "clue_findings": [
-                {"code": finding.code, "message": finding.message}
-                for finding in result.clue_findings
-            ],
-            "clue_registered": registered,
-            "clue_proposal_refusals": proposal_refusals,
         }
 
     @router.post("/{workspace_id}/story/chapters/{chapter_id}/index-review")
@@ -614,7 +539,8 @@ def create_story_router(
         detail = revisions.detail(revision_id, current_text)
         assert detail is not None
         hunks = [
-            {**hunk.to_dict(), "active": hunk.id in detail.active_hunk_ids} for hunk in detail.hunks
+            {**hunk.to_dict(), "active": hunk.id in detail.active_hunk_ids}
+            for hunk in detail.hunks
         ]
         analyses = RevisionAnalysisStore(store.root).list_for_revision(
             revision_id, limit=1, conversation_id=conversation_id
@@ -665,7 +591,9 @@ def create_story_router(
                         fix="换一个请求键重新保存，避免把两次编辑合成一次",
                         details={"request_key": body.request_key},
                     )
-        view = write_style_document(workspace, text=body.text, expected_digest=body.expected_digest)
+        view = write_style_document(
+            workspace, text=body.text, expected_digest=body.expected_digest
+        )
         if body.request_key:
             with locked(request_log.with_suffix(".lock")):
                 log = _read_request_log(request_log)
@@ -745,7 +673,11 @@ def create_story_router(
         for index in body.decision_indexes:
             if 0 <= index < len(analysis.decisions):
                 chosen.add(index)
-        style_indexes = [index for index in chosen if analysis.decisions[index].target == "style"]
+        style_indexes = [
+            index
+            for index in chosen
+            if analysis.decisions[index].target == "style"
+        ]
         receipts: list[dict[str, Any]] = []
         if not style_indexes:
             return {
@@ -781,7 +713,9 @@ def create_story_router(
             "decision_indexes": style_indexes,
         }
 
-    @router.post("/{workspace_id}/story/revision-analyses/{analysis_id}/structure-applications")
+    @router.post(
+        "/{workspace_id}/story/revision-analyses/{analysis_id}/structure-applications"
+    )
     def apply_structure_analysis(
         workspace_id: str, analysis_id: str, body: SuggestionApplyRequest
     ) -> dict[str, Any]:
@@ -805,7 +739,9 @@ def create_story_router(
             "decision_indexes": result.applied_indexes,
         }
 
-    @router.post("/{workspace_id}/story/revision-analyses/{analysis_id}/module-applications")
+    @router.post(
+        "/{workspace_id}/story/revision-analyses/{analysis_id}/module-applications"
+    )
     def apply_module_analysis(
         workspace_id: str, analysis_id: str, body: SuggestionApplyRequest
     ) -> dict[str, Any]:

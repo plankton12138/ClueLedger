@@ -1,30 +1,25 @@
 # README 截图
 
-更新：2026-11-01。当前界面，1600 × 1000，示例作品《雪夜来信》。
+当前中英文 README 使用以下截图。更新日期：2026-11-05；版本 1.2.0；尺寸 1440 × 900。
 
-| 文件 | 场景 |
-|---|---|
-| writing.png | 章节、模块目录与开篇讨论 |
-| ideas.png | 灵感输入与最近记录 |
-| module-library.png | 模块列表与选中内容预览 |
-| story-structure.png | 悬疑时间轴、阶段分组与全书线索列表 |
-| story-clues.png | 节点筛选后查看线索计划与全书使用位置 |
+| 文件 | 场景 | 原始截图 |
+| --- | --- | --- |
+| writing-v1.2.png | 章节只读稿纸与对话 | `02-readonly-chapter-and-chat.png` |
+| revision-v1.2.png | 手动修订后，确认入稿前查看差异 | `12-revision-mode-diff.png` |
+| style-v1.2.png | 编辑并保存作品级写作约定 | `09-style-document.png` |
 
-所有内容为截图夹具；正文、对话、模块、灵感及结构均由脚本准备，不调用在线或本地模型，不使用作者真实作品。截图由当前页面直接生成，没有替换文字或合成界面。
+截图来自当前代码的写作工作台浏览器用例。作品、章节和约定均为隔离测试数据，不使用作者真实作品，不调用在线或本地模型；直接截取真实页面，没有替换文字或合成界面。
 
-在仓库根目录运行。先构建前端，并使用全新的隔离目录启动服务：
+在 `frontend/` 下运行以下命令，可生成本次对应的截图：
 
 ```powershell
-npm --prefix frontend run build
-uv run python -m hastings.server --port 8961 --state-dir data/test-tmp/readme-capture/state --library-dir data/test-tmp/readme-capture/library --static-dir frontend/dist
+$env:HASTINGS_E2E_PORT='8947'
+$env:HASTINGS_E2E_DATA_DIR='C:/Projects/Agent/myagent/data/test-tmp/v13-reserved-20261105'
+$env:HASTINGS_E2E_STATIC_DIR='C:/Projects/Agent/myagent/data/test-tmp/v13-reserved-20261105/static'
+$env:HASTINGS_E2E_SCREENSHOT_DIR='C:/Projects/Agent/myagent/data/test-tmp/v13-reserved-20261105/screenshots'
+npm run test:e2e:local -- writing-workbench.spec.ts
 ```
 
-另一个终端运行：
+用例构建前端并启动独立服务；原始截图在指定的 screenshots 目录，按上表复制到本目录后逐张检查。
 
-```powershell
-node scripts/capture_readme_screenshots.cjs http://127.0.0.1:8961 data/test-tmp/readme-capture
-```
-
-脚本检查正文、对话、模块预览、时间轴节点及线索详情均已显示，再写入本目录五张图片；运行摘要保存在隔离目录的 capture.json。复用已经生成的隔离示例时，可将作品 ID 作为最后一个参数，只重新截图。不要指向日常使用的服务或状态目录。
-
-本次在全新隔离目录中完整生成五张截图，逐张检查界面。已移除不再由中英文 README 引用的旧 story-overview.png 与 characters.png。截图流程不调用模型，未运行后端全量测试。
+本目录未带版本后缀的旧图片为 2026-11-01 的历史材料，当前 README 不再引用；其中的构思时间轴与线索页面不属于当前版本。旧 `capture_readme_screenshots.cjs` 对应历史流程，不用于重拍当前版本。

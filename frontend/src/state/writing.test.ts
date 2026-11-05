@@ -39,7 +39,6 @@ function workbench(text = "初始正文", digest = "d1"): WritingWorkbenchView {
       }],
       information_threads: [],
       unplanned_prose: [],
-      clues: { entries: [], plans: [], findings: [] },
     },
     chapter: {
       plan: {
@@ -47,7 +46,6 @@ function workbench(text = "初始正文", digest = "d1"): WritingWorkbenchView {
       },
       prose: { path: "正文/0001.md", digest, text, editable: false },
       index: INDEX,
-      clues: null,
     },
     model_support: { available: false, disabled_reason: "没有模型", supported_assists: [] },
     view_revision: "view_1",

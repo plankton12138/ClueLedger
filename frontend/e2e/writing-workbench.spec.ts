@@ -1,5 +1,4 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 
@@ -343,63 +342,4 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   await page.getByRole("button", { name: "保留我的文字并覆盖", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
   await expect(reader.getByText("林岚没有回答，只把杯子放下。")).toBeVisible();
-});
-
-test("线索面板只读展示本章登记与全书聚合", async ({ page, request }) => {
-  const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
-  mkdirSync(parent, { recursive: true });
-  const root = join(mkdtempSync(join(parent, "clue-panel-")), "作品");
-  const opened = await request.post("/api/file-workspaces", { data: { path: root, create: true } });
-  expect(opened.ok(), await opened.text()).toBeTruthy();
-  const book = await opened.json();
-  const base = `/api/file-workspaces/${book.id}`;
-
-  const chapter = seedChapter(book, "雨夜", "e2e-clue-panel");
-  const paragraph = "柜台上有一双仍在滴水的手套。";
-  const text = `# 雨夜\n\n侦探抵达旅馆。\n${paragraph}\n`;
-  const saved = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
-    data: {
-      text,
-      expected_digest: chapter.prose_digest,
-      draft_revision: "e2e-clue-prose",
-      request_key: "e2e-clue-prose",
-    },
-  });
-  expect(saved.ok(), await saved.text()).toBeTruthy();
-
-  // 章级线索是权威文件：直接落盘模拟一次章提交后的登记。
-  mkdirSync(join(root, "clues"), { recursive: true });
-  const digest = createHash("sha256").update(paragraph).digest("hex").slice(0, 16);
-  writeFileSync(
-    join(root, "clues", "ch1.json"),
-    JSON.stringify({
-      schema: 1,
-      chapter: 1,
-      revision: "e2e",
-      entries: [{
-        id: "CL-01",
-        kind: "伏笔",
-        status: "planted",
-        origin: "planned",
-        note: "滴水的手套",
-        anchor: { para_hash: digest, para_prefix: paragraph.slice(0, 16), chapter_revision: "e2e" },
-        resolves: null,
-      }],
-    }),
-    "utf8",
-  );
-
-  await page.goto(`/#/workspaces/${book.id}/writing?chapter=${chapter.chapter_id}`);
-  await page.reload();
-  await page.getByRole("button", { name: "线索", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "线索", exact: true });
-  await expect(dialog.getByText("第 1 章线索")).toBeVisible();
-  await expect(dialog.getByText("滴水的手套").first()).toBeVisible();
-  await expect(dialog.getByText("未回收", { exact: true }).first()).toBeVisible();
-  await expect(dialog.getByText("全书线索")).toBeVisible();
-  await expect(dialog.getByText("共 1 条：未回收 1、已推进 0、已回收 0、不收 0。")).toBeVisible();
-  await expect(dialog.getByText("第 1 章埋", { exact: false }).first()).toBeVisible();
-  await expect(dialog.getByText("第 1 章埋", { exact: false }).first()).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
 });

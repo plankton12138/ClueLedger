@@ -7,15 +7,12 @@
 
 from __future__ import annotations
 
-from hastings.workspace.chapter_clues import ClueFinding, CluePlan, ClueState
 from hastings.workspace.prose_ledger import ProseLedger, reconcile
 from hastings.workspace.structure_assembly import (
     LooseCheckRow,
     StructureLayers,
     StructureSnapshot,
     chapter_number_of,
-    clue_context_section,
-    clue_report_section,
     ledger_section,
     loose_keyword_check,
     reconcile_note,
@@ -116,22 +113,6 @@ def test_reconcile_note_redirect_explains_the_reassignment() -> None:
     assert "按第 1 章推进" in text
 
 
-def test_clue_report_section_empty_findings_is_empty_text() -> None:
-    assert clue_report_section([]) == ""
-
-
-def test_clue_report_section_lists_findings_with_codes() -> None:
-    findings = [
-        ClueFinding(code="CLUE_UNRESOLVED", message="计划线索 CL-07 已写到第 5 章仍未收"),
-        ClueFinding(code="CLUE_NOT_PLANTED", message="计划线索 CL-08 未埋"),
-    ]
-    text = clue_report_section(findings)
-    assert "### 线索对账" in text
-    assert "CLUE_UNRESOLVED" in text and "CL-07" in text
-    assert "CLUE_NOT_PLANTED" in text
-    assert "retired" in text
-
-
 def test_reconcile_note_plain_write_injects_nothing() -> None:
     decision = reconcile(ProseLedger(chapters={1: "r1", 2: "r2"}), 3)
 
@@ -223,98 +204,3 @@ def test_snapshot_without_reconcile_omits_the_block() -> None:
     assert payload["reconcile"] is None
     assert payload["ledger_chapters"] == []
     assert payload["checklist"] == []
-
-
-# ---------------------------------------------------------------------------
-# P2：线索清单注入（未回收 / 本章计划 / 失联待重锚）
-
-
-def _clue_state(
-    id_: str, *, status: str = "planted", planted_in: int = 1, note: str | None = None
-) -> ClueState:
-    return ClueState(
-        id=id_,
-        kind="伏笔",
-        origin="planned",
-        status=status,
-        planted_in=planted_in,
-        last_chapter=planted_in,
-        note=note,
-        anchor_prefix="箱扣上的漆掉了一块",
-    )
-
-
-def test_clue_context_section_empty_inputs_says_none_not_failure() -> None:
-    text = clue_context_section([], [], 3)
-    assert "### 线索清单" in text
-    assert "本章没有要办的线索" in text
-    assert "不是登记失败" in text
-    assert "【未回收线索】" not in text
-
-
-def test_clue_context_section_lists_open_clues_with_plan_resolution() -> None:
-    states = [_clue_state("CL-03", note="箱扣缺漆")]
-    plans = [CluePlan(id="CL-03", plant_chapter=1, resolve_chapter=5, note="箱扣缺漆")]
-    text = clue_context_section(states, plans, 3)
-    assert "### 线索清单" in text
-    assert "【未回收线索】" in text
-    assert "CL-03 箱扣缺漆" in text
-    assert "计划第 5 章收" in text
-    assert "箱扣上的漆掉了一块" in text
-    assert "【本章计划】" not in text
-
-
-def test_clue_context_section_lists_chapter_plans() -> None:
-    plans = [
-        CluePlan(id="CL-06", plant_chapter=3, note="漏雨的屋顶"),
-        CluePlan(id="CL-03", plant_chapter=1, resolve_chapter=3, note="箱扣缺漆"),
-    ]
-    text = clue_context_section([], plans, 3)
-    assert "【本章计划】" in text
-    assert "CL-06（计划本章埋设）：漏雨的屋顶" in text
-    assert "CL-03（计划本章回收）" in text
-
-
-def test_clue_context_section_lists_orphaned_anchors() -> None:
-    findings = [
-        ClueFinding(
-            code="CLUE_ORPHANED_ANCHOR",
-            message="第 2 章 CL-04 锚失联，前缀「背面一行小字」，请重新锚定或声明 retired",
-        )
-    ]
-    text = clue_context_section([], [], 3, findings)
-    assert "【失联待重锚】" in text
-    assert "CL-04" in text and "背面一行小字" in text
-
-
-def test_clue_context_section_reports_truncation() -> None:
-    text = clue_context_section([_clue_state("CL-01")], [], 3, open_total=4)
-    assert "另有 3 条未回收线索未列出" in text
-
-
-def test_clue_context_section_dedupes_orphan_into_open_row() -> None:
-    states = [_clue_state("CL-04", planted_in=2)]
-    findings = [
-        ClueFinding(
-            code="CLUE_ORPHANED_ANCHOR",
-            message="第 2 章 CL-04 锚失联，前缀「背面一行小字」，请重新锚定或声明 retired",
-            clue_id="CL-04",
-        )
-    ]
-
-    text = clue_context_section(states, [], 3, findings)
-
-    assert text.count("CL-04") == 1
-    assert "锚失联，先重锚再用" in text
-    assert "【失联待重锚】" not in text
-
-
-def test_clue_context_section_merges_chapter_resolution_into_open_row() -> None:
-    states = [_clue_state("CL-03", planted_in=1)]
-    plans = [CluePlan(id="CL-03", plant_chapter=1, resolve_chapter=3)]
-
-    text = clue_context_section(states, plans, 3)
-
-    assert text.count("CL-03") == 1
-    assert "计划本章收" in text
-    assert "【本章计划】" not in text

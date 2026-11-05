@@ -2,100 +2,86 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-**Keep ideas, characters, and clues connected to their sources throughout your novel.**
+**An AI writing workspace for long-form mystery fiction.**
 
-ClueLedger is an AI writing workspace for mystery fiction. Capture ideas, discuss your plot, read and revise chapters, save character profiles and worldbuilding notes, and review story development through a mystery timeline and book-wide clues—all in one place.
+Discuss your story, read chapters, revise prose, organize lasting story material, and review revisions in one workspace. You decide the direction; ClueLedger helps with the current project and the goal of each request.
 
-You decide where the story goes. ClueLedger brings your writing goals, existing material, and source passages together.
+Current version: **1.2.0**. This page describes the current feature set. The v1.3 chapter clue registry is deferred, with its design and implementation [preserved for future work](dev-notes/v1.3/README.md).
 
-ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau), with a writing experience designed for mystery fiction. Tau's MIT license and copyright information are preserved in the [third-party notices](THIRD_PARTY_NOTICES.md).
+![ClueLedger: structure and chapters on the left, manuscript in the center, and conversation on the right](docs/screenshots/readme/writing-v1.2.png)
 
-![ClueLedger writing workspace: chapters and modules on the left, the manuscript in the center, and a story discussion on the right](docs/screenshots/readme/writing.png)
+*Captured from the current Chinese-language interface on 2026-11-05, using isolated test projects and demonstration content.*
 
-*Screenshots were captured on 2026-11-01 using the current Chinese-language interface and the sample novel Letters on a Snowy Night (《雪夜来信》). English feature names below describe the corresponding Chinese controls.*
-
-[Capture ideas](#capture-ideas) · [Write through conversation](#write-through-conversation) · [Save and reuse story material](#save-and-reuse-story-material) · [Review the whole story](#review-the-whole-story) · [Get started](#get-started)
-
-## Capture ideas
-
-A line of dialogue, a character's secret, or an unexplained detail can wait in your notes while you keep writing.
-
-Click the floating **Ideas (灵感)** button to open a writing box and your recent notes. Drag the button or panel to a convenient spot, or press **Alt + I** to open and close it.
-
-- **Save (记下)**: keep an idea for later.
-- **Save and add to conversation (记下并加入对话)**: save it and attach it to the current conversation.
-- **Add to conversation (加入对话)**: select an existing idea, then explain how you want to discuss or use it.
-
-Edit notes in place, search them, review their history, or restore them from Recently Deleted. Adding an idea to a conversation does not send a message; you can finish your instructions before starting.
-
-![Floating Ideas panel: capture a new thought, review recent notes, and choose what to add to the conversation](docs/screenshots/readme/ideas.png)
+[Write through conversation](#write-through-conversation) · [Revise prose](#revise-prose) · [Writing agreements](#writing-agreements) · [Ideas and modules](#ideas-and-modules) · [Get started](#get-started)
 
 ## Write through conversation
 
-The writing workspace keeps your chapter list, manuscript, and conversation together. Start with a blank project, or import an existing manuscript and continue discussing or revising it.
+Keep the project directory, manuscript, and conversation together. Start from an idea or describe what you want to do with an existing chapter:
 
-Describe what you want to accomplish in the current request:
+> I want to write about a disappearance at a snowbound inn. Help me establish the book's structure first.
 
-> Let's discuss the suspense in Chapter 1 first. Don't change the manuscript yet.
+> Let's discuss the suspense in Chapter 2. Don't change the manuscript yet.
 
-> Use Chapter 2 as a reference and change the end of Chapter 3 to a snowy night. Only edit Chapter 3 and keep the dialogue.
+> Change the end of Chapter 3 to a snowy night. Only edit that chapter and keep the dialogue.
 
-> Check the chronology across these three chapters. Point out issues with supporting passages, without editing anything yet.
+**Book structure (全书结构)** holds the story direction, chapter plan, and lasting constraints. The model reads it for each turn. A new project can establish its structure through conversation before drafting prose; later changes to structure and project material also begin in conversation.
 
-Discussion, writing, and review can be requested separately. Revise the manuscript through conversation. When other chapters or notes matter, add them as references and specify what may be changed.
+Use the directory to select chapters, inspect the structure, and read project modules. Prose opens in reading mode. Expand task details in the conversation or open **Activity (活动记录)** to revisit the work.
 
-Use the left sidebar to switch between chapters and modules while keeping the manuscript in view. Hide the sidebar or conversation to focus on reading. Expand the task information in a conversation or open **Activity (活动记录)** to revisit what happened.
+## Revise prose
 
-## Save and reuse story material
+To edit a chapter yourself, select it and choose **Edit prose (修改正文)** in the conversation area.
 
-Save character profiles, worldbuilding, clue plans, and chapter outlines as modules. A module can hold one character or a collection of related notes.
+1. Edit the manuscript.
+2. Choose **View changes (看差异)** to review additions, deletions, and rewrites.
+3. Choose **Confirm changes (确认修改)** to save, or cancel to keep the original.
 
-Create a module with just a name and some text. Organize it with headings that suit your material. Once added to a project, it appears in the writing sidebar, with its headings available as navigation links.
+Saved edits create revision records. Open **Chapter revisions (本章修订)** or **View differences (查看差异)** on the latest revision to compare the text. Request model analysis when you want help understanding the changes.
 
-**How to use it:** click the plus sign beside **Modules (模块)** in the sidebar, then choose existing material or create a new module. Return to the writing workspace to read it, or edit and save it directly.
+![Review prose changes before confirming a revision](docs/screenshots/readme/revision-v1.2.png)
 
-Everyday edits affect only the current project. Choose **Save a copy to Module Library (另存到模块库)** when you want to reuse your revised material elsewhere. Multiple projects can use the same starting material while keeping their own changes.
+## Writing agreements
 
-![Module Library: browse character and clue notes, the inn setting, and chapter plans to add to a project](docs/screenshots/readme/module-library.png)
+Keep the project's lasting writing preferences in **Writing agreements (写作约定)**, such as dialogue style, narrative distance, or requirements for describing settings. Edit and save them directly; subsequent prose generation reads these agreements.
 
-## Review the whole story
+Revision analysis distinguishes effects on writing agreements, book structure, module material, and the current scene. You decide which suggestions to adopt.
 
-Open **Story Structure (构思)** in the writing workspace to review how the story develops along its actual in-story timeline. Start from a blank structure, or ask the conversation to create one from your existing modules, organizing the material into event nodes, clues, and where they are used.
+![Edit and save project-specific writing agreements in the conversation area](docs/screenshots/readme/style-v1.2.png)
 
-### Follow the story along its actual timeline
+## Ideas and modules
 
-The horizontal axis is the actual time within the story. Stage headings appear above the timeline; nodes without a registered time are appended by stage and narrative order. Each node shows a key action or change, and you scroll horizontally to see what happens before and after.
+- **Capture ideas:** click the floating **Ideas (灵感)** button or press **Alt + I** to save dialogue, character secrets, or plot ideas. Search, edit, inspect history, or restore recently deleted notes.
+- **Bring material into conversation:** attach ideas or selected passages to the current draft and add your request. Attaching material does not send it.
+- **Organize lasting story material:** keep character profiles, backgrounds, earlier cases, and objects in modules, add them when needed, and read them from the sidebar.
+- **Reuse material:** create and edit modules, inspect versions, and add them to a project from Module Library. Request changes to project material through conversation; project copies and the global library are managed separately.
 
-Below the timeline are four lanes: **What happens (实际发生)**, **Detective / assistant (侦探 / 助手)**, **Reader (读者)**, and **Clues (线索)**. The detective and assistant lane lists who knows or believes what at each point, the reader lane lists the interpretation you want to guide, and the clue lane marks each use. Collapse the detective, reader, or clue lane to focus on the others.
+The model can suggest creating or adding relevant modules and continue the original task after your choice. Declining a suggestion still allows writing to continue.
 
-Click a node title to filter **Book-wide clues (全书线索)** in the left sidebar to that node; choose **View all clues (查看全部线索)** to restore the full list. If the open clue is unrelated to the selected node, the sidebar returns to the filtered list. Expand **Structure diagnostics (结构诊断)** to review issues such as missing times or clues without a use.
+## Records and model settings
 
-![Mystery timeline with stages, what happens, knowledge, reader, and clue lanes](docs/screenshots/readme/story-structure.png)
+**Activity (活动记录)** shows conversations, tasks, model requests, and file changes. Revision records show the actual text changes.
 
-### Connect plans to clues and manuscript evidence
-
-Select a clue on the timeline, or from the list filtered by a node, to open its details in the left sidebar: the author's plan, every planned use, and manuscript evidence. Follow a planned use to another node, or locate an existing passage in the manuscript.
-
-Author truth, future plans, and material already written in the manuscript are presented separately. You can plan clues before drafting prose; planned introductions and resolutions do not become manuscript facts automatically.
-
-![A selected clue's author plan and book-wide uses in the left sidebar](docs/screenshots/readme/story-clues.png)
-
-Larger creation tasks can prepare a draft in batches before committing the complete structure. If a task needs attention, its draft remains with the original task. Review required constraints and their strength before confirming and continuing. Whether a setting or style preference becomes a requirement remains your decision.
+Configure connections and models in **Settings → Model Settings (设置 → 模型设置)**, or switch the current selection from the conversation area. Without a model connection, you can still read local content, record ideas, manually revise prose, and organize Module Library. Generation and analysis require an available connection.
 
 ## Get started
 
-1. **Open or create a project.** Use **Projects (作品)** to choose an existing project or create a folder for a new story. Add an existing manuscript through **Import (导入)** in the sidebar.
-2. **Choose a model.** Connect and select your model in **Settings → Model Settings (设置 → 模型设置)**. You can still record ideas, edit modules, and read existing material before connecting.
-3. **Capture your first idea.** Open Ideas and write down a story concept. Add it to a conversation when you want to discuss it.
-4. **Set the goal for this request.** Ask for discussion, new writing, revisions to specific chapters, or a review. Add reference material when needed.
-5. **Build a structure and check clues.** Keep reusable material in modules, organize story development on the mystery timeline in Story Structure, and inspect plans and manuscript evidence through book-wide clues.
+1. Choose a project folder in **Projects → Open / New (作品 → 打开 / 新建)**.
+2. Connect and select a model in **Settings → Model Settings**.
+3. Describe the story direction and your goal in conversation, establishing the book structure first.
+4. Select chapters to read, discuss, draft, or revise. Choose **Edit prose** for manual revisions.
+5. Save lasting requirements in Writing agreements and organize detailed character and background material into modules as needed.
 
-## A few things to know
+The current interface does not offer manuscript upload/import or direct chapter creation by the author. New chapters are created through the conversation workflow.
 
-| Your question | How ClueLedger handles it |
-|---|---|
-| Does saving an idea automatically put it into the novel? | No. Add it to a conversation and explain how you want to use it. |
-| Will discussing a possibility change the manuscript? | Ordinary discussion does not edit it. You can also explicitly say, “Let's discuss this first; don't make changes yet.” |
-| Will editing a module affect other projects? | Saving within a project affects only that project. Save a copy to Module Library when you want to reuse the changes. |
-| Will an interrupted structure task lose its draft? | Prepared work stays with the original task. Follow its instructions to complete arrangements or confirm constraints and continue; it becomes a formal structure only after the complete commit. |
-| Can the structure map decide whether my story makes sense? | It helps you review development, follow clues, and check source passages. Character motives, deductions, and the ending still need your judgment. |
+Running from source requires Python 3.12+, Node.js, and uv. From the repository root:
+
+```powershell
+uv sync
+npm --prefix frontend ci
+npm --prefix frontend run build
+uv run python -m hastings.server
+```
+
+Open the [local writing workspace](http://127.0.0.1:8000). See the [frontend guide](frontend/README.md) for development and validation, and [development records](dev-notes/README.md) for version status.
+
+ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau). Its MIT license and copyright information are preserved in the [third-party notices](THIRD_PARTY_NOTICES.md).

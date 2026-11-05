@@ -15,12 +15,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from hastings.workspace.clue_panel import (
-    BookCluesView,
-    ChapterCluesView,
-    build_book_clues,
-    build_chapter_clues,
-)
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.story_bindings import anchor_state
@@ -32,7 +26,6 @@ from hastings.workspace.story_models import (
     InformationThread,
     StoryVariant,
 )
-from hastings.workspace.structure_assembly import chapter_number_of
 from hastings.workspace.structure_io import read_structure_state
 
 __all__ = [
@@ -130,8 +123,6 @@ class WritingBookView(BaseModel):
     chapters: list[ChapterSummary]
     information_threads: list[InformationThreadSummary]
     unplanned_prose: list[UnplannedProse]
-    #: 全书线索（v1.3 P4 只读面板）：聚合状态 + 结构层计划 + 对账发现项。
-    clues: BookCluesView = Field(default_factory=BookCluesView)
 
 
 class WritingProseView(BaseModel):
@@ -145,8 +136,6 @@ class ChapterView(BaseModel):
     plan: ChapterPlanView | None
     prose: WritingProseView | None
     index: ChapterInformationIndex | None
-    #: 本章线索登记与发现项；未挂章节的正文为 ``None``。
-    clues: ChapterCluesView | None = None
 
 
 class ModelSupportView(BaseModel):
@@ -163,15 +152,6 @@ class WritingWorkbenchView(BaseModel):
     chapter: ChapterView | None
     model_support: ModelSupportView
     view_revision: str
-
-
-def _clue_revision(book: WritingBookView, chapter: ChapterView | None) -> str:
-    return _digest(
-        {
-            "book": book.clues.model_dump(mode="json"),
-            "chapter": chapter.clues.model_dump(mode="json") if chapter and chapter.clues else None,
-        }
-    )
 
 
 def build_workbench(
@@ -234,7 +214,6 @@ def build_workbench(
                 "plan_revision": variant.revision if variant is not None else None,
                 "prose_digest": prose_digest,
                 "index_revision": index_revision,
-                "clues": _clue_revision(book, chapter),
             }
         ),
     )
@@ -385,7 +364,6 @@ def context_revision_for(variant: StoryVariant, plan: ChapterPlan) -> str:
 
 
 def _book_view(workspace: Workspace, variant: StoryVariant | None) -> WritingBookView:
-    structure = read_structure_state(workspace)
     plans = list(variant.chapter_plans.values()) if variant is not None else []
     chapters = sorted(plans, key=lambda plan: (plan.order, plan.id))
     owned_paths = {plan.prose_path for plan in chapters if plan.prose_path is not None}
@@ -407,7 +385,7 @@ def _book_view(workspace: Workspace, variant: StoryVariant | None) -> WritingBoo
             )
         )
     return WritingBookView(
-        structure_exists=structure.exists,
+        structure_exists=read_structure_state(workspace).exists,
         chapters=[
             ChapterSummary(
                 id=plan.id,
@@ -426,7 +404,6 @@ def _book_view(workspace: Workspace, variant: StoryVariant | None) -> WritingBoo
             )
         ],
         unplanned_prose=unplanned,
-        clues=build_book_clues(workspace.root, structure.text),
     )
 
 
@@ -468,18 +445,10 @@ def _chapter_view(
         if variant is not None
         else None
     )
-    number = chapter_number_of(plan.prose_path) if plan.prose_path is not None else None
-    clues = build_chapter_clues(
-        workspace.root,
-        read_structure_state(workspace).text,
-        number if number is not None else plan.order + 1,
-        text,
-    )
     return ChapterView(
         plan=_plan_view(variant, plan) if variant is not None else None,
         prose=prose,
         index=index,
-        clues=clues,
     )
 
 
