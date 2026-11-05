@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -35,8 +36,10 @@ __all__ = [
     "aggregate_clues",
     "anchor_paragraph",
     "clues_path",
+    "missed_plans",
     "para_hash",
     "paragraphs",
+    "parse_planned_clues",
     "read_chapter_clues",
     "resolve_anchor",
     "validate_commit",
@@ -52,6 +55,14 @@ CHAPTER_CLUES_SCHEMA = 1
 
 #: 锚定前缀长度（失联时供重新定位）。
 _ANCHOR_PREFIX_LEN = 16
+
+#: 结构层「计划线索」节的标题前缀（评审定案：单独一节，骨架行不嵌入）。
+_PLAN_SECTION_PREFIX = "## 计划线索"
+_PLAN_ID = re.compile(r"^(CL-\d+)")
+_PLAN_PLANT = re.compile(r"第\s*(\d+)\s*章\s*埋")
+_PLAN_RESOLVE = re.compile(r"第\s*(\d+)\s*章\s*收")
+#: 编号之后的线索名（到冒号或行尾）；冒号后的部分通常是埋/收安排。
+_PLAN_TITLE = re.compile(r"^CL-\d+\s*([^：:]+)")
 
 Kind = Literal["伏笔", "悬念", "象征", "物件", "信息"]
 Status = Literal["planted", "advanced", "resolved", "retired"]
@@ -402,12 +413,84 @@ class ClueState:
 
 @dataclass
 class CluePlan:
-    """结构层「计划线索」节的一条声明（本切片用结构化输入，解析留给 P1）。"""
+    """结构层「计划线索」节的一条声明（解析见 ``parse_planned_clues``）。"""
 
     id: str
     plant_chapter: int
     resolve_chapter: int | None = None
     note: str | None = None
+
+
+def parse_planned_clues(structure_text: str) -> list[CluePlan]:
+    """解析 ``STRUCTURE.md`` 的「## 计划线索」节（P1）。
+
+    每行形如 ``CL-03 箱扣缺漆：第1章埋、第5章收``（允许 ``- `` 列表符）。
+    节到下一个二级标题为止。缺编号或缺埋设章的行跳过——自由格式里的普通
+    文字不是计划；重复编号只认首条。纯函数，不猜、不补全。
+    """
+    plans: list[CluePlan] = []
+    seen: set[str] = set()
+    in_section = False
+    for raw in structure_text.splitlines():
+        line = raw.strip()
+        if line.startswith("## "):
+            in_section = line.startswith(_PLAN_SECTION_PREFIX)
+            continue
+        if not in_section or not line:
+            continue
+        body = line[2:].strip() if line.startswith("- ") else line
+        match = _PLAN_ID.match(body)
+        if match is None:
+            continue
+        plant = _PLAN_PLANT.search(body)
+        if plant is None:
+            continue
+        clue_id = match.group(1)
+        if clue_id in seen:
+            continue
+        seen.add(clue_id)
+        resolve = _PLAN_RESOLVE.search(body)
+        title = _PLAN_TITLE.match(body)
+        plans.append(
+            CluePlan(
+                id=clue_id,
+                plant_chapter=int(plant.group(1)),
+                resolve_chapter=int(resolve.group(1)) if resolve else None,
+                note=title.group(1).strip() if title else None,
+            )
+        )
+    return plans
+
+
+def missed_plans(
+    plans: list[CluePlan], chapter: int, entries: list[ClueEntry] | tuple[ClueEntry, ...]
+) -> list[ClueFinding]:
+    """计划未落实（``CLUE_PLAN_MISSED``）：结构层声明本章埋/收，登记里没有。
+
+    只报告不拦截（提案 §2 决策 3）：章写完了、计划漏了，留给下一回合或
+    作者裁决。与聚合侧的哑火/悬枪分工——这里管「本章漏没漏」，那里管
+    「过去哪章漏了」。
+    """
+    ids = {entry.id for entry in entries}
+    findings: list[ClueFinding] = []
+    for plan in plans:
+        missing: list[str] = []
+        if plan.plant_chapter == chapter and plan.id not in ids:
+            missing.append("埋设")
+        if plan.resolve_chapter == chapter and plan.id not in ids:
+            missing.append("回收")
+        if not missing:
+            continue
+        findings.append(
+            ClueFinding(
+                code="CLUE_PLAN_MISSED",
+                message=(
+                    f"计划线索 {plan.id} 声明本章{'与'.join(missing)}，"
+                    "但本章登记没有对应条目" + (f"（{plan.note}）" if plan.note else "")
+                ),
+            )
+        )
+    return findings
 
 
 @dataclass

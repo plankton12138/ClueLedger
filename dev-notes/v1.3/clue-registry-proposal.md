@@ -272,3 +272,11 @@ P0 动手前先做了不接事务层的纯模块验证（`workspace/chapter_clue
 - **保存通道**（`chapter_writing.py`）：`save_chapter_prose` 新增 `clue_entries` 参数，随同一笔章提交透传；收据 result 带 `clue_chapter` / `clue_entries`。
 - **测试**：`test_chapter_clue_transactions.py` 9 例——登记落盘、骨架带登记拒绝、非法状态整笔不落盘、空响拦截、跨章归并、撤销撤除、退回骨架撤除、不带登记重存保留文件、崩溃恢复重放补完。全量回归见提交说明。
 - **刻意不做**（后续阶段）：模型工具 `updates` 通道与提示词（P2）、聚合注入（P2）、伏笔账投影（P3）。当前模型侧尚无提交入口，登记走 `save_chapter_prose` 的 API 参数。
+
+### P1 已实施（2026-11-05）
+
+- **计划线索解析**（`chapter_clues.parse_planned_clues`）：解析 `STRUCTURE.md` 的「## 计划线索」节到下一个二级标题；行格式 `CL-03 箱扣缺漆：第1章埋、第5章收`（允许 `- ` 列表符），`note` 取编号后的线索名；缺编号/缺埋设章跳过，重复编号只认首条。
+- **第五项检测**（`missed_plans` / `CLUE_PLAN_MISSED`）：声明本章埋/收但本章登记缺条目时报告，不拦截。与哑火/悬枪分工：这里管「本章漏没漏」，聚合侧管「过去哪章漏了」。
+- **对账结论含线索报告**：`structure_assembly.clue_report_section` 渲染确定性发现项；`creative_assist._drafting_injection` 在台账/改派说明之后追加「线索对账」段（结构层计划线索 × 台账已写各章聚合）。空报告不占上下文。
+- **测试**：解析正反例、跨节截断、畸形行/重复编号、`missed_plans` 正反例、渲染空/非空，共 7 例；相关三文件 62 例全过。
+- **边界**：起草路径不做锚失联检测（需逐章正文，留给 P2 修订回合）；「未回收线索清单」注入属 P2，与报告段分工不同。

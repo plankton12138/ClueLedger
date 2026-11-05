@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from hastings.workspace.chapter_clues import ClueFinding
 from hastings.workspace.prose_ledger import ProseLedger, ReconcileDecision
 from hastings.workspace.structure_document import split_iron_rules
 
@@ -24,6 +25,7 @@ __all__ = [
     "StructureSnapshot",
     "StructureLayers",
     "chapter_number_of",
+    "clue_report_section",
     "ledger_section",
     "loose_keyword_check",
     "reconcile_note",
@@ -119,6 +121,24 @@ def reconcile_note(decision: ReconcileDecision | None) -> str:
     return ""
 
 
+def clue_report_section(findings: tuple[ClueFinding, ...] | list[ClueFinding]) -> str:
+    """线索对账报告注入文本（P1）：空报告返回空文本（分区按空跳过）。
+
+    只注入确定性发现项（哑火/悬枪/失联/空响/计划未落实），不在此处展开全部
+    线索清单——「未回收线索」清单属于起草注入（P2），两者职责不同：报告说
+    「哪里不对」，清单说「现在手上还压着什么」。
+    """
+    if not findings:
+        return ""
+    rows = "\n".join(f"- [{finding.code}] {finding.message}" for finding in findings)
+    return (
+        "### 线索对账（确定性推导，报告项不拦写作）\n"
+        f"{rows}\n\n"
+        "这些是系统从章级登记聚合出来的偏差：该埋的埋、该收的收，"
+        "别让它们继续悬着；确实是故意不收的，在对应章登记 retired 并写明理由。"
+    )
+
+
 def chapter_number_of(path: str) -> int | None:
     """从正文路径解析章号；非章节路径（设定、结构等）返回 ``None``。"""
     name = path.rsplit("/", 1)[-1]
@@ -165,14 +185,8 @@ def loose_keyword_check(
     rows: list[LooseCheckRow] = []
     for item, keywords in entries:
         clean_keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
-        hits = tuple(
-            keyword
-            for keyword in clean_keywords
-            if keyword.casefold() in normalized
-        )
-        rows.append(
-            LooseCheckRow(item=item, keywords=tuple(clean_keywords), hits=hits)
-        )
+        hits = tuple(keyword for keyword in clean_keywords if keyword.casefold() in normalized)
+        rows.append(LooseCheckRow(item=item, keywords=tuple(clean_keywords), hits=hits))
     return rows
 
 

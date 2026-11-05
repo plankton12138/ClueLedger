@@ -294,8 +294,28 @@ class CreativeAssistService:
         note = reconcile_note(decision)
         if note:
             ledger_text = f"{ledger_text}\n\n{note}" if ledger_text else note
+        clue_text = self._clue_report_text(state.text, ledger)
+        if clue_text:
+            ledger_text = f"{ledger_text}\n\n{clue_text}" if ledger_text else clue_text
         redirected = decision.target_to if decision.action == "redirect" else None
         return structure_text, ledger_text, redirected, target
+
+    def _clue_report_text(self, structure_text: str, ledger: Any) -> str:
+        """线索对账报告（P1）：结构层计划线索 × 已写各章的聚合偏差。
+
+        失联检测需要各章正文，起草路径只做「埋没埋、收没收」的全局推导；
+        锚失联在修订回合报告（P2）。
+        """
+        from hastings.workspace.chapter_clues import aggregate_clues, parse_planned_clues
+        from hastings.workspace.structure_assembly import clue_report_section
+
+        assert self.workspace is not None
+        plans = parse_planned_clues(structure_text)
+        chapters = sorted(ledger.chapters)
+        if not chapters and not plans:
+            return ""
+        aggregate = aggregate_clues(self.workspace.root, chapters, plans=plans)
+        return clue_report_section(aggregate.findings)
 
     def _resolve(
         self, request: CreativeAssistInput

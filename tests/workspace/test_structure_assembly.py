@@ -7,12 +7,14 @@
 
 from __future__ import annotations
 
+from hastings.workspace.chapter_clues import ClueFinding
 from hastings.workspace.prose_ledger import ProseLedger, reconcile
 from hastings.workspace.structure_assembly import (
     LooseCheckRow,
     StructureLayers,
     StructureSnapshot,
     chapter_number_of,
+    clue_report_section,
     ledger_section,
     loose_keyword_check,
     reconcile_note,
@@ -111,6 +113,22 @@ def test_reconcile_note_redirect_explains_the_reassignment() -> None:
     assert "第 1 章" in text
     assert "不要写第 4 章" in text
     assert "按第 1 章推进" in text
+
+
+def test_clue_report_section_empty_findings_is_empty_text() -> None:
+    assert clue_report_section([]) == ""
+
+
+def test_clue_report_section_lists_findings_with_codes() -> None:
+    findings = [
+        ClueFinding(code="CLUE_UNRESOLVED", message="计划线索 CL-07 已写到第 5 章仍未收"),
+        ClueFinding(code="CLUE_NOT_PLANTED", message="计划线索 CL-08 未埋"),
+    ]
+    text = clue_report_section(findings)
+    assert "### 线索对账" in text
+    assert "CLUE_UNRESOLVED" in text and "CL-07" in text
+    assert "CLUE_NOT_PLANTED" in text
+    assert "retired" in text
 
 
 def test_reconcile_note_plain_write_injects_nothing() -> None:

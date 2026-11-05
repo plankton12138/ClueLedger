@@ -13,8 +13,10 @@ from hastings.workspace.chapter_clues import (
     aggregate_clues,
     anchor_paragraph,
     clues_path,
+    missed_plans,
     para_hash,
     paragraphs,
+    parse_planned_clues,
     read_chapter_clues,
     resolve_anchor,
     validate_commit,
@@ -379,3 +381,65 @@ def test_commit_gate_checks_chapter_rules_first(tmp_path) -> None:
     with pytest.raises(WorkspaceError) as excinfo:
         validate_commit(tmp_path, 1, [entry])
     assert excinfo.value.code == "CLUE_ANCHOR_REQUIRED"
+
+
+# ---------------------------------------------------------------------------
+# 结构层「计划线索」解析与计划未落实（P1）
+
+
+PLAN_STRUCTURE = """## 铁律
+- 短句。
+
+## 全书结构
+第一卷：旧案重提
+
+## 计划线索
+CL-01 箱扣缺漆：第1章埋、第5章收
+- CL-03 来的人：第 2 章埋
+随便写的一行，没有编号
+CL-04 老花镜：第2章埋
+"""
+
+
+def test_parse_planned_clues_from_section() -> None:
+    plans = parse_planned_clues(PLAN_STRUCTURE)
+    assert [(p.id, p.plant_chapter, p.resolve_chapter) for p in plans] == [
+        ("CL-01", 1, 5),
+        ("CL-03", 2, None),
+        ("CL-04", 2, None),
+    ]
+    assert plans[0].note == "箱扣缺漆"
+
+
+def test_parse_planned_clues_stops_at_next_section() -> None:
+    text = "## 计划线索\nCL-01 箱子：第1章埋\n## 其他\nCL-02 不该被读到：第1章埋\n"
+    plans = parse_planned_clues(text)
+    assert [p.id for p in plans] == ["CL-01"]
+
+
+def test_parse_planned_clues_skips_malformed_and_duplicates() -> None:
+    text = "## 计划线索\nCL-01 有编号没埋章\nCL-02 正常：第1章埋\nCL-02 重复：第2章埋\n"
+    plans = parse_planned_clues(text)
+    assert [(p.id, p.plant_chapter) for p in plans] == [("CL-02", 1)]
+
+
+def test_parse_planned_clues_without_section_is_empty() -> None:
+    assert parse_planned_clues("## 铁律\n- 短句。\n") == []
+
+
+def test_missed_plans_reports_plant_and_resolve() -> None:
+    plans = [
+        CluePlan(id="CL-01", plant_chapter=2, resolve_chapter=5, note="箱扣缺漆"),
+        CluePlan(id="CL-02", plant_chapter=2, resolve_chapter=2),
+        CluePlan(id="CL-03", plant_chapter=3),
+    ]
+    findings = missed_plans(plans, 2, [_planted("CL-02")])
+    assert {f.code for f in findings} == {"CLUE_PLAN_MISSED"}
+    messages = " ".join(f.message for f in findings)
+    assert "CL-01" in messages and "CL-03" not in messages
+
+
+def test_missed_plans_quiet_when_registered() -> None:
+    plans = [CluePlan(id="CL-01", plant_chapter=2)]
+    assert missed_plans(plans, 2, [_planted("CL-01")]) == []
+    assert missed_plans(plans, 3, []) == []
