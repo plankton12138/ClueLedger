@@ -118,7 +118,10 @@ test("窄对话栏与放大字号仍能操作思考深度", async ({ page }, inf
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByLabel("调整字体大小").selectOption("150");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "对话", exact: true }).click();
+  // 空作品在窄屏会自动展开对话；已展开时不再点按钮，否则会把它收起。
+  if (!(await depth.isVisible())) {
+    await page.getByRole("button", { name: "对话", exact: true }).click();
+  }
   await expect(depth).toBeVisible();
   await depth.selectOption("high");
   await expect(depth).toHaveValue("high");

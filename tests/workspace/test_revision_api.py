@@ -100,9 +100,7 @@ def test_first_draft_is_not_a_revision(client: TestClient, tmp_path: Path) -> No
 
 def test_author_edit_creates_analyzable_revision(client: TestClient, tmp_path: Path) -> None:
     _, base, chapter_id, saved = _seed(client, tmp_path)
-    edited = (
-        "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
-    )
+    edited = "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
     result = _save(
         client,
         base,
@@ -129,16 +127,10 @@ def test_author_edit_creates_analyzable_revision(client: TestClient, tmp_path: P
     assert any(span["kind"] == "insert" for span in hunk["inline"])
 
 
-def test_revision_stays_analyzable_after_unrelated_edit(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_revision_stays_analyzable_after_unrelated_edit(client: TestClient, tmp_path: Path) -> None:
     _, base, chapter_id, saved = _seed(client, tmp_path)
-    edited = (
-        "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
-    )
-    first = _save(
-        client, base, chapter_id, text=edited, digest=saved["prose_digest"], key="save:a"
-    )
+    edited = "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
+    first = _save(client, base, chapter_id, text=edited, digest=saved["prose_digest"], key="save:a")
     second_text = edited.replace("窗外的雨没有停。", "窗外的雨小了些，檐口还在滴水。")
     second = _save(
         client, base, chapter_id, text=second_text, digest=first["prose_digest"], key="save:b"
@@ -155,12 +147,8 @@ def test_revision_stays_analyzable_after_unrelated_edit(
 def test_reverting_the_edit_leaves_history_only(client: TestClient, tmp_path: Path) -> None:
     _, base, chapter_id, saved = _seed(client, tmp_path)
     original = (tmp_path / "book" / saved["path"]).read_text(encoding="utf-8")
-    edited = (
-        "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
-    )
-    first = _save(
-        client, base, chapter_id, text=edited, digest=saved["prose_digest"], key="save:a"
-    )
+    edited = "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
+    first = _save(client, base, chapter_id, text=edited, digest=saved["prose_digest"], key="save:a")
     _save(
         client,
         base,
@@ -195,13 +183,9 @@ def test_pure_append_is_not_a_revision(client: TestClient, tmp_path: Path) -> No
     assert client.get(f"{base}/chapters/{chapter_id}/revisions").json()["items"] == []
 
 
-def test_saving_same_request_key_returns_same_revision(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_saving_same_request_key_returns_same_revision(client: TestClient, tmp_path: Path) -> None:
     _, base, chapter_id, saved = _seed(client, tmp_path)
-    edited = (
-        "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
-    )
+    edited = "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n"
     first = _save(
         client, base, chapter_id, text=edited, digest=saved["prose_digest"], key="save:same"
     )

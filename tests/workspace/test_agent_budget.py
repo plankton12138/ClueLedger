@@ -66,9 +66,7 @@ def _text_turn(text: str) -> list[Any]:
 
 
 def _read_chapter() -> list[Any]:
-    return _tool_turn(
-        ToolCall(id="c1", name="read_file", arguments={"path": "正文/0001 雨夜.md"})
-    )
+    return _tool_turn(ToolCall(id="c1", name="read_file", arguments={"path": "正文/0001 雨夜.md"}))
 
 
 def _setup(tmp_path: Path) -> tuple[Workspace, RunContext]:

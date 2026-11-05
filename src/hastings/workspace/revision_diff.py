@@ -193,9 +193,7 @@ def _hunk(
     after_index: int,
     after_count: int,
 ) -> DiffHunk:
-    identity = "\n".join(
-        [ALGORITHM_VERSION, scope, str(index), op, before, after]
-    )
+    identity = "\n".join([ALGORITHM_VERSION, scope, str(index), op, before, after])
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
     before_context = before_blocks[before_index - 1] if before_index > 0 else ""
     after_context = (
@@ -218,9 +216,7 @@ def _hunk(
     )
 
 
-def _pair_replacements(
-    before_blocks: list[str], after_blocks: list[str]
-) -> list[tuple[str, str]]:
+def _pair_replacements(before_blocks: list[str], after_blocks: list[str]) -> list[tuple[str, str]]:
     """按位置配对改写块：段数相同就一一对应，段数不同再按相似度取舍。"""
     if len(before_blocks) == len(after_blocks):
         return list(zip(before_blocks, after_blocks, strict=True))
@@ -291,8 +287,7 @@ def _deletion_intact(hunk: DiffHunk, blocks: list[str]) -> bool:
     left, right = hunk.before_context, hunk.after_context
     if left and right:
         return any(
-            blocks[index] == left and blocks[index + 1] == right
-            for index in range(len(blocks) - 1)
+            blocks[index] == left and blocks[index + 1] == right for index in range(len(blocks) - 1)
         )
     if left:
         return left in blocks and not any(
@@ -307,18 +302,14 @@ def _deletion_intact(hunk: DiffHunk, blocks: list[str]) -> bool:
     return hunk.before not in blocks
 
 
-def _anchored(
-    text: str, left: str, right: str, blocks: list[str]
-) -> bool:
+def _anchored(text: str, left: str, right: str, blocks: list[str]) -> bool:
     """文本出现多次时，用相邻段落确认唯一位置。"""
     hits = 0
     for index, block in enumerate(blocks):
         if block != text:
             continue
         previous_ok = not left or (index > 0 and blocks[index - 1] == left)
-        following_ok = not right or (
-            index + 1 < len(blocks) and blocks[index + 1] == right
-        )
+        following_ok = not right or (index + 1 < len(blocks) and blocks[index + 1] == right)
         if previous_ok and following_ok:
             hits += 1
     return hits == 1

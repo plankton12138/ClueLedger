@@ -70,7 +70,8 @@ class _Holder:
         if self.raise_factory:
             raise RuntimeError("没有可用模型")
         provider = (
-            _FailingProvider() if self.fail
+            _FailingProvider()
+            if self.fail
             else _FakeProvider(self.text, delay=self.delay, prompts=self.prompts)
         )
         return ModelSnapshot(
@@ -148,7 +149,6 @@ def test_assist_streams_and_is_idempotent(
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-
         },
         "author_note": "不要写凶手",
         "request_key": "assist:1",
@@ -253,7 +253,6 @@ def test_stop_preserves_candidate_state(
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-
         },
         "request_key": "assist:stop",
     }

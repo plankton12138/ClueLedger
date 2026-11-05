@@ -674,11 +674,7 @@ class StoryVariant(StrictRecord):
                 raise ValueError(f"正文关联指向不存在的信息变化：{binding.id}")
 
     def _check_legacy_format(self) -> None:
-        if (
-            self.chapter_plans
-            or self.information_threads
-            or self.information_moves
-        ):
+        if self.chapter_plans or self.information_threads or self.information_moves:
             raise ValueError("旧格式不能同时包含章节构思或信息线")
         for node in self.nodes.values():
             if node.stage_id is not None and node.stage_id not in self.stages:
@@ -749,11 +745,7 @@ class StoryVariant(StrictRecord):
         """某章已入账的信息变化；按信息变化自身归属导出，章节不再维护列表。"""
         return tuple(
             sorted(
-                (
-                    move
-                    for move in self.information_moves.values()
-                    if move.chapter_id == chapter_id
-                ),
+                (move for move in self.information_moves.values() if move.chapter_id == chapter_id),
                 key=lambda row: row.id,
             )
         )

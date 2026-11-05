@@ -36,9 +36,7 @@ class _FakeProvider:
         self.text = text
 
     async def stream_response(self, **_: Any) -> AsyncIterator[Any]:
-        yield TextDeltaEvent(
-            content_index=0, delta=self.text, partial=AssistantMessage(content="")
-        )
+        yield TextDeltaEvent(content_index=0, delta=self.text, partial=AssistantMessage(content=""))
         yield AssistantDoneEvent(reason="stop", message=AssistantMessage(content=self.text))
 
     async def aclose(self) -> None:
@@ -95,9 +93,7 @@ def _setup(tmp_path: Path) -> dict[str, Any]:
     )
     assert edited.revision_id
 
-    library = ModuleLibrary(
-        tmp_path / "library", cache_file=tmp_path / "cache" / "catalog.json"
-    )
+    library = ModuleLibrary(tmp_path / "library", cache_file=tmp_path / "cache" / "catalog.json")
     created_module = library.create_module(
         kind="characters",
         name="主角团",
@@ -194,9 +190,7 @@ def _ready_analysis(setup: dict[str, Any], holder: _Holder) -> RevisionAnalysis:
     return asyncio.run(run())
 
 
-def test_module_decision_applies_as_workspace_revision(
-    tmp_path: Path, holder: _Holder
-) -> None:
+def test_module_decision_applies_as_workspace_revision(tmp_path: Path, holder: _Holder) -> None:
     setup = _setup(tmp_path)
     ready = _ready_analysis(setup, holder)
 
@@ -231,9 +225,7 @@ def test_module_decision_applies_as_workspace_revision(
     assert "直接解释自己的紧张" in original
 
 
-def test_module_apply_rejects_entry_changed_after_analysis(
-    tmp_path: Path, holder: _Holder
-) -> None:
+def test_module_apply_rejects_entry_changed_after_analysis(tmp_path: Path, holder: _Holder) -> None:
     setup = _setup(tmp_path)
     ready = _ready_analysis(setup, holder)
     store = RevisionAnalysisStore(setup["store"].root)

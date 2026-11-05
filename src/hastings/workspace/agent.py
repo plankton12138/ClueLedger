@@ -211,6 +211,7 @@ class TurnBudget:
     def remaining(self) -> int:
         return max(0, self.total - self.used)
 
+
 #: 单次工具输出上限，避免把整本书塞回模型。
 _MAX_DIFF_CHARS = 20_000
 _READ_DEFAULT_LINES = 200
@@ -322,15 +323,12 @@ class RunContext:
         touches_prose = managed_kind(operation.path) == "chapter" or (
             operation.target is not None and managed_kind(operation.target) == "chapter"
         )
-        if (
-            touches_prose
-            and self.story is not None
-            and operation.action in ("create", "update")
-        ):
+        if touches_prose and self.story is not None and operation.action in ("create", "update"):
             # 作品正文先有结构：空作品不能在建立 STRUCTURE.md 之前写入或提出正文。
             self.require_structure_for_prose()
-        structure_write = (
-            operation.path == STRUCTURE_PATH and operation.action in ("create", "update")
+        structure_write = operation.path == STRUCTURE_PATH and operation.action in (
+            "create",
+            "update",
         )
         if (
             (
@@ -4495,7 +4493,12 @@ def _change_operations_argument(value: JSONValue) -> tuple[ChangeOperation, ...]
         summary = item.get("summary", "")
         body = item.get("body", "")
         kind = item.get("kind", "reference")
-        if not all(isinstance(value, str) for value in (name, summary, body, kind)):
+        if not (
+            isinstance(name, str)
+            and isinstance(summary, str)
+            and isinstance(body, str)
+            and isinstance(kind, str)
+        ):
             raise _input_error("operations", "name、summary、body 与 kind 必须是字符串")
         if action == "create":
             spec(kind)

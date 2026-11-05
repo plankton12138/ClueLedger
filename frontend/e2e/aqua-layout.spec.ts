@@ -55,7 +55,7 @@ test("Aqua 材质、控件状态与响应式写作页", async ({ page, request }
   expect(await style(header, "background-image")).toContain("repeating-linear-gradient");
   const paper = page.locator(".writing-paper");
   expect(await style(paper, "background-color")).toBe("rgb(255, 253, 248)");
-  const reader = page.locator(".reader-document");
+  const reader = page.locator(".prose-paper").first();
   expect(await style(reader, "color")).toBe("rgb(48, 52, 58)");
 
   const button = page.getByRole("button", { name: "侧栏", exact: true });

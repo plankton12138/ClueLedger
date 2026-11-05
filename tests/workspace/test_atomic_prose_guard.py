@@ -52,12 +52,8 @@ class _Candidate:
 def _info(tmp_path: Path, service: TurnService, *, selected_path: str | None) -> TurnInfo:
     context = None
     if selected_path is not None:
-        context = ContextSnapshot(
-            selected_path=selected_path, references=(), observed_digests={}
-        )
-    info = TurnInfo(
-        turn_id="t1", conversation_id="c1", started_at="now", context=context
-    )
+        context = ContextSnapshot(selected_path=selected_path, references=(), observed_digests={})
+    info = TurnInfo(turn_id="t1", conversation_id="c1", started_at="now", context=context)
     # 直接落一条写入收据：模拟本轮模型已经交了结构/模块更新。
     service.store.append(
         info.conversation_id,
@@ -90,9 +86,7 @@ def test_design_purpose_or_no_target_never_triggers(tmp_path: Path) -> None:
 
     assert service._expected_prose_missing(info, _Run(purpose="design", documents=None)) is False
 
-    no_target = TurnInfo(
-        turn_id="t1", conversation_id="c1", started_at="now", context=None
-    )
+    no_target = TurnInfo(turn_id="t1", conversation_id="c1", started_at="now", context=None)
     service.store.append(
         no_target.conversation_id,
         {"type": "file_changed", "turn_id": "t1", "path": "STRUCTURE.md"},
@@ -104,9 +98,7 @@ def test_design_purpose_or_no_target_never_triggers(tmp_path: Path) -> None:
 def test_discussion_reply_without_writes_is_not_a_failure(tmp_path: Path) -> None:
     """模型只回复讨论、没有任何写入：不是「只交文件更新不交正文」，不算失败。"""
     service, _ = _service(tmp_path)
-    context = ContextSnapshot(
-        selected_path="正文/0003 对峙.md", references=(), observed_digests={}
-    )
+    context = ContextSnapshot(selected_path="正文/0003 对峙.md", references=(), observed_digests={})
     info = TurnInfo(turn_id="t1", conversation_id="c1", started_at="now", context=context)
 
     assert service._expected_prose_missing(info, _Run(purpose="write", documents=None)) is False
@@ -133,9 +125,7 @@ def test_revise_purpose_is_also_guarded(tmp_path: Path) -> None:
 def test_write_events_from_other_turns_are_ignored(tmp_path: Path) -> None:
     """收据只认本轮事件：上一轮的写入不给这一轮兜底当依据。"""
     service, _ = _service(tmp_path)
-    context = ContextSnapshot(
-        selected_path="正文/0003 对峙.md", references=(), observed_digests={}
-    )
+    context = ContextSnapshot(selected_path="正文/0003 对峙.md", references=(), observed_digests={})
     info = TurnInfo(turn_id="t2", conversation_id="c1", started_at="now", context=context)
     service.store.append(
         info.conversation_id,

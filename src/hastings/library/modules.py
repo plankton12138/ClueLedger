@@ -773,9 +773,7 @@ def _manifest(
     }
 
 
-def _module_summary(
-    name: str, drafts: Sequence[EntryDraft], supplied: str = ""
-) -> str:
+def _module_summary(name: str, drafts: Sequence[EntryDraft], supplied: str = "") -> str:
     """生成版本级短摘要；调用方给出的摘要优先，缺省时从实际条目稳定派生。"""
     explicit = " ".join(supplied.split()).strip()
     if explicit:

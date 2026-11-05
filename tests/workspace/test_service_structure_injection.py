@@ -41,12 +41,8 @@ def _service(tmp_path: Path) -> tuple[TurnService, Workspace]:
 def _info(*, selected_path: str | None = None) -> TurnInfo:
     context = None
     if selected_path is not None:
-        context = ContextSnapshot(
-            selected_path=selected_path, references=(), observed_digests={}
-        )
-    return TurnInfo(
-        turn_id="t1", conversation_id="c1", started_at="now", context=context
-    )
+        context = ContextSnapshot(selected_path=selected_path, references=(), observed_digests={})
+    return TurnInfo(turn_id="t1", conversation_id="c1", started_at="now", context=context)
 
 
 def _seed_ledger(workspace: Workspace, chapters: dict[int, str]) -> None:
@@ -141,9 +137,7 @@ def test_modifying_an_archived_chapter_is_not_redirected(tmp_path: Path) -> None
     service, workspace = _service(tmp_path)
     _seed_ledger(workspace, {1: "rev-1", 2: "rev-2"})
 
-    _, _, snapshot = service._structure_injection(
-        _info(selected_path="正文/0002 追查.md")
-    )
+    _, _, snapshot = service._structure_injection(_info(selected_path="正文/0002 追查.md"))
 
     assert snapshot.reconcile_action == "write"
 
@@ -181,9 +175,7 @@ def test_allow_skip_is_not_wired_from_metadata(tmp_path: Path) -> None:
     """跳章只能由作者明确确认（M5 流程承接）：装配层默认不放行跳章。"""
     service, workspace = _service(tmp_path)
 
-    _, _, snapshot = service._structure_injection(
-        _info(selected_path="正文/0003 线索.md")
-    )
+    _, _, snapshot = service._structure_injection(_info(selected_path="正文/0003 线索.md"))
 
     assert snapshot.skipped_chapters == ()
     assert snapshot.reconcile_action == "redirect"

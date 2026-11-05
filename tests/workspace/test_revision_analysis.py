@@ -31,9 +31,7 @@ class _FakeProvider:
     async def stream_response(self, **_: Any) -> AsyncIterator[Any]:
         if self.gate is not None:
             await asyncio.to_thread(self.gate.wait, 5.0)
-        yield TextDeltaEvent(
-            content_index=0, delta=self.text, partial=AssistantMessage(content="")
-        )
+        yield TextDeltaEvent(content_index=0, delta=self.text, partial=AssistantMessage(content=""))
         yield AssistantDoneEvent(reason="stop", message=AssistantMessage(content=self.text))
 
     async def aclose(self) -> None:

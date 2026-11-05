@@ -78,9 +78,7 @@ def test_clear_request_injects_structure_prompt_directly(tmp_path: Path) -> None
 
 def test_existing_structure_falls_back_to_design_instructions(tmp_path: Path) -> None:
     workspace, run, _ = _design_run(tmp_path, author_text="看看结构")
-    write_structure_document(
-        workspace, text=STRUCTURE, expected_digest=None, creating=True
-    )
+    write_structure_document(workspace, text=STRUCTURE, expected_digest=None, creating=True)
 
     inputs = prepare_request_inputs(workspace=workspace, run=run)
 
@@ -104,9 +102,7 @@ def test_empty_structure_opens_structure_but_not_module_write_tools(tmp_path: Pa
 
 def test_existing_structure_keeps_task_gating(tmp_path: Path) -> None:
     workspace, run, _ = _design_run(tmp_path, author_text="聊聊这条线怎么安排")
-    write_structure_document(
-        workspace, text=STRUCTURE, expected_digest=None, creating=True
-    )
+    write_structure_document(workspace, text=STRUCTURE, expected_digest=None, creating=True)
 
     inputs = prepare_request_inputs(workspace=workspace, run=run)
 
@@ -125,4 +121,3 @@ def test_write_purpose_never_gets_startup_prompt(tmp_path: Path) -> None:
     inputs = prepare_request_inputs(workspace=workspace, run=run)
 
     assert "作者希望被引导" not in inputs.system
-

@@ -46,8 +46,7 @@ class ProseLedger:
         return {
             "schema": LEDGER_SCHEMA,
             "chapters": {
-                str(chapter): revision
-                for chapter, revision in sorted(self.chapters.items())
+                str(chapter): revision for chapter, revision in sorted(self.chapters.items())
             },
         }
 
@@ -123,11 +122,7 @@ def reconcile(
     目标章本身已入档不拦——修改既有章是合法路径。目标章之前存在缺章时，
     默认改派最早缺章；``allow_skip=True`` 表示作者明确说跳着写，放行并记录。
     """
-    missing = [
-        chapter
-        for chapter in range(1, target_chapter)
-        if chapter not in ledger.chapters
-    ]
+    missing = [chapter for chapter in range(1, target_chapter) if chapter not in ledger.chapters]
     if not missing:
         return ReconcileDecision(
             action="write",
@@ -151,8 +146,7 @@ def reconcile(
         target_to=earliest,
         skipped=(),
         reason=(
-            f"第 {earliest} 章尚无正文登记，"
-            f"第 {target_chapter} 章不予起草，改派第 {earliest} 章"
+            f"第 {earliest} 章尚无正文登记，第 {target_chapter} 章不予起草，改派第 {earliest} 章"
         ),
     )
 

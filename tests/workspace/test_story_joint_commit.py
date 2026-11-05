@@ -170,9 +170,7 @@ def test_recovery_after_second_prose_file_fails(
     )
     original = workspace.write
 
-    def fail_second(
-        path: str, text: str, *, expected_digest: str | None, **_: object
-    ) -> object:
+    def fail_second(path: str, text: str, *, expected_digest: str | None, **_: object) -> object:
         if path == view.path:
             raise OSError("injected second file")
         return original(path, text, expected_digest=expected_digest)

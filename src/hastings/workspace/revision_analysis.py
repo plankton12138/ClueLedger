@@ -291,9 +291,15 @@ class RevisionAnalysisService:
                 {"label": "分析中断", "status": "failed", "detail": "", "at": interrupted_at},
             ]
             error = "[REVISION_ANALYSIS_INTERRUPTED] 修订分析：分析已中断。建议：在对话里重新分析。"
-            return self.store.save(replace(
-                analysis, status="failed", updated_at=interrupted_at, trace=trace, error=error,
-            ))
+            return self.store.save(
+                replace(
+                    analysis,
+                    status="failed",
+                    updated_at=interrupted_at,
+                    trace=trace,
+                    error=error,
+                )
+            )
         return analysis
 
     async def start(
@@ -505,7 +511,8 @@ class RevisionAnalysisService:
         ]
         module_detail = (
             f"{len(modules)} 个模块 · {sum(len(row['entries']) for row in modules)} 个条目"
-            if modules else "无"
+            if modules
+            else "无"
         )
         if module_entries:
             module_detail += f" · 已读取正文：{'、'.join(module_entries)}"
@@ -554,8 +561,7 @@ class RevisionAnalysisService:
                         "entry_id": "",
                         "entry_digest": "仅 module_entry：installed_modules 里该条目的 body_digest",
                         "patch_find": (
-                            "structure 从 current_structure 复制；"
-                            "module_entry 从条目 body 复制"
+                            "structure 从 current_structure 复制；module_entry 从条目 body 复制"
                         ),
                         "patch_replace": "替换后的片段",
                     }
@@ -707,9 +713,7 @@ def _checked_module_patch(
         return replace(decision, patch_error="模型没有指明要修改的模块条目")
     if not decision.entry_digest:
         return replace(decision, patch_error="模型没有给出条目的读取指纹")
-    entry = _find_module_entry(
-        modules, decision.module_id, decision.revision_id, decision.entry_id
-    )
+    entry = _find_module_entry(modules, decision.module_id, decision.revision_id, decision.entry_id)
     if entry is None:
         return replace(decision, patch_error="建议指向的条目不在当前作品装配里")
     body = entry.get("body")
@@ -747,9 +751,7 @@ def _entry_relevant(title: str, aliases: tuple[str, ...], focus: str) -> bool:
     return any(len(name.strip()) >= 2 and name.strip() in focus for name in names)
 
 
-def _checked_structure_patch(
-    decision: AnalysisDecision, structure_text: str
-) -> AnalysisDecision:
+def _checked_structure_patch(decision: AnalysisDecision, structure_text: str) -> AnalysisDecision:
     """结构补丁必须能在分析时的结构里唯一定位；否则保留说明、禁用应用。"""
     find = decision.patch_find
     replace_text = decision.patch_replace

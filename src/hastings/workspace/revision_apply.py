@@ -237,8 +237,7 @@ def apply_module_decisions(
             operations=operations,
             base_digest=current_digest,
             request_key=(
-                f"revision-module:{analysis_id}:"
-                + "-".join(str(index) for index in indexes)
+                f"revision-module:{analysis_id}:" + "-".join(str(index) for index in indexes)
             ),
         )
         change_set_id = str(prepared["change_set_id"])
@@ -334,9 +333,7 @@ def _module_operations(
             raw, digest = library.storage.read_entry(
                 decision.module_id, decision.revision_id, decision.entry_id
             )
-            draft = parse_entry(
-                raw, module_kind=library.module(decision.module_id).kind
-            )
+            draft = parse_entry(raw, module_kind=library.module(decision.module_id).kind)
         except WorkspaceError as exc:
             raise WorkspaceError(
                 code="REVISION_APPLICATION_CONFLICT",

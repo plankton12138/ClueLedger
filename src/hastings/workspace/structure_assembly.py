@@ -165,14 +165,8 @@ def loose_keyword_check(
     rows: list[LooseCheckRow] = []
     for item, keywords in entries:
         clean_keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
-        hits = tuple(
-            keyword
-            for keyword in clean_keywords
-            if keyword.casefold() in normalized
-        )
-        rows.append(
-            LooseCheckRow(item=item, keywords=tuple(clean_keywords), hits=hits)
-        )
+        hits = tuple(keyword for keyword in clean_keywords if keyword.casefold() in normalized)
+        rows.append(LooseCheckRow(item=item, keywords=tuple(clean_keywords), hits=hits))
     return rows
 
 

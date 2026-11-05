@@ -132,11 +132,15 @@ def confirm_index_candidate(
         latest = workspace.read(path)
         if latest.digest != expected_prose_digest:
             raise _stale(path, "正文在确认前已经变化")
-        return change, None, {
-            "thread_id": thread.id,
-            "move_id": move.id,
-            "binding_id": binding.id,
-        }
+        return (
+            change,
+            None,
+            {
+                "thread_id": thread.id,
+                "move_id": move.id,
+                "binding_id": binding.id,
+            },
+        )
 
     receipt = store.commit_change(
         variant_id=MAIN_VARIANT_ID,

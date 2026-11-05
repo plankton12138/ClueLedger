@@ -3470,11 +3470,9 @@ class TurnService:
                 )
                 revisions = RevisionStore(self.store.root)
                 for path in candidate.documents:
-                    plan = (
-                        story_store.require_variant(candidate.frozen.variant_id).chapter_for_path(
-                            path
-                        )
-                    )
+                    plan = story_store.require_variant(
+                        candidate.frozen.variant_id
+                    ).chapter_for_path(path)
                     if plan is None:
                         continue
                     record_change_revision(

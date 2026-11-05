@@ -66,9 +66,7 @@ def test_edited_paragraph_inactive_after_reverting_it() -> None:
 
 
 def test_inserted_paragraph_is_active_only_while_present() -> None:
-    after = BEFORE.replace(
-        "窗外的雨没有停。", "窗外的雨没有停。\n\n她把窗推开一条缝。"
-    )
+    after = BEFORE.replace("窗外的雨没有停。", "窗外的雨没有停。\n\n她把窗推开一条缝。")
     hunks = build_hunks(BEFORE, after, scope="revision_a")
     insert = next(h for h in hunks if h.op == "insert")
 

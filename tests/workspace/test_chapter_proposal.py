@@ -47,9 +47,7 @@ def _setup(
         author_messages=((1, author_text),),
         state_root=state_root,
         current_author_text=author_text,
-        story=StoryContextSnapshot(
-            variant_id=MAIN_VARIANT_ID, revision=revision, purpose="write"
-        ),
+        story=StoryContextSnapshot(variant_id=MAIN_VARIANT_ID, revision=revision, purpose="write"),
     )
     tools = {tool.name: tool for tool in build_tools(workspace, run)}
     return workspace, store, tools, revision
@@ -120,9 +118,7 @@ async def test_confirmation_quote_must_match_author_text(tmp_path: Path) -> None
 
 @pytest.mark.anyio
 async def test_title_optional_defaults_to_order(tmp_path: Path) -> None:
-    workspace, store, tools, revision = _setup(
-        tmp_path, author_text="行，建吧"
-    )
+    workspace, store, tools, revision = _setup(tmp_path, author_text="行，建吧")
     payload = await _acall(
         tools["create_chapter"],
         expected_plan_revision=revision,
@@ -135,9 +131,7 @@ async def test_title_optional_defaults_to_order(tmp_path: Path) -> None:
 
 
 def store_has_no_chapters(workspace: Workspace) -> bool:
-    return not (workspace.root / "正文").exists() or not any(
-        (workspace.root / "正文").glob("*.md")
-    )
+    return not (workspace.root / "正文").exists() or not any((workspace.root / "正文").glob("*.md"))
 
 
 def test_create_chapter_is_not_offered_without_frozen_plan(tmp_path: Path) -> None:

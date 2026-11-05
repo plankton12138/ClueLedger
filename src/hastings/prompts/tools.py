@@ -198,9 +198,7 @@ READ_STRUCTURE_DESCRIPTION = (
     "返回 exists、全文与 digest；起步前不存在时 exists 为假、内容为空。"
 )
 
-READ_STRUCTURE_GUIDELINES = (
-    "更新结构前必须先读；带上 digest 供 write_structure 使用。",
-)
+READ_STRUCTURE_GUIDELINES = ("更新结构前必须先读；带上 digest 供 write_structure 使用。",)
 
 WRITE_STRUCTURE_DESCRIPTION = (
     "整体写入 STRUCTURE.md：直接落盘（无需作者逐次确认），随作品 Git 记录可回退。"
@@ -640,9 +638,7 @@ CREATE_CHAPTER_TITLE_PARAM_DESCRIPTION = "新章标题；作者没给就省略"
 CREATE_CHAPTER_AFTER_PARAM_DESCRIPTION = "插在哪一章之后（章节 ID）；默认追加到末尾"
 CREATE_CHAPTER_REVISION_PARAM_DESCRIPTION = "read_story 读到的当前方案修订"
 CREATE_CHAPTER_REQUEST_KEY_PARAM_DESCRIPTION = "本次建章提案的稳定请求键，如 chapter:prop:1"
-CREATE_CHAPTER_CONFIRMATION_PARAM_DESCRIPTION = (
-    "作者确认建章的原话短引文，必须出现在作者本轮消息里"
-)
+CREATE_CHAPTER_CONFIRMATION_PARAM_DESCRIPTION = "作者确认建章的原话短引文，必须出现在作者本轮消息里"
 UPDATE_STORY_UPDATES_PARAM_DESCRIPTION = (
     "本次各项改动的感知分类标注：label 用变更对象可读名；category 填 bookkeeping"
     "（记账，静默）或 planned（计划性变化，必须带 note 与受影响范围 affected）"

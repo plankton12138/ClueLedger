@@ -36,7 +36,7 @@ packages = ["src/tau_ai", "src/tau_agent", "src/hastings"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
-extend-exclude = ["src/tau_coding"]
+extend-exclude = ["src/tau_coding", "release", "dev-notes", "docs", "product-design", "prototypes"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

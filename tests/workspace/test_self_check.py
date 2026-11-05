@@ -87,12 +87,7 @@ def test_missing_marker_is_self_check_missing() -> None:
 
 def test_partial_self_check_is_missing() -> None:
     """三层缺任何一层都按缺失归因；不静默降级。"""
-    partial = (
-        "正文。\n\n"
-        f"{SELF_CHECK_MARKER}\n"
-        "1. 必发生核对：铜哨出现。\n"
-        "2. 铁律自查：无违例。\n"
-    )
+    partial = f"正文。\n\n{SELF_CHECK_MARKER}\n1. 必发生核对：铜哨出现。\n2. 铁律自查：无违例。\n"
     assert split_self_check(partial).present is False
 
 

@@ -100,9 +100,7 @@ async def test_candidate_tool_requires_structure_and_recovers_in_same_turn(
 
     digest = workspace.read(PATH).digest
     with pytest.raises(WorkspaceError) as caught:
-        await _call(
-            tools["propose_story_scene"], path=PATH, base_digest=digest, text=NEW
-        )
+        await _call(tools["propose_story_scene"], path=PATH, base_digest=digest, text=NEW)
     assert caught.value.code == "STRUCTURE_NOT_READY"
     assert workspace.read(PATH).text == TEXT
 
@@ -120,9 +118,7 @@ async def test_candidate_tool_requires_structure_and_recovers_in_same_turn(
     await _call(tools["write_structure"], text=STRUCTURE)
     assert run.structure_ready is True
 
-    proposed = await _call(
-        tools["propose_story_scene"], path=PATH, base_digest=digest, text=NEW
-    )
+    proposed = await _call(tools["propose_story_scene"], path=PATH, base_digest=digest, text=NEW)
     assert proposed["status"] == "draft"
     assert workspace.read(PATH).text == TEXT
 
@@ -258,9 +254,7 @@ def test_service_turn_establishes_structure_before_candidate(tmp_path: Path) -> 
         info = await service.accept(
             "写第一章",
             "request",
-            context=ContextRequest(
-                story=StoryRequest(variant_id=MAIN_VARIANT_ID, purpose="write")
-            ),
+            context=ContextRequest(story=StoryRequest(variant_id=MAIN_VARIANT_ID, purpose="write")),
         )
         await service.wait(info.turn_id)
         return info

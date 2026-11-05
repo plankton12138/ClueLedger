@@ -25,9 +25,7 @@ _STRUCTURE = "## 铁律\n不写超自然力量\n\n## 骨架\n- 第 1 章：雨�
 
 def _assembled(tmp_path: Path, *, structure: str = "", ledger: str = "", modules: str = ""):
     workspace = Workspace.create(tmp_path / "作品")
-    return build_assembled_context(
-        workspace, structure=structure, ledger=ledger, modules=modules
-    )
+    return build_assembled_context(workspace, structure=structure, ledger=ledger, modules=modules)
 
 
 def _part_keys(assembled) -> list[str]:

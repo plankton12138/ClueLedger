@@ -221,7 +221,10 @@ def module_overview(assembly: Assembly, library: ModuleLibrary | None, *, limit:
         return "\n".join(lines)
 
     page = library.modules(limit=max(1, limit), include_deleted=False, include_preview=False)
-    rows = [item for item in page.get("items") or [] if isinstance(item, dict)]
+    raw_rows = page.get("items")
+    rows = (
+        [item for item in raw_rows if isinstance(item, dict)] if isinstance(raw_rows, list) else []
+    )
     installed = {
         (binding.module.module_id, binding.module.revision_id) for binding in assembly.bindings
     }
@@ -238,15 +241,18 @@ def module_overview(assembly: Assembly, library: ModuleLibrary | None, *, limit:
         summary = str(row.get("summary") or "").strip()
         if summary:
             lines.append(f"  摘要：{summary}")
-        titles = [str(item) for item in row.get("entry_titles") or [] if str(item).strip()]
+        raw_titles = row.get("entry_titles")
+        titles = (
+            [str(item) for item in raw_titles if str(item).strip()]
+            if isinstance(raw_titles, list)
+            else []
+        )
         if titles:
             lines.append("  条目：" + "、".join(titles[:8]))
     total = int(str(page.get("total") or 0))
     if total > len(rows):
         lines.append(f"- 另有 {total - len(rows)} 个模块；用 inspect_module_catalog 继续查询。")
-    lines.append(
-        "- 目录命中不等于读过正文；相关模块可用 read_library_record 按精确版本只读。"
-    )
+    lines.append("- 目录命中不等于读过正文；相关模块可用 read_library_record 按精确版本只读。")
     return "\n".join(lines)
 
 
@@ -307,8 +313,7 @@ def relevant_module_note(
     trailer = "- （命中不等于读过：写之前用 read_record 读取条目原文。）"
     if limited:
         trailer = (
-            "- （条目较多，本轮只扫描了部分；需要更全时用 query_records 按关键词查。）\n"
-            + trailer
+            "- （条目较多，本轮只扫描了部分；需要更全时用 query_records 按关键词查。）\n" + trailer
         )
     note = (
         f"### 本轮相关条目（按目标章第 {target_chapter} 章确定性选择）\n"

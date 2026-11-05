@@ -31,9 +31,7 @@ def env(tmp_path: Path) -> tuple[Workspace, StoryStore]:
     return workspace, store
 
 
-def _seed_chapter(
-    store: StoryStore, workspace: Workspace, *, key: str
-) -> ChapterCreateResult:
+def _seed_chapter(store: StoryStore, workspace: Workspace, *, key: str) -> ChapterCreateResult:
     """建一章（只有骨架正文），返回建章结果。"""
     return create_chapter(
         store,

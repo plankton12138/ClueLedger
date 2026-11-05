@@ -29,10 +29,7 @@ async def _grant_structure(tools: dict[str, AgentTool]) -> None:
         mode="edit",
         summary="起步起草全书结构",
         authorization="就这样开始",
-        grants=[
-            {"action": action, "path": STRUCTURE_PATH}
-            for action in ("create", "update")
-        ],
+        grants=[{"action": action, "path": STRUCTURE_PATH} for action in ("create", "update")],
     )
 
 
