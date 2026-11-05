@@ -280,3 +280,12 @@ P0 动手前先做了不接事务层的纯模块验证（`workspace/chapter_clue
 - **对账结论含线索报告**：`structure_assembly.clue_report_section` 渲染确定性发现项；`creative_assist._drafting_injection` 在台账/改派说明之后追加「线索对账」段（结构层计划线索 × 台账已写各章聚合）。空报告不占上下文。
 - **测试**：解析正反例、跨节截断、畸形行/重复编号、`missed_plans` 正反例、渲染空/非空，共 7 例；相关三文件 62 例全过。
 - **边界**：起草路径不做锚失联检测（需逐章正文，留给 P2 修订回合）；「未回收线索清单」注入属 P2，与报告段分工不同。
+
+### P2 已实施（2026-11-05）
+
+- **起草注入三类清单**（`chapter_clues.open_clue_states` + `structure_assembly.clue_context_section`）：`_drafting_injection` 在台账之后注入「【未回收线索】/【本章计划】/【失联待重锚】」三块，已收/已退役不占上下文。未回收清单按「计划回收章近的优先 → 埋得早的优先」排序，超过 `OPEN_CLUE_INJECTION_LIMIT = 12` 条截断并注明总数（评审定案 4：不设硬配额，注入侧截断兜底噪声）。失联检测只读**有线索登记**的章节正文，不为了对账把全书读一遍。
+- **自查第四层**（`prompts/self_check.py`）：模板版本 `SELF_CHECK_TEMPLATE_VERSION = 2`，新增「4. 线索核对：本章计划线索是否落锚、回收动作是否与登记一致」；`split_self_check` 返回 `clue_items` 与 `missing_layers`，只缺线索层时按 `SELF_CHECK_CLUE_MISSING` 失败归因（其余缺失仍 `SELF_CHECK_MISSING_CONFLICT`）。提示词里的四层要求此前是死常量，本次一并接进用户提示。
+- **修订失联提示**（`chapter_writing.save_chapter_prose`）：每次正文保存后对照该章线索登记做锚校验，`ProseSaveResult.clue_findings` 与接口响应的 `clue_findings` 返回 `CLUE_ORPHANED_ANCHOR`（含 prefix）；**不自动重建锚、不拦截保存**——重锚是认知动作，留给模型或作者。
+- **聚合容错**（`aggregate_clues`）：单章线索文件损坏不再上抛，转为 `CLUE_FILE_CORRUPT` 报告项并继续聚合其余章节（线索是增强层，坏一页不能堵死写作主路径）。
+- **测试**：`anchor_findings` / 未回收选择与截断 / 损坏容错 / 三类清单渲染 / 自查第四层与专属归因 / 修订失联往返 / 起草端到端注入，共 18 例新增；全量回归见提交说明。
+- **边界（模型侧提交入口）**：v1.2 是单入口架构，正文保存不经模型工具（候选生成 → 作者确认采用），因此模型侧仍不直接提交线索登记；登记入口是 `save_chapter_prose` 的 `clue_entries`（P0）。等正文写入进入模型工具链再补工具参数与提示词，不在 P2 造一个用不上的通道。

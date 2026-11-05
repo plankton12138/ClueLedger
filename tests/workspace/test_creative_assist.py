@@ -70,7 +70,8 @@ class _Holder:
         if self.raise_factory:
             raise RuntimeError("没有可用模型")
         provider = (
-            _FailingProvider() if self.fail
+            _FailingProvider()
+            if self.fail
             else _FakeProvider(self.text, delay=self.delay, prompts=self.prompts)
         )
         return ModelSnapshot(
@@ -148,7 +149,6 @@ def test_assist_streams_and_is_idempotent(
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-
         },
         "author_note": "不要写凶手",
         "request_key": "assist:1",
@@ -184,7 +184,8 @@ def test_prose_assist_sends_full_style_document(
         "她搁下杯子。\n\n### 自查\n"
         "1. 必发生核对：她搁下杯子。\n"
         "2. 铁律自查：符合。\n"
-        "3. 读者认知：可以补一处停顿。"
+        "3. 读者认知：可以补一处停顿。\n"
+        "4. 线索核对：本章无线索登记。"
     )
     url = f"/api/file-workspaces/{setup['workspace_id']}/creative-assists"
     payload = {
@@ -253,7 +254,6 @@ def test_stop_preserves_candidate_state(
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-
         },
         "request_key": "assist:stop",
     }
@@ -404,7 +404,8 @@ def test_prose_candidate_adoption_and_stale_rejection(
         "### 自查\n"
         "1. 必发生核对：湿手套出现——「柜台上有一双湿手套」。\n"
         "2. 铁律自查：本章无违例。\n"
-        "3. 读者认知：误读立住；建议：手套特写再冷一拍。"
+        "3. 读者认知：误读立住；建议：手套特写再冷一拍。\n"
+        "4. 线索核对：CL-01 按计划推进，登记一致。"
     )
     payload = {
         "kind": "prose_draft",
@@ -538,3 +539,86 @@ def test_prose_prompt_requires_reconcile_first(
     assert "改为补写第 1 章" in prompt
     assert "不写原目标章" in prompt
     assert "核对目标章与正文台账" in prose_draft_system_prompt()
+
+
+def test_prose_prompt_injects_open_clues_and_chapter_plan(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    """P2：起草注入三类清单——未回收线索、本章计划、失联待重锚。"""
+    from hastings.workspace.chapter_clues import ClueEntry, anchor_paragraph, write_chapter_clues
+
+    setup = _setup_chapter(client, tmp_path)
+    text = "# 第一章\n\n箱扣上的漆掉了一块，露出底下的铁色。\n老魏没再说话。\n"
+    saved = client.put(
+        f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
+        json={
+            "text": text,
+            "expected_digest": setup["prose_digest"],
+            "draft_revision": "local_1",
+            "candidate_id": None,
+            "request_key": "save:clues",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    revision = saved.json()["plan_revision"]
+    (setup["root"] / "STRUCTURE.md").write_text(
+        "# 结构\n\n## 计划线索\n"
+        "CL-01 箱扣缺漆：第1章埋、第5章收\n"
+        "CL-02 漏雨的屋顶：第2章埋\n",
+        encoding="utf-8",
+    )
+    write_chapter_clues(
+        setup["root"],
+        1,
+        revision,
+        [
+            ClueEntry(
+                id="CL-01",
+                kind="伏笔",
+                status="planted",
+                origin="planned",
+                note="箱扣缺漆，来历未明",
+                anchor=anchor_paragraph("箱扣上的漆掉了一块，露出底下的铁色。", revision),
+            )
+        ],
+    )
+    second = seed_chapter(
+        tmp_path / "state",
+        setup["workspace_id"],
+        setup["root"],
+        title="第二章",
+        expected_plan_revision=revision,
+        request_key="chapter:2",
+    )
+    holder.text = (
+        "第二章正文。\n\n### 自查\n"
+        "1. 必发生核对：无。\n"
+        "2. 铁律自查：无违例。\n"
+        "3. 读者认知：无误读。\n"
+        "4. 线索核对：本章无线索登记。"
+    )
+    response = client.post(
+        f"/api/file-workspaces/{setup['workspace_id']}/creative-assists",
+        json={
+            "kind": "prose_draft",
+            "target": {
+                "kind": "prose",
+                "workspace_id": setup["workspace_id"],
+                "chapter_id": second["chapter_id"],
+            },
+            "base": {"plan_revision": second["plan_revision"], "prose_digest": second["prose_digest"]},
+            "request_key": "assist:clues",
+        },
+    )
+    assert response.status_code == 202, response.text
+    _wait_for(
+        client,
+        f"/api/file-workspaces/{setup['workspace_id']}/creative-assists/"
+        f"{response.json()['candidate_id']}",
+        lambda row: row["status"] == "ready",
+    )
+    prompt = holder.prompts[-1]
+    assert "### 线索清单" in prompt
+    assert "【未回收线索】" in prompt and "CL-01 箱扣缺漆" in prompt
+    assert "计划第 5 章收" in prompt
+    assert "【本章计划】" in prompt and "CL-02（计划本章埋设）：漏雨的屋顶" in prompt

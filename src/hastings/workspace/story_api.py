@@ -406,6 +406,10 @@ def create_story_router(
             "analysis_job_id": job_id,
             "committed_change_id": result.committed_change_id,
             "revision_id": result.revision_id or None,
+            "clue_findings": [
+                {"code": finding.code, "message": finding.message}
+                for finding in result.clue_findings
+            ],
         }
 
     @router.post("/{workspace_id}/story/chapters/{chapter_id}/index-review")
@@ -539,8 +543,7 @@ def create_story_router(
         detail = revisions.detail(revision_id, current_text)
         assert detail is not None
         hunks = [
-            {**hunk.to_dict(), "active": hunk.id in detail.active_hunk_ids}
-            for hunk in detail.hunks
+            {**hunk.to_dict(), "active": hunk.id in detail.active_hunk_ids} for hunk in detail.hunks
         ]
         analyses = RevisionAnalysisStore(store.root).list_for_revision(
             revision_id, limit=1, conversation_id=conversation_id
@@ -591,9 +594,7 @@ def create_story_router(
                         fix="换一个请求键重新保存，避免把两次编辑合成一次",
                         details={"request_key": body.request_key},
                     )
-        view = write_style_document(
-            workspace, text=body.text, expected_digest=body.expected_digest
-        )
+        view = write_style_document(workspace, text=body.text, expected_digest=body.expected_digest)
         if body.request_key:
             with locked(request_log.with_suffix(".lock")):
                 log = _read_request_log(request_log)
@@ -673,11 +674,7 @@ def create_story_router(
         for index in body.decision_indexes:
             if 0 <= index < len(analysis.decisions):
                 chosen.add(index)
-        style_indexes = [
-            index
-            for index in chosen
-            if analysis.decisions[index].target == "style"
-        ]
+        style_indexes = [index for index in chosen if analysis.decisions[index].target == "style"]
         receipts: list[dict[str, Any]] = []
         if not style_indexes:
             return {
@@ -713,9 +710,7 @@ def create_story_router(
             "decision_indexes": style_indexes,
         }
 
-    @router.post(
-        "/{workspace_id}/story/revision-analyses/{analysis_id}/structure-applications"
-    )
+    @router.post("/{workspace_id}/story/revision-analyses/{analysis_id}/structure-applications")
     def apply_structure_analysis(
         workspace_id: str, analysis_id: str, body: SuggestionApplyRequest
     ) -> dict[str, Any]:
@@ -739,9 +734,7 @@ def create_story_router(
             "decision_indexes": result.applied_indexes,
         }
 
-    @router.post(
-        "/{workspace_id}/story/revision-analyses/{analysis_id}/module-applications"
-    )
+    @router.post("/{workspace_id}/story/revision-analyses/{analysis_id}/module-applications")
     def apply_module_analysis(
         workspace_id: str, analysis_id: str, body: SuggestionApplyRequest
     ) -> dict[str, Any]:

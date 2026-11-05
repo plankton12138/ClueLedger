@@ -28,15 +28,18 @@ from hastings.workspace.errors import WorkspaceError
 __all__ = [
     "CHAPTER_CLUES_SCHEMA",
     "CLUES_DIRNAME",
+    "OPEN_CLUE_INJECTION_LIMIT",
     "ClueAnchor",
     "ClueEntry",
     "ClueFinding",
     "CluePlan",
     "ClueState",
     "aggregate_clues",
+    "anchor_findings",
     "anchor_paragraph",
     "clues_path",
     "missed_plans",
+    "open_clue_states",
     "para_hash",
     "paragraphs",
     "parse_planned_clues",
@@ -55,6 +58,9 @@ CHAPTER_CLUES_SCHEMA = 1
 
 #: 锚定前缀长度（失联时供重新定位）。
 _ANCHOR_PREFIX_LEN = 16
+
+#: 起草注入的未回收线索上限（评审定案 4：不设硬配额，注入侧截断兜底噪声）。
+OPEN_CLUE_INJECTION_LIMIT = 12
 
 #: 结构层「计划线索」节的标题前缀（评审定案：单独一节，骨架行不嵌入）。
 _PLAN_SECTION_PREFIX = "## 计划线索"
@@ -104,6 +110,38 @@ def resolve_anchor(anchor: ClueAnchor, prose_text: str) -> bool:
     """锚是否仍指向本章某段正文（哈希精确匹配；对不上就是失联，不做模糊重试）。"""
     target = anchor.para_hash
     return any(para_hash(par) == target for par in paragraphs(prose_text))
+
+
+def _entry_anchor_prefix(entry: ClueEntry) -> str | None:
+    anchor = entry.anchor or (entry.resolves.anchor if entry.resolves else None)
+    return anchor.para_prefix if anchor is not None else None
+
+
+def anchor_findings(
+    chapter: int,
+    entries: list[ClueEntry] | tuple[ClueEntry, ...],
+    prose_text: str,
+) -> list[ClueFinding]:
+    """锚失联检测（``CLUE_ORPHANED_ANCHOR``）：登记里的锚在本章正文找不到对应段。
+
+    只报告不自动重建——重锚是认知动作（线索改写走了样和挪了个位置是两回事），
+    必须过模型或作者；prefix 只用于辅助重新定位。
+    """
+    findings: list[ClueFinding] = []
+    for entry in entries:
+        anchor = entry.anchor or (entry.resolves.anchor if entry.resolves else None)
+        if anchor is None or resolve_anchor(anchor, prose_text):
+            continue
+        findings.append(
+            ClueFinding(
+                code="CLUE_ORPHANED_ANCHOR",
+                message=(
+                    f"第 {chapter} 章 {entry.id} 锚失联，"
+                    f"前缀「{anchor.para_prefix}」，请重新锚定或声明 retired"
+                ),
+            )
+        )
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +447,7 @@ class ClueState:
     last_chapter: int
     note: str | None = None
     resolved_in: int | None = None
+    anchor_prefix: str | None = None
 
 
 @dataclass
@@ -526,7 +565,19 @@ def aggregate_clues(
     prose = prose_by_chapter or {}
 
     for chapter in sorted(chapters):
-        document = read_chapter_clues(root, chapter)
+        try:
+            document = read_chapter_clues(root, chapter)
+        except WorkspaceError as exc:
+            if exc.code != "CLUE_FILE_CORRUPT":
+                raise
+            # 线索是增强层：单章文件坏掉只报告，不堵死对账与写作主路径。
+            findings.append(
+                ClueFinding(
+                    code="CLUE_FILE_CORRUPT",
+                    message=f"第 {chapter} 章的线索登记损坏（{exc.why}），该章条目未计入聚合",
+                )
+            )
+            continue
         if document is None:
             continue
         for entry in document.entries:
@@ -543,6 +594,7 @@ def aggregate_clues(
                     last_chapter=chapter,
                     note=entry.note,
                     resolved_in=chapter if entry.status == "resolved" else None,
+                    anchor_prefix=_entry_anchor_prefix(entry),
                 )
             else:
                 state.status = entry.status
@@ -551,6 +603,9 @@ def aggregate_clues(
                     state.note = entry.note
                 if entry.status == "resolved":
                     state.resolved_in = chapter
+                prefix = _entry_anchor_prefix(entry)
+                if prefix:
+                    state.anchor_prefix = prefix
             ref = entry.resolves
             if ref is not None:
                 target = states.get(ref.clue_id)
@@ -568,19 +623,9 @@ def aggregate_clues(
                             ),
                         )
                     )
-            anchor = entry.anchor or (ref.anchor if ref else None)
-            if anchor is not None:
-                chapter_text = prose.get(chapter)
-                if chapter_text is not None and not resolve_anchor(anchor, chapter_text):
-                    findings.append(
-                        ClueFinding(
-                            code="CLUE_ORPHANED_ANCHOR",
-                            message=(
-                                f"第 {chapter} 章 {entry.id} 锚失联，"
-                                f"前缀「{anchor.para_prefix}」，请重新锚定或声明 retired"
-                            ),
-                        )
-                    )
+            chapter_text = prose.get(chapter)
+            if chapter_text is not None:
+                findings.extend(anchor_findings(chapter, [entry], chapter_text))
 
     written = max(chapters) if chapters else 0
     for plan in plans or []:
@@ -610,3 +655,33 @@ def aggregate_clues(
                 )
             )
     return ClueAggregate(states=states, findings=tuple(findings))
+
+
+def open_clue_states(
+    states: dict[str, ClueState],
+    chapter: int,
+    plans: list[CluePlan] | None = None,
+    *,
+    limit: int = OPEN_CLUE_INJECTION_LIMIT,
+) -> tuple[list[ClueState], int]:
+    """本章起草要注入的未回收线索（已收/已退役的不占上下文）。
+
+    返回 ``(截断后的清单, 未回收总数)``。排序按「计划回收章近的优先 → 埋得早的优先」，
+    没有回收计划的排在最后；截断只为兜噪声，不新增「线索太多写不了」的失败。
+    """
+    plan_by_id = {plan.id: plan for plan in plans or []}
+    candidates = [
+        state
+        for state in states.values()
+        if state.status in {"planted", "advanced"}
+        and state.planted_in is not None
+        and state.planted_in <= chapter
+    ]
+
+    def sort_key(state: ClueState) -> tuple[int, int, str]:
+        plan = plan_by_id.get(state.id)
+        resolve = plan.resolve_chapter if plan and plan.resolve_chapter is not None else 10**6
+        return (resolve, state.planted_in or 0, state.id)
+
+    candidates.sort(key=sort_key)
+    return candidates[:limit], len(candidates)

@@ -272,3 +272,47 @@ def test_recovery_replays_clue_write(
     # 幂等：重放后的文件内容与决定一致。
     raw = json.loads(clues_path(workspace.root, 1).read_text(encoding="utf-8"))
     assert raw["revision"] == document.revision
+
+
+# ---------------------------------------------------------------------------
+# P2：修订失联提示（只报告，不重建锚、不拦保存）
+
+
+def test_revision_reports_orphaned_anchor(env: tuple[Workspace, StoryStore]) -> None:
+    workspace, store = env
+    chapter = _seed_chapter(store, workspace, key="rev")
+    saved = _save(store, workspace, chapter, key="prose:rev", text=CH1, clue_entries=[_planted()])
+    assert saved.clue_findings == ()
+
+    rewritten = CH1.replace("露出底下的铁色", "露出斑驳的锈迹")
+    result = _save(
+        store,
+        workspace,
+        chapter,
+        key="prose:rev2",
+        text=rewritten,
+        expected_digest=saved.prose_digest,
+    )
+    codes = [finding.code for finding in result.clue_findings]
+    assert codes == ["CLUE_ORPHANED_ANCHOR"]
+    assert "CL-01" in result.clue_findings[0].message
+    # 锚不自动重建：登记里的哈希保持原样，等模型或作者重锚。
+    document = read_chapter_clues(workspace.root, 1)
+    assert document is not None and document.entries[0].anchor is not None
+    assert document.entries[0].anchor.para_hash == _planted().anchor.para_hash
+
+
+def test_revision_keeps_anchor_when_paragraph_intact(env: tuple[Workspace, StoryStore]) -> None:
+    workspace, store = env
+    chapter = _seed_chapter(store, workspace, key="ok")
+    saved = _save(store, workspace, chapter, key="prose:ok", text=CH1, clue_entries=[_planted()])
+    appended = CH1 + "窗外有脚步停了一下。\n"
+    result = _save(
+        store,
+        workspace,
+        chapter,
+        key="prose:ok2",
+        text=appended,
+        expected_digest=saved.prose_digest,
+    )
+    assert result.clue_findings == ()

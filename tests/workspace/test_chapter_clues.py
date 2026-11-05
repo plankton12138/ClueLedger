@@ -9,11 +9,14 @@ import pytest
 from hastings.workspace.chapter_clues import (
     ClueEntry,
     CluePlan,
+    ClueState,
     ResolvesRef,
     aggregate_clues,
+    anchor_findings,
     anchor_paragraph,
     clues_path,
     missed_plans,
+    open_clue_states,
     para_hash,
     paragraphs,
     parse_planned_clues,
@@ -443,3 +446,76 @@ def test_missed_plans_quiet_when_registered() -> None:
     plans = [CluePlan(id="CL-01", plant_chapter=2)]
     assert missed_plans(plans, 2, [_planted("CL-01")]) == []
     assert missed_plans(plans, 3, []) == []
+
+
+# ---------------------------------------------------------------------------
+# P2：聚合容错与起草清单
+
+
+def test_anchor_findings_prefix_helps_relocate() -> None:
+    entry = _planted()
+    rewritten = CH1_TEXT.replace("露出底下的铁色", "露出斑驳的锈迹")
+    findings = anchor_findings(1, [entry], rewritten)
+    assert [f.code for f in findings] == ["CLUE_ORPHANED_ANCHOR"]
+    assert "箱扣上的漆掉了一块" in findings[0].message
+    assert anchor_findings(1, [entry], CH1_TEXT) == []
+
+
+def test_aggregate_reports_corrupt_file_without_raising(tmp_path) -> None:
+    _write_ch1(tmp_path)
+    path = clues_path(tmp_path, 2)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{ 不是 json", encoding="utf-8")
+    aggregate = aggregate_clues(tmp_path, [1, 2])
+    assert "CL-01" in aggregate.states  # 好文件仍然计入
+    corrupt = [f for f in aggregate.findings if f.code == "CLUE_FILE_CORRUPT"]
+    assert corrupt and "第 2 章" in corrupt[0].message
+
+
+def _state(id_: str, status: str, planted_in: int) -> ClueState:
+    return ClueState(
+        id=id_,
+        kind="伏笔",
+        origin="planned",
+        status=status,
+        planted_in=planted_in,
+        last_chapter=planted_in,
+    )
+
+
+def test_open_clue_states_excludes_resolved_and_retired() -> None:
+    states = {
+        "CL-01": _state("CL-01", "planted", 1),
+        "CL-02": _state("CL-02", "resolved", 1),
+        "CL-03": _state("CL-03", "retired", 2),
+        "CL-04": _state("CL-04", "advanced", 2),
+    }
+    opened, total = open_clue_states(states, 3)
+    assert [state.id for state in opened] == ["CL-01", "CL-04"]
+    assert total == 2
+
+
+def test_open_clue_states_prefers_near_resolution_then_age() -> None:
+    states = {
+        "CL-09": _state("CL-09", "planted", 3),
+        "CL-01": _state("CL-01", "planted", 1),
+        "CL-05": _state("CL-05", "planted", 2),
+    }
+    plans = [
+        CluePlan(id="CL-09", plant_chapter=3, resolve_chapter=4),
+        CluePlan(id="CL-05", plant_chapter=2, resolve_chapter=6),
+    ]
+    opened, _ = open_clue_states(states, 3, plans)
+    assert [state.id for state in opened] == ["CL-09", "CL-05", "CL-01"]
+
+
+def test_open_clue_states_truncates_and_reports_total() -> None:
+    states = {f"CL-{i:02d}": _state(f"CL-{i:02d}", "planted", 1) for i in range(1, 6)}
+    opened, total = open_clue_states(states, 3, limit=2)
+    assert len(opened) == 2
+    assert total == 5
+
+
+def test_open_clue_states_ignores_later_chapters() -> None:
+    states = {"CL-01": _state("CL-01", "planted", 5)}
+    assert open_clue_states(states, 3) == ([], 0)

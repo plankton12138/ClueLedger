@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
-from hastings.workspace.chapter_clues import ClueEntry
+from hastings.workspace.chapter_clues import ClueEntry, ClueFinding
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, normalize_newlines
 from hastings.workspace.revision_store import RevisionStore, record_change_revision
@@ -44,6 +45,7 @@ class ProseSaveResult:
     committed_change_id: str
     changed_text: str = ""
     revision_id: str = ""
+    clue_findings: tuple[ClueFinding, ...] = ()
 
 
 def save_chapter_prose(
@@ -206,7 +208,29 @@ def _prose_result(
         committed_change_id=change_id,
         changed_text=change_text,
         revision_id=revision_id,
+        clue_findings=_clue_findings(workspace.root, path, view.text),
     )
+
+
+def _clue_findings(root: Path, path: str, text: str) -> tuple[ClueFinding, ...]:
+    """本次保存后该章线索的锚失联报告（只报告，不重建）。
+
+    修订改动了被锚定的段落时，按内容哈希派生的锚就对不上了；这里把失联事实
+    随保存结果返回，由界面/下一回合提示重锚，不静默重建、也不拦截保存。
+    """
+    from hastings.workspace.chapter_clues import anchor_findings, read_chapter_clues
+    from hastings.workspace.structure_assembly import chapter_number_of
+
+    number = chapter_number_of(path)
+    if number is None:
+        return ()
+    try:
+        document = read_chapter_clues(root, number)
+    except WorkspaceError:
+        return ()
+    if document is None:
+        return ()
+    return tuple(anchor_findings(number, document.entries, text))
 
 
 def _chapter_missing(chapter_id: str) -> WorkspaceError:

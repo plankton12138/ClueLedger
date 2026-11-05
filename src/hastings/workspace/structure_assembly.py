@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hastings.workspace.chapter_clues import ClueFinding
+from hastings.workspace.chapter_clues import ClueFinding, CluePlan, ClueState
 from hastings.workspace.prose_ledger import ProseLedger, ReconcileDecision
 from hastings.workspace.structure_document import split_iron_rules
 
@@ -25,6 +25,7 @@ __all__ = [
     "StructureSnapshot",
     "StructureLayers",
     "chapter_number_of",
+    "clue_context_section",
     "clue_report_section",
     "ledger_section",
     "loose_keyword_check",
@@ -136,6 +137,73 @@ def clue_report_section(findings: tuple[ClueFinding, ...] | list[ClueFinding]) -
         f"{rows}\n\n"
         "这些是系统从章级登记聚合出来的偏差：该埋的埋、该收的收，"
         "别让它们继续悬着；确实是故意不收的，在对应章登记 retired 并写明理由。"
+    )
+
+
+def clue_context_section(
+    states: list[ClueState],
+    plans: list[CluePlan],
+    chapter: int,
+    findings: tuple[ClueFinding, ...] | list[ClueFinding] = (),
+    *,
+    open_total: int | None = None,
+) -> str:
+    """起草注入的三类线索清单（P2）：未回收、本章计划、失联待重锚。
+
+    只列这三类，已收/已退役的不占上下文——长篇越写注入越膨胀的问题在这里
+    就被掐住。三块都空时返回空文本，分区按空跳过。
+    """
+    plan_by_id = {plan.id: plan for plan in plans}
+    blocks: list[str] = []
+    if states:
+        rows: list[str] = []
+        for state in states:
+            plan = plan_by_id.get(state.id)
+            bits = [state.kind, f"第 {state.planted_in} 章埋"]
+            if plan is not None and plan.resolve_chapter is not None:
+                bits.append(f"计划第 {plan.resolve_chapter} 章收")
+            elif state.status == "advanced":
+                bits.append("已推进，未收")
+            else:
+                bits.append("未收")
+            row = f"- {state.id}"
+            if state.note:
+                row += f" {state.note}"
+            row += f"（{'，'.join(bits)}）"
+            if state.anchor_prefix:
+                row += f"：「{state.anchor_prefix}…」"
+            rows.append(row)
+        total = open_total if open_total is not None else len(states)
+        tail = ""
+        if total > len(states):
+            tail = f"\n（另有 {total - len(states)} 条未回收线索未列出，可在线索对账里查看）"
+        blocks.append("【未回收线索】\n" + "\n".join(rows) + tail)
+    chapter_plans = [
+        plan for plan in plans if plan.plant_chapter == chapter or plan.resolve_chapter == chapter
+    ]
+    if chapter_plans:
+        rows = []
+        for plan in chapter_plans:
+            actions: list[str] = []
+            if plan.plant_chapter == chapter:
+                actions.append("计划本章埋设")
+            if plan.resolve_chapter == chapter:
+                actions.append("计划本章回收")
+            row = f"- {plan.id}（{'、'.join(actions)}）"
+            if plan.note:
+                row += f"：{plan.note}"
+            rows.append(row)
+        blocks.append("【本章计划】\n" + "\n".join(rows))
+    orphans = [finding for finding in findings if finding.code == "CLUE_ORPHANED_ANCHOR"]
+    if orphans:
+        blocks.append("【失联待重锚】\n" + "\n".join(f"- {finding.message}" for finding in orphans))
+    if not blocks:
+        return ""
+    return (
+        "### 线索清单（系统事实，只读）\n"
+        + "\n".join(blocks)
+        + "\n\n写本章时该推进的推进、该收的收；新埋的线索要说得出埋在哪个段落，"
+        "别只写进正文却不登记。"
     )
 
 

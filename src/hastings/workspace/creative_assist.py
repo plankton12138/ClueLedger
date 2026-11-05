@@ -216,7 +216,7 @@ class CreativeAssistService:
             if request.kind in {"prose_draft", "prose_continue"}:
                 block = split_self_check(text)
                 if not block.present:
-                    error = self_check_error("creative-assist")
+                    error = self_check_error("creative-assist", block.missing_layers)
                     await asyncio.to_thread(
                         self.candidates.update,
                         candidate.candidate_id,
@@ -262,12 +262,14 @@ class CreativeAssistService:
         finally:
             await snapshot.aclose()
 
-    def _drafting_injection(self, plan: Any) -> tuple[str, str, int | None, int | None]:
-        """起草任务的确定性注入（M5）：铁律/结构全文、台账与对账结论。
+    def _drafting_injection(
+        self, plan: Any, variant: StoryVariant | None
+    ) -> tuple[str, str, str, int | None, int | None]:
+        """起草任务的确定性注入（M5/P2）：铁律/结构全文、台账、线索报告与清单。
 
         装配层确定性对账是主防线：这里把对账结论写进提示词并把改派目标告诉
         模型（第二道保险的强制流程）；两处用同一份台账事实。
-        返回 ``(结构文本, 台账文本, 改派目标章, 原目标章)``。
+        返回 ``(结构文本, 台账文本, 线索清单文本, 改派目标章, 原目标章)``。
         """
         from hastings.workspace.prose_ledger import (
             LEDGER_FILENAME,
@@ -290,32 +292,78 @@ class CreativeAssistService:
         ledger = load_ledger(self.workspace.root / LEDGER_FILENAME)
         target = plan.order + 1
         decision = reconcile(ledger, target)
+        chapter = decision.target_to if decision.action == "redirect" else target
         ledger_text = ledger_section(ledger)
         note = reconcile_note(decision)
         if note:
             ledger_text = f"{ledger_text}\n\n{note}" if ledger_text else note
-        clue_text = self._clue_report_text(state.text, ledger)
-        if clue_text:
-            ledger_text = f"{ledger_text}\n\n{clue_text}" if ledger_text else clue_text
+        report_text, context_text = self._clue_sections(state.text, ledger, variant, chapter)
+        if report_text:
+            ledger_text = f"{ledger_text}\n\n{report_text}" if ledger_text else report_text
         redirected = decision.target_to if decision.action == "redirect" else None
-        return structure_text, ledger_text, redirected, target
+        return structure_text, ledger_text, context_text, redirected, target
 
-    def _clue_report_text(self, structure_text: str, ledger: Any) -> str:
-        """线索对账报告（P1）：结构层计划线索 × 已写各章的聚合偏差。
+    def _clue_sections(
+        self,
+        structure_text: str,
+        ledger: Any,
+        variant: StoryVariant | None,
+        chapter: int,
+    ) -> tuple[str, str]:
+        """线索对账报告与清单（P1/P2）。
 
-        失联检测需要各章正文，起草路径只做「埋没埋、收没收」的全局推导；
-        锚失联在修订回合报告（P2）。
+        报告说「哪里不对」（哑火/悬枪/失联/空响/计划未落实）；清单说「现在手上
+        还压着什么」（未回收 / 本章计划 / 失联待重锚）。失联检测只读有线索登记
+        的章节正文——不为了对账把全书正文都读一遍。
         """
-        from hastings.workspace.chapter_clues import aggregate_clues, parse_planned_clues
-        from hastings.workspace.structure_assembly import clue_report_section
+        from hastings.workspace.chapter_clues import (
+            aggregate_clues,
+            clues_path,
+            open_clue_states,
+            parse_planned_clues,
+        )
+        from hastings.workspace.structure_assembly import (
+            chapter_number_of,
+            clue_context_section,
+            clue_report_section,
+        )
 
         assert self.workspace is not None
         plans = parse_planned_clues(structure_text)
         chapters = sorted(ledger.chapters)
         if not chapters and not plans:
-            return ""
-        aggregate = aggregate_clues(self.workspace.root, chapters, plans=plans)
-        return clue_report_section(aggregate.findings)
+            return "", ""
+        prose_by_chapter: dict[int, str] = {}
+        if variant is not None:
+            for chapter_plan in variant.chapter_plans.values():
+                prose_path = chapter_plan.prose_path
+                if prose_path is None:
+                    continue
+                number = chapter_number_of(prose_path)
+                if number is None or not clues_path(self.workspace.root, number).exists():
+                    continue
+                try:
+                    prose_by_chapter[number] = self.workspace.read(prose_path).text
+                except WorkspaceError:
+                    continue
+        aggregate = aggregate_clues(
+            self.workspace.root,
+            chapters,
+            prose_by_chapter=prose_by_chapter,
+            plans=plans,
+        )
+        report = clue_report_section(aggregate.findings)
+        context = ""
+        if plans or aggregate.states:
+            states, total = open_clue_states(aggregate.states, chapter, plans)
+            context = clue_context_section(
+                states,
+                plans,
+                chapter,
+                aggregate.findings,
+                open_total=total,
+            )
+        return report, context
 
     def _resolve(
         self, request: CreativeAssistInput
@@ -439,7 +487,9 @@ class CreativeAssistService:
             moves = _chapter_moves_text(variant, plan)
             selection = request.selection or {}
             quote = str(selection.get("quote") or "")
-            structure_text, ledger_text, redirected, target = self._drafting_injection(plan)
+            structure_text, ledger_text, clue_context, redirected, target = (
+                self._drafting_injection(plan, variant)
+            )
             return (
                 prose_draft_system_prompt(),
                 prose_draft_user_prompt(
@@ -451,6 +501,7 @@ class CreativeAssistService:
                     note=note,
                     continue_mode=request.kind == "prose_continue",
                     style_section=style_section,
+                    clue_context=clue_context,
                     redirected_to=redirected,
                     target_chapter=target,
                 ),
