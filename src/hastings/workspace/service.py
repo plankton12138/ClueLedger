@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from hastings.identity import current_user_id
 from hastings.library.modules import ModuleLibrary
 from hastings.prompts.sections import MATERIALS_ORIGINAL_PREFIX
 from hastings.prompts.tasks import continuation_prompt
@@ -1014,6 +1015,7 @@ class TurnService:
             operation = Operation(
                 id=new_operation_id(),
                 owner=f"workspace:{self.workspace_id or accepted.conversation_id}",
+                owner_user_id=current_user_id() or "",
                 workspace_id=self.workspace_id,
                 conversation_id=accepted.conversation_id,
                 turn_id=turn_id,

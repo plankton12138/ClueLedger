@@ -15,6 +15,8 @@
 - **会话与记录**：逐轮流式回复，思考与工具过程按需展开；支持任务暂停、按服务端能力继续及插话，活动记录用于回看操作与文件变化。
 - **模型设置**：在设置中管理连接与默认模型，在对话区切换当前选择；草稿不因尚未连接模型而清除。
 - **无模型使用**：本地阅读、灵感记录、手动正文修订与模块库整理可用；生成与分析需要模型连接。
+- **账号与登录（v1.4 P1/P2）**：server 模式先登录再进入工作区，支持注册、邮箱验证、找回与重置密码；local 模式不显示登录页。作品由服务器分配目录，模型设置、凭据与私有模块库按账号隔离；见 [P1 记录](../dev-notes/v1.4/notes/P1-email-accounts.md) 与 [P2 记录](../dev-notes/v1.4/notes/P2-isolation.md)。
+- **订阅与额度（v1.4 P3/P4）**：server 模式顶栏显示「订阅」，可查看套餐、当前权益、用量进度、最近订单状态并申请退款；额度接近用完或耗尽时给出等待恢复或切换自带连接的下一步。支付结果以支付宝通知或服务端查单为准。见 [P3 记录](../dev-notes/v1.4/notes/P3-billing.md) 与 [P4 记录](../dev-notes/v1.4/notes/P4-metering.md)。
 
 写作台不再提供历史构思时间轴或全书线索页面。历史文档中的入口与截图不能作为当前功能说明。
 
@@ -34,7 +36,15 @@ npm ci
 npm run dev
 ```
 
-开发服务器将 `/api` 转发到本地 8000 端口。生产构建执行 `npm run build`，产物位于 `frontend/dist`，可由后端托管。
+开发服务器将 `/api` 转发到本地 8000 端口，`/api/billing` 转发到支付服务 8300；生产由反向代理映射同一路径。生产构建执行 `npm run build`，产物位于 `frontend/dist`，可由后端托管。
+
+需要邮箱登录时，后端以 server 模式启动并显式给出账号数据库：
+
+```powershell
+uv run python -m hastings.server --mode server --database .\data\clueledger.sqlite3
+```
+
+未配置 SMTP 时，验证与重置链接写入应用状态目录下的 `mail-outbox/`。
 
 ## 状态与数据边界
 
@@ -53,8 +63,9 @@ npm run dev
 | `src/components/library/` | 模块库列表、预览、编辑与版本 |
 | `src/components/ideas/` | 灵感记录与浮动面板 |
 | `src/components/models/` | 模型设置与连接管理 |
-| `src/state/` | 作品、写作、会话、草稿和显示状态 |
-| `src/api/` | 与本地服务的接口契约 |
+| `src/components/auth/` | 登录、注册、邮箱验证与密码重置 |
+| `src/state/` | 作品、写作、会话、草稿、登录会话和显示状态 |
+| `src/api/` | 与本地服务的接口契约；`http.ts` 统一 Cookie、CSRF 与 401 处理 |
 
 ## 验证
 

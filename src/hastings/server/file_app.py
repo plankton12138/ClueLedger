@@ -14,31 +14,44 @@ V04-9 起多挂一组应用级 ``/api/model-*`` 路由。它们与写作轮次�
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
+from typing import cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
 from hastings import __version__
+from hastings.accounts.api import create_auth_router, register_auth_error_handlers
+from hastings.accounts.middleware import AuthGuardMiddleware, RequestContextMiddleware
+from hastings.accounts.runtime import AuthRuntime
 from hastings.library.api import create_library_router
 from hastings.library.assembly_api import create_assembly_router
 from hastings.library.modules import ModuleLibrary
 from hastings.server.model_api import create_model_router
 from hastings.server.model_connections import ModelConnectionService
+from hastings.server.model_factory import (
+    configured_limits_factory,
+    configured_provider_factory,
+)
 from hastings.server.model_limits import ModelLimits
 from hastings.server.probe_ops import ProbeRunner
-from hastings.server.provider_config import ProviderBook, ProviderConfigError
-from hastings.server.provider_runtime import ModelSnapshot
+from hastings.server.user_services import (
+    LOCAL_KEY,
+    ScopedModuleLibrary,
+    ScopedWorkspaceServices,
+    ServiceContext,
+    UserResources,
+    UserResourcesRegistry,
+)
 from hastings.workspace.api import (
     create_file_workspace_router,
     register_workspace_error_handlers,
 )
 from hastings.workspace.clue_api import create_clue_router
 from hastings.workspace.creative_api import create_creative_router
-from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.ideas_api import create_ideas_router
 from hastings.workspace.operation_api import create_operation_router
 from hastings.workspace.operations import OperationStore
@@ -49,67 +62,28 @@ from hastings.workspace.state import RecentWorkspaces
 from hastings.workspace.story_api import create_story_router
 
 __all__ = [
-    "HealthResponse",
     "configured_limits_factory",
     "configured_provider_factory",
     "create_workspace_app",
 ]
 
 
-class HealthResponse(BaseModel):
-    status: Literal["ok"]
-
-
-def configured_provider_factory(book: ProviderBook) -> ProviderFactory:
-    """受理一轮时固定模型快照；未配置时给可操作的错误。"""
-
-    def factory() -> ModelSnapshot:
-        selection = book.selection()
-        try:
-            return book.snapshot()
-        except ProviderConfigError as exc:
-            raise WorkspaceError(
-                code="MODEL_NOT_CONFIGURED",
-                where="turn.model",
-                why=selection.reason or str(exc),
-                fix="在顶栏「模型设置」里添加并选择一个连接与模型，"
-                "或在 config.yaml 里补齐 base_url、api_key 与模型名",
-                details={
-                    "connection": selection.connection_id or "",
-                    "model": selection.model,
-                },
-            ) from exc
-
-    return factory
-
-
-def configured_limits_factory(book: ProviderBook) -> Callable[[], ModelLimits | None]:
-    """当前选择的容量与预算，只读配置：首次发送前与空闲时都能显示当前分母。"""
-
-    def factory() -> ModelLimits | None:
-        try:
-            return book.current_limits()
-        except ValueError:
-            # 容量配置本身矛盾时由发送路径报错；读取面板不该因此失败。
-            return None
-
-    return factory
-
-
 def create_workspace_app(
     *,
     workspaces: RecentWorkspaces,
-    provider_factory: ProviderFactory,
+    provider_factory: ProviderFactory | None = None,
     model_service: ModelConnectionService | None = None,
     static_dir: Path | None = None,
     library: ModuleLibrary | None = None,
     limits_factory: Callable[[], ModelLimits | None] | None = None,
+    auth: AuthRuntime | None = None,
+    resources: UserResourcesRegistry | None = None,
 ) -> FastAPI:
     """装配文件工作区应用；``model_service`` 存在时同时挂模型设置接口。
 
-    参数名 ``workspaces`` 是作品登记，``model_service`` 是模型连接：两者曾经都叫
-    ``book``，放在一起读不清哪个是哪个。``library`` 是应用级模块库，缺省时库接口不挂载。
-    ``limits_factory`` 只读当前选择的容量，供用量面板在首次发送前与空闲时显示分母。
+    本地模式（``resources`` 缺省）用传入的单份 provider、模型服务与模块库；
+    server 模式由 ``resources`` 按当前账号解析，不共享配置、凭据或私有库。
+    ``auth`` 存在时进入 server 模式：``/api/*`` 要求会话，写请求校验来源与 CSRF。
     """
     app = FastAPI(title="线簿 ClueLedger", version=__version__)
     app.state.workspaces = workspaces
@@ -119,42 +93,89 @@ def create_workspace_app(
     # 统一操作放在应用级状态目录：控制接口按操作标识定位，不需要先知道是哪个作品。
     operations = OperationStore(workspaces.root)
     app.state.operations = operations
-    hub = WorkspaceServices(
-        workspaces,
-        provider_factory,
-        library=library,
-        run_registry=run_registry,
-        operations=operations,
-        limits_factory=limits_factory,
+    if resources is None:
+        if provider_factory is None:
+            raise ValueError("本地模式需要 provider_factory")
+        local_hub = WorkspaceServices(
+            workspaces,
+            provider_factory,
+            library=library,
+            run_registry=run_registry,
+            operations=operations,
+            limits_factory=limits_factory,
+        )
+        local = UserResources(
+            key=LOCAL_KEY,
+            hub=local_hub,
+            model_service=model_service,
+            auth=getattr(model_service, "auth", None),
+            library=library,
+        )
+        resources = UserResourcesRegistry(local=local)
+    resources.bind(
+        ServiceContext(
+            workspaces=workspaces,
+            run_registry=run_registry,
+            operations=operations,
+            lock=threading.RLock(),
+        )
     )
+    hub = cast(WorkspaceServices, ScopedWorkspaceServices(resources))
     app.state.services = hub
     # 连接测试也登记为统一操作：提交即返回 operation_id，可暂停与被读取。
-    probe_runner = ProbeRunner(operations, model_service) if model_service is not None else None
+    probe_runner = (
+        ProbeRunner(operations, resources.model_service_for) if resources.models_available else None
+    )
     app.state.probe_runner = probe_runner
     app.include_router(create_file_workspace_router(hub))
     app.include_router(
         create_operation_router(
             workspaces,
             operations,
-            hub.turns,
+            hub.cached_service,
             runner_for=hub.runner_for,
             probe_runner=probe_runner,
         )
     )
+    app.include_router(create_auth_router(auth))
+    register_auth_error_handlers(app)
+    if auth is not None:
+        app.add_middleware(AuthGuardMiddleware, service=auth.service, config=auth.config)
+    # 最后添加的中间件在最外层：认证拒绝也要带请求编号。
+    app.add_middleware(RequestContextMiddleware)
     app.include_router(create_ideas_router(workspaces))
-    app.include_router(create_clue_router(workspaces, library))
+    library_proxy = (
+        cast(ModuleLibrary, ScopedModuleLibrary(resources.current_library))
+        if resources.libraries_available
+        else None
+    )
+    app.include_router(create_clue_router(workspaces, library_proxy))
     app.include_router(create_story_router(workspaces, hub))
     app.include_router(create_creative_router(workspaces, hub))
-    if model_service is not None:
-        app.include_router(create_model_router(model_service, probe_runner=probe_runner))
-    if library is not None:
-        app.include_router(create_library_router(library))
-        app.include_router(create_assembly_router(workspaces, library, busy=run_registry.is_busy))
+    if resources.models_available:
+        app.include_router(
+            create_model_router(
+                resources.current_model_service,
+                probe_runner=probe_runner,
+                auth_available=resources.auth_available,
+            )
+        )
+    if library_proxy is not None:
+        app.include_router(create_library_router(library_proxy))
+        app.include_router(
+            create_assembly_router(workspaces, library_proxy, busy=run_registry.is_busy)
+        )
     register_workspace_error_handlers(app)
 
-    @app.get("/api/health", response_model=HealthResponse)
-    def health() -> HealthResponse:
-        return HealthResponse(status="ok")
+    @app.get("/api/health")
+    def health() -> Response:
+        if auth is not None:
+            try:
+                with auth.database.read() as connection:
+                    connection.execute("SELECT 1").fetchone()
+            except Exception:
+                return JSONResponse(status_code=503, content={"status": "degraded"})
+        return JSONResponse(content={"status": "ok"})
 
     if static_dir is not None and static_dir.is_dir():
         # 挂在路由之后：/api 优先匹配，静态文件只兜底其余路径。

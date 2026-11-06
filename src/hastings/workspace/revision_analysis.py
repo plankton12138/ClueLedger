@@ -50,6 +50,12 @@ Target = Literal["style", "structure", "module_entry", "chapter_only"]
 
 _TARGETS = frozenset({"style", "structure", "module_entry", "chapter_only"})
 _RUNNING: dict[str, asyncio.Task[None]] = {}
+
+
+def _run_key(state_root: Path, analysis_id: str) -> str:
+    return f"{Path(state_root).resolve()}::{analysis_id}"
+
+
 #: 相关条目正文的总字符预算；只给与本次改动同名的条目，避免整库搬进提示词。
 _MODULE_BODY_BUDGET = 24_000
 #: 单条条目正文的截断长度；截断的条目仍可给出补丁，但只能引用这段正文。
@@ -282,7 +288,10 @@ class RevisionAnalysisService:
                 fix="刷新对话后重新发起分析",
                 details={"analysis_id": analysis_id},
             )
-        if analysis.status in ("queued", "running") and analysis_id not in _RUNNING:
+        if (
+            analysis.status in ("queued", "running")
+            and _run_key(self.state_root, analysis_id) not in _RUNNING
+        ):
             interrupted_at = _now()
             trace = dict(analysis.trace)
             trace["finished_at"] = interrupted_at
@@ -356,8 +365,9 @@ class RevisionAnalysisService:
         task = asyncio.create_task(
             self._run(analysis, detail, selected or sorted(detail.active_hunk_ids), snapshot)
         )
-        _RUNNING[analysis_id] = task
-        task.add_done_callback(lambda _: _RUNNING.pop(analysis_id, None))
+        key = _run_key(self.state_root, analysis_id)
+        _RUNNING[key] = task
+        task.add_done_callback(lambda _: _RUNNING.pop(key, None))
         return analysis
 
     def _detail(self, revision_id: str) -> RevisionDetail:

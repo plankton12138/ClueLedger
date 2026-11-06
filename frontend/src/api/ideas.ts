@@ -5,6 +5,7 @@
  * 列表按创建时间排序，摘要带长度与截断标记；编辑前必须读取完整修订。
  */
 
+import { apiFetch } from "./http";
 import { WorkspaceApiError } from "./workspace";
 
 const WORKSPACES = "/api/file-workspaces";
@@ -12,7 +13,7 @@ const WORKSPACES = "/api/file-workspaces";
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await apiFetch(url, {
       headers: { "Content-Type": "application/json" },
       ...init,
     });

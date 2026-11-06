@@ -47,3 +47,4 @@ frontend/playwright-report/
 
 # data/ 全部是本地运行产物（工作台数据库、服务日志），不入库；备份走 /backup 导出
 data/
+/.alipay-sandbox.json

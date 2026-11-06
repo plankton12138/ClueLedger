@@ -71,6 +71,10 @@ _KINDS = frozenset(
 _RUNNING: dict[str, asyncio.Task[None]] = {}
 
 
+def _run_key(state_root: Path, candidate_id: str) -> str:
+    return f"{Path(state_root).resolve()}::{candidate_id}"
+
+
 class CreativeAssistInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -125,7 +129,8 @@ class CreativeAssistService:
             base=request.base,
             request_key=request.request_key,
         )
-        if candidate.status != "streaming" or candidate.candidate_id in _RUNNING:
+        key = _run_key(self.state_root, candidate.candidate_id)
+        if candidate.status != "streaming" or key in _RUNNING:
             return candidate
         try:
             system, prompt = self._prompt(request, variant, plan)
@@ -135,12 +140,12 @@ class CreativeAssistService:
                 candidate.candidate_id, status="failed", error=exc.message
             )
         task = asyncio.create_task(self._run(candidate, snapshot, system, prompt, request))
-        _RUNNING[candidate.candidate_id] = task
-        task.add_done_callback(lambda _: _RUNNING.pop(candidate.candidate_id, None))
+        _RUNNING[key] = task
+        task.add_done_callback(lambda _: _RUNNING.pop(key, None))
         return candidate
 
     async def stop(self, candidate_id: str) -> CreativeCandidate:
-        task = _RUNNING.get(candidate_id)
+        task = _RUNNING.get(_run_key(self.state_root, candidate_id))
         if task is not None:
             task.cancel()
         return await asyncio.to_thread(
@@ -152,7 +157,10 @@ class CreativeAssistService:
 
     def recover(self, candidate: CreativeCandidate) -> CreativeCandidate:
         """进程重启后没有对应任务：不要把旧候选继续显示为正在生成。"""
-        if candidate.status == "streaming" and candidate.candidate_id not in _RUNNING:
+        if (
+            candidate.status == "streaming"
+            and _run_key(self.state_root, candidate.candidate_id) not in _RUNNING
+        ):
             return self.candidates.update(
                 candidate.candidate_id,
                 status="failed",

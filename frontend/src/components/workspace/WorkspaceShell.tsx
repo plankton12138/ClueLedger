@@ -1,5 +1,6 @@
 /** 应用级导航与领域页面装配。页面切换只改变显示，不重建任务或内容草稿。 */
 import { useEffect, useRef, useState } from "react";
+import { useBillingStore } from "../../state/billing";
 import { useConversationsStore } from "../../state/conversations";
 import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { useModelsStore } from "../../state/models";
@@ -12,11 +13,13 @@ import LibraryRoute from "../library/LibraryRoute";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import { Button } from "../ui/Button";
 import { StatusMessage } from "../ui/StatusMessage";
+import SubscriptionDialog from "../billing/SubscriptionDialog";
 import ActivityPanel from "./ActivityPanel";
 import DirectoryDialog from "./DirectoryDialog";
 import AppHeader from "./AppHeader";
 import WritingLayout from "./WritingLayout";
 import useUnsavedChanges from "./useUnsavedChanges";
+import { useSessionStore } from "../../state/session";
 import { sourceTaskChapter, useSourceLocationStore } from "../../state/sourceLocation";
 
 export default function WorkspaceShell() {
@@ -28,11 +31,31 @@ export default function WorkspaceShell() {
   const library = page?.kind === "library" ? page : null;
   const contextId = library?.workspaceContextId && bindings.some(item => item.id === library.workspaceContextId && item.exists) ? library.workspaceContextId : null;
   const initModels = useModelsStore(state => state.init);
+  const mode = useSessionStore(state => state.mode);
+  const billing = useBillingStore(state => state.entitlement);
+  const billingOpen = useBillingStore(state => state.dialogOpen);
+  const openBilling = useBillingStore(state => state.openDialog);
+  const closeBilling = useBillingStore(state => state.closeDialog);
+  const quotaLow =
+    Boolean(billing?.active) &&
+    ((billing?.daily_points ?? 0) > 0 &&
+      billing?.daily_remaining !== null &&
+      (billing?.daily_remaining ?? 0) <= (billing?.daily_points ?? 0) * 0.2 ||
+      (billing?.total_points ?? 0) > 0 &&
+      billing?.total_remaining !== null &&
+      (billing?.total_remaining ?? 0) <= (billing?.total_points ?? 0) * 0.2);
+  const quotaExhausted =
+    Boolean(billing?.active) &&
+    ((billing?.daily_points ?? 0) > 0 && billing?.daily_remaining === 0 ||
+      (billing?.total_points ?? 0) > 0 && billing?.total_remaining === 0);
+  const quotaRemaining =
+    (billing?.daily_points ?? 0) > 0 ? billing?.daily_remaining : billing?.total_remaining;
   useEffect(() => {
     const initial = parseHash(window.location.hash);
     void init(initial && initial.kind !== "library" ? initial.workspaceId : initial?.workspaceContextId);
     void initModels();
-  }, [init, initModels]);
+    if (mode === "server") void useBillingStore.getState().init();
+  }, [init, initModels, mode]);
   useEffect(() => {
     if (!ready) return;
     if (library) {
@@ -99,6 +122,7 @@ export default function WorkspaceShell() {
     const focus = () => {
       if (useWorkspaceStore.getState().currentId) { void refreshAll(); void useConversationsStore.getState().refreshList(); }
       void useModelsStore.getState().refresh();
+      if (useSessionStore.getState().mode === "server") void useBillingStore.getState().refresh();
     };
     window.addEventListener("focus", focus); return () => window.removeEventListener("focus", focus);
   }, [refreshAll]);
@@ -120,6 +144,11 @@ export default function WorkspaceShell() {
     <AppHeader page={page} onOpen={() => setDirectory(true)} onSelect={select} />
     {error && <StatusMessage tone="error" action={<Button size="compact" variant="quiet" onClick={dismissError}>知道了</Button>}>{error}</StatusMessage>}
     {notice && <StatusMessage tone="warning" action={<Button size="compact" variant="quiet" onClick={dismissNotice}>知道了</Button>}>{notice}</StatusMessage>}
+    {quotaLow && <StatusMessage tone="warning" action={<Button size="compact" variant="quiet" onClick={openBilling}>查看订阅</Button>}>
+      {quotaExhausted
+        ? "订阅额度已用完；阅读与编辑不受影响。可以等待额度恢复，或在模型设置里改用自带连接继续生成。"
+        : `订阅额度剩余约 ${Math.max(0, quotaRemaining ?? 0).toFixed(1)} 点；用完后阅读与编辑仍可用，模型请求需要等待恢复或切换自带连接。`}
+    </StatusMessage>}
     <main className="app-content">
       <div className="workspace-page" hidden={!writing}><WritingLayout onOpen={() => setDirectory(true)} /></div>
       <div className="workspace-page" hidden={!library}><LibraryRoute page={library} contextId={contextId} onReturn={leaveLibrary} /></div>
@@ -127,5 +156,6 @@ export default function WorkspaceShell() {
     <IdeasSurface />
     <DirectoryDialog open={directory} onClose={() => setDirectory(false)} />
     <ModelSettingsDialog /><ActivityPanel />
+    <SubscriptionDialog open={billingOpen} onOpenChange={value => value ? openBilling() : closeBilling()} />
   </div>;
 }

@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from hastings.identity import current_user_id
 from hastings.workspace.atomic_io import atomic_write_json, locked
 from hastings.workspace.errors import WorkspaceError
 
@@ -89,6 +90,8 @@ class Operation:
     conversation_id: str
     turn_id: str
     purpose: str
+    #: 账号归属；本地模式为空，server 模式创建时固定，读取时再核对。
+    owner_user_id: str = ""
     #: 受理时作者给的幂等键。压缩与连接测试没有会话受理记录可查，只能靠它认重复。
     request_key: str = ""
     target: str = ""
@@ -210,6 +213,7 @@ class Operation:
             "version": self.version,
             "id": self.id,
             "owner": self.owner,
+            "owner_user_id": self.owner_user_id,
             "workspace_id": self.workspace_id,
             "conversation_id": self.conversation_id,
             "turn_id": self.turn_id,
@@ -253,6 +257,7 @@ class Operation:
         return cls(
             id=str(raw["id"]),
             owner=str(raw.get("owner") or ""),
+            owner_user_id=str(raw.get("owner_user_id") or ""),
             workspace_id=str(raw.get("workspace_id") or ""),
             conversation_id=str(raw.get("conversation_id") or ""),
             turn_id=str(raw.get("turn_id") or ""),
@@ -384,7 +389,10 @@ class OperationStore:
         """按幂等键找已受理的操作：压缩与连接测试没有会话受理记录可查。"""
         if not request_key:
             return None
+        owner = current_user_id()
         for operation in self.list():
+            if owner is not None and operation.owner_user_id != owner:
+                continue
             if (
                 operation.purpose == purpose
                 and operation.conversation_id == conversation_id

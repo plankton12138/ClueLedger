@@ -1,4 +1,5 @@
 import { errorMessage } from "./errors";
+import { apiFetch } from "./http";
 import { WorkspaceApiError } from "./workspace";
 
 export function activityError(reason: unknown): string {
@@ -72,23 +73,23 @@ async function checked(response: Response): Promise<Response> {
 }
 
 export async function activityRequest<T>(id: string, path = "", init?: RequestInit): Promise<T> {
-  return (await checked(await fetch(activityUrl(id, path), {
+  return (await checked(await apiFetch(activityUrl(id, path), {
     ...init, headers: { "Content-Type": "application/json", ...init?.headers },
   }))).json() as Promise<T>;
 }
 
 export async function activityPage(id: string, filters: ActivityFilters, before: number,
   signal?: AbortSignal): Promise<ActivityPage> {
-  return (await checked(await fetch(activityUrl(id, "", { ...filters, before }), { signal }))).json();
+  return (await checked(await apiFetch(activityUrl(id, "", { ...filters, before }), { signal }))).json();
 }
 
 export async function exportActivity(id: string, filters: ActivityFilters, includeDetails = false): Promise<Blob> {
-  return (await checked(await fetch(activityUrl(id, "/export", { ...filters, include_details: includeDetails })))).blob();
+  return (await checked(await apiFetch(activityUrl(id, "/export", { ...filters, include_details: includeDetails })))).blob();
 }
 
 export async function* activityStream(id: string, filters: ActivityFilters, after: string,
   signal: AbortSignal): AsyncGenerator<ActivityPage> {
-  const response = await checked(await fetch(activityUrl(id, "/stream", { ...filters, after }), {
+  const response = await checked(await apiFetch(activityUrl(id, "/stream", { ...filters, after }), {
     signal, headers: { Accept: "text/event-stream" },
   }));
   if (!response.body) throw new Error("[ACTIVITY_STREAM_EMPTY] 活动记录：连接没有数据。建议：重新连接。");

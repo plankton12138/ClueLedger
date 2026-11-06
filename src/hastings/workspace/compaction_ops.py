@@ -24,6 +24,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from hastings.identity import current_user_id
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.operations import (
     OPERATION_TERMINAL,
@@ -278,6 +279,7 @@ class CompactionRunner:
             stored = Operation(
                 id=f"op_{uuid.uuid4().hex[:12]}",
                 owner=f"workspace:{self.service.workspace_id or conversation_id}",
+                owner_user_id=current_user_id() or "",
                 workspace_id=self.service.workspace_id,
                 conversation_id=conversation_id,
                 turn_id="",

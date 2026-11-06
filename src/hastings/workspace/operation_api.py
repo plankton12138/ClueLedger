@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from hastings.identity import current_user_id
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.operations import OperationStore
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
@@ -104,7 +105,7 @@ class OperationResultView(BaseModel):
 def create_operation_router(
     workspaces: RecentWorkspaces,
     operations: OperationStore,
-    services: Mapping[str, TurnService],
+    service_lookup: Callable[[str], TurnService | None],
     *,
     runner_for: Callable[[str], CompactionRunner] | None = None,
     probe_runner: ProbeRunner | None = None,
@@ -116,12 +117,25 @@ def create_operation_router(
     """
     router = APIRouter(prefix=OPERATIONS_PREFIX, tags=["operations"])
 
+    def owned(operation: Any) -> bool:
+        owner = current_user_id()
+        return owner is None or operation.owner_user_id == owner
+
     def read(operation_id: str) -> Any:
-        return operations.read(operation_id)
+        operation = operations.read(operation_id)
+        if not owned(operation):
+            raise WorkspaceError(
+                code="OPERATION_NOT_FOUND",
+                where="operations.read",
+                why="没有找到这次操作",
+                fix="刷新后查看当前账号的任务；已过期的事件不再重放",
+                details={"operation_id": operation_id},
+            )
+        return operation
 
     def service_for(operation_id: str) -> TurnService:
         operation = read(operation_id)
-        service = services.get(operation.workspace_id)
+        service = service_lookup(operation.workspace_id)
         if service is None:
             raise WorkspaceError(
                 code="OPERATION_UNAVAILABLE_CONFLICT",
@@ -218,7 +232,7 @@ def create_operation_router(
         items = [
             operation
             for operation in operations.list()
-            if operation.conversation_id == conversation_id
+            if operation.conversation_id == conversation_id and owned(operation)
         ]
         items.sort(key=lambda operation: operation.updated_at, reverse=True)
         return [view(item) for item in items[:limit]]

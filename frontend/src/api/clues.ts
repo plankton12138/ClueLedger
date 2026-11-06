@@ -4,6 +4,7 @@
  * 线索详情页已撤除；账本证据仍可从对话和审查报告打开，因此保留来源读取这一条接口。
  */
 
+import { apiFetch } from "./http";
 import { WorkspaceApiError } from "./workspace";
 
 export type SourceRef =
@@ -30,7 +31,7 @@ export interface SourceLocation {
 
 export async function fetchSourceLocation(workspaceId: string, evidenceId: string, asOf: number | null): Promise<SourceLocation> {
   const params = asOf === null ? "" : `?as_of_chapter=${asOf}`;
-  const response = await fetch(`/api/file-workspaces/${encodeURIComponent(workspaceId)}/source-locations/${encodeURIComponent(evidenceId)}${params}`);
+  const response = await apiFetch(`/api/file-workspaces/${encodeURIComponent(workspaceId)}/source-locations/${encodeURIComponent(evidenceId)}${params}`);
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const error = body?.error;

@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { BookOpenText, Clock3, LayoutGrid, Settings } from "lucide-react";
+import { BookOpenText, Clock3, CreditCard, LayoutGrid, LogOut, Settings, UserRound } from "lucide-react";
 import { pageHash, navigate, type AppPage, type WorkspacePage } from "../../state/navigation";
 import { usePagePositions } from "../../state/pagePositions";
 import { useLayoutStore } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
 import { runningConversation, useConversationsStore } from "../../state/conversations";
+import { useBillingStore } from "../../state/billing";
 import { useModelsStore } from "../../state/models";
+import { useSessionStore } from "../../state/session";
 import { Button } from "../ui/Button";
 import { AppDialog } from "../ui/AppDialog";
 import FontSizeControl from "./FontSizeControl";
@@ -49,6 +51,39 @@ function WorkspaceMenu({ onOpen }: { onOpen: () => void }) {
   </>;
 }
 
+function SubscriptionEntry() {
+  const mode = useSessionStore((state) => state.mode);
+  const active = useBillingStore((state) => state.entitlement?.active ?? false);
+  const openDialog = useBillingStore((state) => state.openDialog);
+  if (mode !== "server") return null;
+  return <Button size="compact" onClick={openDialog} title="订阅">
+    <CreditCard size={16} strokeWidth={2} aria-hidden="true" />{active ? "订阅有效" : "订阅"}
+  </Button>;
+}
+
+function AccountMenu() {
+  const mode = useSessionStore((state) => state.mode);
+  const user = useSessionStore((state) => state.user);
+  const busy = useSessionStore((state) => state.busy);
+  const error = useSessionStore((state) => state.error);
+  const logout = useSessionStore((state) => state.logout);
+  const [open, setOpen] = useState(false);
+  if (mode !== "server" || user === null) return null;
+  return <AppDialog title="账号" open={open} onOpenChange={setOpen} trigger={
+    <Button size="compact" data-dialog-return="account" title={user.email}>
+      <UserRound size={16} strokeWidth={2} aria-hidden="true" />
+      <span className="account-email">{user.email}</span>
+    </Button>}>
+    <div className="ui-action-list">
+      <p className="ui-field-hint">当前账号：{user.email}</p>
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      <Button variant="danger" busy={busy} disabled={busy} onClick={() => void logout()}>
+        <LogOut size={16} strokeWidth={2} aria-hidden="true" />退出登录
+      </Button>
+    </div>
+  </AppDialog>;
+}
+
 export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | null; onOpen: () => void; onSelect: (id: string) => void }) {
   const { bindings, currentId, openDrawer } = useWorkspaceStore();
   const running = useConversationsStore(runningConversation);
@@ -72,6 +107,8 @@ export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | 
       <Button size="compact" disabled={!currentId} disabledReason="先打开作品目录" onClick={() => void openDrawer()}>
         <Clock3 size={16} strokeWidth={2} aria-hidden="true" />活动记录
       </Button>
+      <SubscriptionEntry />
+      <AccountMenu />
       <AppDialog title="设置" open={settings} onOpenChange={setSettings} trigger={<Button size="compact" data-dialog-return="settings">
         <Settings size={16} strokeWidth={2} aria-hidden="true" />设置</Button>}>
         <div className="ui-action-list"><Button onClick={() => { setSettings(false); openModels(); }}>模型设置</Button><FontSizeControl /></div>

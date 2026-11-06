@@ -211,6 +211,7 @@ class ModelConnectionService:
         async with self._lock:
             self._require_revision(expected_revision)
             current = self._profile_or_404(name)
+            self._reject_platform(current)
             clean = self._validate(draft, creating=False, current=current)
             staged = self._stage(name, clean, current=current)
             updated = self._profile(name, clean, credential_ref=staged.ref)
@@ -232,6 +233,7 @@ class ModelConnectionService:
         async with self._lock:
             self._require_revision(expected_revision)
             current = self._profile_or_404(name)
+            self._reject_platform(current)
             persisted = self._book_config()
             remaining = [item for item in persisted.providers if item.name != name]
             clears = persisted.active_provider == name
@@ -369,6 +371,17 @@ class ModelConnectionService:
         """以磁盘为准重新读取：避免把内存里物化过的 key 写回文件。"""
         return load_server_config(self.config_path)
 
+    @staticmethod
+    def _reject_platform(profile: ProviderProfile) -> None:
+        if profile.catalog_id == "line-book":
+            raise WorkspaceError(
+                code="MODEL_CONNECTION_RESERVED_CONFLICT",
+                where="model.connection",
+                why="「线簿订阅」是服务器提供的连接，不能编辑或删除",
+                fix="改选其他连接；订阅状态在顶栏「订阅」里查看",
+                details={"connection": profile.name},
+            )
+
     def _require_revision(self, expected: str) -> None:
         current = self.revision
         if expected and expected == current:
@@ -491,7 +504,8 @@ class ModelConnectionService:
         清理失败不影响已提交的配置，只影响存储占用。
         """
         with contextlib.suppress(Exception):
-            if ref.startswith(SUBSCRIPTION_REF_PREFIX):
+            # 账号命名空间会把前缀加在引用最前面；订阅类型按段判断，不看开头。
+            if SUBSCRIPTION_REF_PREFIX in ref:
                 delete_subscription(self.credentials, ref)
             else:
                 self.credentials.delete(ref)
@@ -678,7 +692,8 @@ class ModelConnectionService:
             display_name=profile.title,
             catalog_id=profile.catalog_id,
             api=profile.api,
-            base_url=profile.base_url,
+            # 订阅连接由服务器管理；不向浏览器暴露内部代理地址。
+            base_url="" if profile.catalog_id == "line-book" else profile.base_url,
             models=profile.models_for(),
             default_model=profile.default_model,
             has_key=profile.available,

@@ -135,6 +135,8 @@ class ProviderProfile(BaseModel):
             if self.subscription is None or not self.subscription.access_token:
                 return "missing"
             return "expired" if self.subscription.expired() else "ready"
+        if self.no_auth:
+            return "ready"
         return "ready" if self.resolved_api_key() else "missing"
 
     @property

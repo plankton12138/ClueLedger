@@ -66,7 +66,7 @@ export default function RemoveWorkspaceDialog({ open, workspace, onOpenChange }:
           </AlertDialog.Description>
           <div className="mt-3 rounded border border-ui-edge bg-ui-surface px-3 py-2 text-sm">
             <div className="font-bold">{workspace.name}</div>
-            <div className="mt-1 break-all text-xs text-ui-muted">{workspace.path}</div>
+            {workspace.path && <div className="mt-1 break-all text-xs text-ui-muted">{workspace.path}</div>}
           </div>
           {error && <p role="alert" className="mt-3 text-sm text-[#a33]">{error}</p>}
           <div className="mt-4 flex justify-end gap-2">

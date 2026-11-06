@@ -13,13 +13,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, ConfigDict, Field
 
 from hastings.server.model_auth import AuthSessionView as AuthSession
-from hastings.server.model_auth import AuthStatus
+from hastings.server.model_auth import AuthStatus, ModelAuthService
 from hastings.server.model_connections import (
     ConfigView,
     ConnectionDraft,
@@ -305,47 +306,66 @@ def _draft_from_probe(body: DiscoverRequest) -> ConnectionDraft:
 
 
 def create_model_router(
-    service: ModelConnectionService,
+    service: ModelConnectionService | Callable[[], ModelConnectionService],
     *,
     probe_runner: ProbeRunner | None = None,
+    auth_available: bool | None = None,
 ) -> APIRouter:
-    """模型设置路由；所有写操作共用一个串行服务。
+    """模型设置路由；``service`` 可以是固定实例或按当前账号解析的工厂。
 
     ``probe_runner`` 存在时连接测试登记为统一操作；否则该入口明确报不可用，
     不悄悄退回同步调用。
     """
     router = APIRouter(prefix=PREFIX, tags=["models"])
 
+    def resolve() -> ModelConnectionService:
+        return service() if callable(service) else service
+
+    if auth_available is None:
+        auth_available = not callable(service) and service.auth is not None
+
+    def auth_service() -> ModelAuthService:
+        auth = resolve().auth
+        if auth is None:
+            raise WorkspaceError(
+                code="MODEL_AUTH_UNAVAILABLE",
+                where="model.auth",
+                why="当前账号没有可用的订阅授权服务",
+                fix="刷新模型设置后重试",
+            )
+        return auth
+
     @router.get("/model-providers", response_model=list[ProviderPresetView])
     def list_presets() -> list[ProviderPresetView]:
-        return [_preset_view(item) for item in service.presets()]
+        return [_preset_view(item) for item in resolve().presets()]
 
     @router.get("/model-connections", response_model=ModelConfigView)
     def list_connections() -> ModelConfigView:
-        return _config_view(service.view())
+        return _config_view(resolve().view())
 
     @router.post("/model-connections", response_model=ModelConfigView)
     async def create_connection(body: ConnectionRequest, if_match: IfMatch = "") -> ModelConfigView:
-        view = await service.create(_draft_from_form(body), expected_revision=if_match)
+        view = await resolve().create(_draft_from_form(body), expected_revision=if_match)
         return _config_view(view)
 
     @router.patch("/model-connections/{name}", response_model=ModelConfigView)
     async def update_connection(
         name: str, body: ConnectionRequest, if_match: IfMatch = ""
     ) -> ModelConfigView:
-        view = await service.update(name, _draft_from_form(body), expected_revision=if_match)
+        view = await resolve().update(name, _draft_from_form(body), expected_revision=if_match)
         return _config_view(view)
 
     @router.delete("/model-connections/{name}", response_model=ModelConfigView)
     async def delete_connection(name: str, if_match: IfMatch = "") -> ModelConfigView:
-        view = await service.delete(name, expected_revision=if_match)
+        view = await resolve().delete(name, expected_revision=if_match)
         return _config_view(view)
 
     @router.post("/model-connections/discover", response_model=DiscoveryView)
     async def discover(body: DiscoverRequest) -> DiscoveryView:
-        result = await service.discover(_draft_from_probe(body), connection_id=body.connection_id)
+        current = resolve()
+        result = await current.discover(_draft_from_probe(body), connection_id=body.connection_id)
         return DiscoveryView(
-            revision=service.revision,
+            revision=current.revision,
             connection_id=body.connection_id,
             models=list(result.models),
             limits=dict(result.limits),
@@ -371,22 +391,23 @@ def create_model_router(
             request_key=body.request_key,
         )
         return ProbeAcceptedView(
-            revision=service.revision,
+            revision=resolve().revision,
             connection_id=body.connection_id,
             operation_id=operation.id,
         )
 
     @router.get("/model-selection", response_model=SelectionResponse)
     def read_selection() -> SelectionResponse:
-        view = service.view()
+        view = resolve().view()
         return SelectionResponse(revision=view.revision, selection=_selection(view.selection))
 
     @router.put("/model-selection", response_model=ModelConfigView)
     async def write_selection(body: SelectionRequest, if_match: IfMatch = "") -> ModelConfigView:
+        current = resolve()
         if body.connection_id is None:
-            view = await service.clear_selection(expected_revision=if_match)
+            view = await current.clear_selection(expected_revision=if_match)
         else:
-            view = await service.select(
+            view = await current.select(
                 body.connection_id,
                 body.model,
                 expected_revision=if_match,
@@ -396,23 +417,24 @@ def create_model_router(
 
     # -- 订阅登录：会话只存在于进程内，保存连接时才归属 ----------------------
 
-    if service.auth is not None:
-        auth = service.auth
+    if auth_available:
 
         @router.get("/model-auth/providers", response_model=list[AuthProviderView])
         def list_auth_providers() -> list[AuthProviderView]:
-            return [AuthProviderView(id=item.id, name=item.name) for item in auth.providers()]
+            return [
+                AuthProviderView(id=item.id, name=item.name) for item in auth_service().providers()
+            ]
 
         @router.post("/model-auth/sessions", response_model=AuthSessionResponse, status_code=201)
         async def start_auth_session(body: AuthSessionStartRequest) -> AuthSessionResponse:
-            return _auth_session_view(await auth.create(body.provider_id))
+            return _auth_session_view(await auth_service().create(body.provider_id))
 
         @router.get("/model-auth/sessions/{session_id}", response_model=AuthSessionResponse)
         async def read_auth_session(session_id: str) -> AuthSessionResponse:
-            return _auth_session_view(await auth.status(session_id))
+            return _auth_session_view(await auth_service().status(session_id))
 
         @router.delete("/model-auth/sessions/{session_id}", response_model=AuthSessionResponse)
         async def cancel_auth_session(session_id: str) -> AuthSessionResponse:
-            return _auth_session_view(await auth.cancel(session_id))
+            return _auth_session_view(await auth_service().cancel(session_id))
 
     return router

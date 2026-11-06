@@ -17,10 +17,12 @@ import asyncio
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from hastings.identity import current_user_id
 from hastings.server.model_probe import ProbeResult
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.operations import OPERATION_TERMINAL, Operation, utc_now
@@ -34,24 +36,34 @@ __all__ = ["ProbeOperation", "ProbeRunner"]
 
 @dataclass(slots=True)
 class ProbeOperation:
-    """执行期只需要输入与任务引用；状态事实在操作表里。"""
+    """执行期只需要输入、任务引用与这次测试所属账号的模型服务。"""
 
     operation_id: str
     kind: str
     model: str
     draft: ConnectionDraft
     connection_id: str | None
+    service: ModelConnectionService
     task: asyncio.Task[None] | None = field(default=None, repr=False)
 
 
 class ProbeRunner:
-    """受理、执行与取消连接测试。"""
+    """受理、执行与取消连接测试；模型服务按操作所属账号解析。"""
 
-    def __init__(self, operations: OperationStore, service: ModelConnectionService) -> None:
+    def __init__(
+        self,
+        operations: OperationStore,
+        service: ModelConnectionService | Callable[[str | None], ModelConnectionService | None],
+    ) -> None:
         self.operations = operations
-        self.service = service
+        self._service = service
         self._operations: dict[str, ProbeOperation] = {}
         self._lock = asyncio.Lock()
+
+    def _service_for(self, user_id: str | None) -> ModelConnectionService | None:
+        if callable(self._service):
+            return self._service(user_id)
+        return self._service
 
     # -- 受理 ---------------------------------------------------------------
 
@@ -83,6 +95,15 @@ class ProbeRunner:
                 default=str,
             ).encode()
         ).hexdigest()
+        owner_id = current_user_id()
+        service = self._service_for(owner_id)
+        if service is None:
+            raise WorkspaceError(
+                code="MODEL_NOT_CONFIGURED",
+                where="model.probe",
+                why="当前账号没有可用的模型服务",
+                fix="在模型设置中检查连接配置后重试",
+            )
         async with self._lock:
             existing = self.operations.find_by_request_key(
                 purpose="probe", conversation_id="", request_key=request_key
@@ -100,6 +121,7 @@ class ProbeRunner:
             operation = Operation(
                 id=f"op_{uuid.uuid4().hex[:12]}",
                 owner="models",
+                owner_user_id=owner_id or "",
                 workspace_id="",
                 conversation_id="",
                 turn_id="",
@@ -117,6 +139,7 @@ class ProbeRunner:
                 model=model,
                 draft=draft,
                 connection_id=connection_id,
+                service=service,
             )
             self._operations[operation.id] = runtime
             runtime.task = asyncio.create_task(self._run(runtime))
@@ -146,7 +169,7 @@ class ProbeRunner:
             self.operations.update(runtime.operation_id, mutate)
 
         try:
-            result = await self.service.probe(
+            result = await runtime.service.probe(
                 runtime.draft,
                 kind=runtime.kind,
                 model=runtime.model,

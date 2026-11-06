@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { navigate } from "../../state/navigation";
+import { useSessionStore } from "../../state/session";
 import { useWorkspaceStore } from "../../state/workspace";
 import { AppDialog } from "../ui/AppDialog";
 import { Button } from "../ui/Button";
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function RenameWorkspaceDialog({ open, workspace, onOpenChange }: Props) {
+  const serverMode = useSessionStore((state) => state.mode) === "server";
   const rename = useWorkspaceStore((state) => state.rename);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
@@ -65,9 +67,11 @@ export default function RenameWorkspaceDialog({ open, workspace, onOpenChange }:
       title="重命名作品"
     >
       <p className="ui-field-hint">
-        会同时重命名磁盘上的作品文件夹；正文、Git 历史、会话与活动记录一起迁移。
+        {serverMode
+          ? "只修改作品在列表中的名称；正文、会话与版本记录保持不变。"
+          : "会同时重命名磁盘上的作品文件夹；正文、Git 历史、会话与活动记录一起迁移。"}
       </p>
-      <p className="mt-2 break-all text-xs text-ui-muted">当前：{workspace.path}</p>
+      {workspace.path && <p className="mt-2 break-all text-xs text-ui-muted">当前：{workspace.path}</p>}
       <div className="mt-3">
         <Field label="新作品名" error={error ?? undefined}>
           <input

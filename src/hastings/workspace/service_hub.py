@@ -70,9 +70,9 @@ class WorkspaceServices:
             return store
 
     def service_for(self, workspace_id: str) -> TurnService:
-        binding = self.workspaces.get(workspace_id)
+        self.workspaces.get(workspace_id)
         cached = self.turns.get(workspace_id)
-        if cached is not None and str(cached.workspace.root) == binding.path:
+        if cached is not None and cached.workspace.root == self.workspaces.disk_root(workspace_id):
             # 压缩接口不能依赖「谁先访问」：缓存命中时也要保证运行器已建好。
             if workspace_id not in self.runners:
                 self.runners[workspace_id] = self._runner_for(cached)
@@ -98,6 +98,10 @@ class WorkspaceServices:
     def runner_for(self, workspace_id: str) -> CompactionRunner:
         self.service_for(workspace_id)
         return self.runners[workspace_id]
+
+    def cached_service(self, workspace_id: str) -> TurnService | None:
+        """已建立的服务；不触发创建，供「是否还有一轮在写」这类只读判断使用。"""
+        return self.turns.get(workspace_id)
 
     def _runner_for(self, service: TurnService) -> CompactionRunner:
         runner = CompactionRunner(service)

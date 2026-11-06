@@ -20,6 +20,7 @@ import { AppDialog } from "../ui/AppDialog";
 import { Tabs } from "../ui/Tabs";
 import { errorMessage } from "../../api/errors";
 import { navigate } from "../../state/navigation";
+import { useSessionStore } from "../../state/session";
 import { useWorkspaceStore } from "../../state/workspace";
 import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog";
 import type { WorkspaceBinding } from "../../api/workspace";
@@ -45,7 +46,8 @@ export default function DirectoryDialog({ open, onClose }: Props) {
   const bindings = useWorkspaceStore((state) => state.bindings);
   const openWorkspace = useWorkspaceStore((state) => state.open);
   const loading = useWorkspaceStore((state) => state.loading);
-  const [mode, setMode] = useState<"open" | "create">("open");
+  const serverMode = useSessionStore((state) => state.mode) === "server";
+  const [mode, setMode] = useState<"open" | "create">(serverMode ? "create" : "open");
   const [pickedPath, setPickedPath] = useState<string | null>(null);
   const [location, setLocation] = useState<string | null>(null);
   const [name, setName] = useState(DEFAULT_NAME);
@@ -58,6 +60,13 @@ export default function DirectoryDialog({ open, onClose }: Props) {
     let alive = true;
     setPickedPath(null);
     setPickerError(null);
+    if (serverMode) {
+      // server 模式没有本机目录可选；作品名直接交给服务器分配位置。
+      setMode("create");
+      return () => {
+        alive = false;
+      };
+    }
     if (useWorkspaceStore.getState().bindings.length === 0) setMode("create");
     fetchDefaultLocation()
       .then((defaults) => {
@@ -69,12 +78,15 @@ export default function DirectoryDialog({ open, onClose }: Props) {
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, serverMode]);
 
   if (!open) return null;
 
-  const target =
-    mode === "create" ? (location && name.trim() ? joinPath(location, name.trim()) : null) : pickedPath;
+  const target = serverMode
+    ? (name.trim() ? name.trim() : null)
+    : mode === "create"
+      ? (location && name.trim() ? joinPath(location, name.trim()) : null)
+      : pickedPath;
   const invalidName = mode === "create" && Boolean(name.trim()) &&
     (/[/\\<>:"|?*\x00-\x1f]/.test(name) || /[. ]$/.test(name) || name.trim() === "." || name.trim() === "..");
   const canSubmit = Boolean(target) && !invalidName && !loading && !picking;
@@ -98,7 +110,9 @@ export default function DirectoryDialog({ open, onClose }: Props) {
 
   const submit = async () => {
     if (!target || !canSubmit) return;
-    const id = await openWorkspace(target, mode === "create");
+    const id = serverMode
+      ? await openWorkspace("", true, name.trim())
+      : await openWorkspace(target, mode === "create");
     if (id) {
       // 作品切换后地址栏也要跟着走：路由仍指向旧作品时，顶层同步会把当前作品切回去。
       navigate({ kind: "writing", workspaceId: id });
@@ -107,10 +121,10 @@ export default function DirectoryDialog({ open, onClose }: Props) {
   };
 
   return (<>
-    <AppDialog open={open} onOpenChange={value => { if (!value) onClose(); }} title="作品位置" returnFocus={() => document.querySelector<HTMLElement>('[data-dialog-return="workspace"]')}>
-        <Tabs label="选择方式" value={mode} onValueChange={value => setMode(value as "open" | "create")} items={[{ value: "open", label: "打开已有", content: null }, { value: "create", label: "新建作品", content: null }]} />
+    <AppDialog open={open} onOpenChange={value => { if (!value) onClose(); }} title={serverMode ? "新建作品" : "作品位置"} returnFocus={() => document.querySelector<HTMLElement>('[data-dialog-return="workspace"]')}>
+        {!serverMode && <Tabs label="选择方式" value={mode} onValueChange={value => setMode(value as "open" | "create")} items={[{ value: "open", label: "打开已有", content: null }, { value: "create", label: "新建作品", content: null }]} />}
 
-        {mode === "open" ? (
+        {!serverMode && mode === "open" ? (
           <div className="mt-4">
             <div className="text-sm font-bold text-[#4b4737]">作品文件夹</div>
             <div className="mt-1 min-h-[38px] break-all rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm">
@@ -122,15 +136,21 @@ export default function DirectoryDialog({ open, onClose }: Props) {
           </div>
         ) : (
           <div className="mt-4">
-            <div className="text-sm font-bold text-[#4b4737]">存放位置</div>
-            <div className="mt-1 min-h-[38px] break-all rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm">
-              {location ?? <span className="text-ui-muted">读取默认位置…</span>}
-            </div>
-            <Button className="mt-2 px-3 py-1 text-sm" disabled={picking} onClick={() => void choose()}>
-              {picking ? "等待选择…" : "更改位置…"}
-            </Button>
+            {serverMode ? (
+              <p className="ui-field-hint">作品保存在线簿服务器，由当前账号管理。</p>
+            ) : (
+              <>
+                <div className="text-sm font-bold text-[#4b4737]">存放位置</div>
+                <div className="mt-1 min-h-[38px] break-all rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm">
+                  {location ?? <span className="text-ui-muted">读取默认位置…</span>}
+                </div>
+                <Button className="mt-2 px-3 py-1 text-sm" disabled={picking} onClick={() => void choose()}>
+                  {picking ? "等待选择…" : "更改位置…"}
+                </Button>
+              </>
+            )}
 
-            <label className="mt-3 block text-sm font-bold text-[#4b4737]" htmlFor="workspace-name">
+            <label className={serverMode ? "block text-sm font-bold text-[#4b4737]" : "mt-3 block text-sm font-bold text-[#4b4737]"} htmlFor="workspace-name">
               作品名
             </label>
             <input
@@ -143,14 +163,14 @@ export default function DirectoryDialog({ open, onClose }: Props) {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) void submit();
               }}
             />
-            {target && <p className="mt-1 text-sm text-ui-muted">将创建：{target}</p>}
+            {!serverMode && target && <p className="mt-1 text-sm text-ui-muted">将创建：{target}</p>}
             {invalidName && <p role="alert" className="mt-1 text-sm text-[#a33]">[WORKSPACE_NAME_INVALID] 作品名：名称包含路径分隔符或系统不允许的字符，或以空格、点结尾。建议：使用单个文件夹名称。</p>}
           </div>
         )}
 
         {pickerError && <p role="alert" className="mt-3 text-sm text-[#a33]">{pickerError}</p>}
 
-        {bindings.length > 0 && (
+        {!serverMode && bindings.length > 0 && (
           <div className="mt-4">
             <div className="text-sm font-bold text-[#4b4737]">最近打开</div>
             <ul className="mt-1 max-h-40 overflow-auto rounded border border-[#e2dbc6] bg-white/60">
@@ -179,7 +199,7 @@ export default function DirectoryDialog({ open, onClose }: Props) {
             取消
           </Button>
           <Button variant="primary" className="px-3 py-1 text-sm" disabled={!canSubmit} onClick={() => void submit()}>
-            {mode === "create" ? "新建并打开" : "打开"}
+            {serverMode || mode === "create" ? "新建并打开" : "打开"}
           </Button>
         </div>
     </AppDialog>

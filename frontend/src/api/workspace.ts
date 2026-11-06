@@ -10,6 +10,7 @@
  */
 
 import type { CompactionOperation, ConversationUsageView } from "./contextUsage";
+import { apiFetch } from "./http";
 
 export interface WorkspaceBinding {
   id: string;
@@ -802,7 +803,7 @@ export function requestApi<T>(path: string, init?: RequestInit): Promise<T> {
 async function send<T>(url: string, init?: RequestInit): Promise<T> {
   // headers 必须最后合并：`...init` 写在后面会把整个 headers 覆盖掉，
   // 带 If-Match 的写请求就会连 Content-Type 一起丢掉，后端解析不了 body 返回 422。
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
@@ -868,10 +869,10 @@ export function renameWorkspace(
   });
 }
 
-export function openWorkspace(path: string, create = false): Promise<WorkspaceBinding> {
+export function openWorkspace(path: string, create = false, name = ""): Promise<WorkspaceBinding> {
   return request<WorkspaceBinding>("", {
     method: "POST",
-    body: JSON.stringify({ path, create }),
+    body: JSON.stringify({ path, create, ...(name ? { name } : {}) }),
   });
 }
 
@@ -1074,7 +1075,7 @@ export async function* streamEvents(
   const url = `${BASE}/${workspaceId}/events?conversation_id=${encodeURIComponent(
     conversationId,
   )}&after=${after}&follow=true`;
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     headers: { Accept: "text/event-stream" },
     signal,
   });

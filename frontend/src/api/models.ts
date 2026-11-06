@@ -8,6 +8,7 @@
  * 这一层不保存 Key：`api_key` 只在一次请求里出现，进入全局状态的一律是脱敏视图。
  */
 
+import { apiFetch } from "./http";
 import { readOperation, readOperationResult } from "./operations";
 
 export type ProviderApi =
@@ -187,7 +188,7 @@ export class ModelApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await apiFetch(`${BASE}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });

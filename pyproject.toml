@@ -9,10 +9,12 @@ description = "ClueLedger (线簿), a mystery-novel writing agent built on the t
 requires-python = ">=3.12"
 license-files = ["LICENSES/tau-MIT.txt", "THIRD_PARTY_NOTICES.md"]
 dependencies = [
+    "alipay-sdk-python>=3.7.1411",
     "fastapi>=0.143.0",
     "httpx[socks]>=0.27",
     "keyring>=25.7.0",
     "pydantic>=2.11",
+    "pycryptodome>=3.20",
     "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
     "uvicorn>=0.54.0",

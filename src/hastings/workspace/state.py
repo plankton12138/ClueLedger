@@ -42,6 +42,7 @@ __all__ = [
     "EventTail",
     "RecentWorkspaces",
     "WorkspaceBinding",
+    "clean_workspace_name",
     "conversation_root",
     "default_state_root",
     "workspace_state_root",
@@ -82,17 +83,28 @@ class WorkspaceBinding:
     name: str
     path: str
     opened_at: str
+    #: server 模式不向浏览器暴露真实目录；存在性由注册表给出。
+    exists_override: bool | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {"id": self.id, "name": self.name, "path": self.path, "opened_at": self.opened_at}
 
     @property
     def exists(self) -> bool:
+        if self.exists_override is not None:
+            return self.exists_override
         return Path(self.path).is_dir()
 
 
 class RecentWorkspaces:
-    """最近目录登记：JSON 单文件，读写都加锁，写入用临时文件替换。"""
+    """最近目录登记：JSON 单文件，读写都加锁，写入用临时文件替换。
+
+    server 模式由 :class:`hastings.accounts.workspaces.UserWorkspaces` 继承并替换存储：
+    作品目录由服务器分配，登记落在账号数据库，浏览器路径不参与解析。
+    """
+
+    #: 是否由服务器管理目录；本地模式为假，保留任意本地目录能力。
+    managed = False
 
     def __init__(self, root: Path | None = None) -> None:
         self.root = Path(root).expanduser().resolve() if root is not None else default_state_root()
@@ -111,18 +123,27 @@ class RecentWorkspaces:
                 return binding
         raise _unknown_workspace(workspace_id)
 
+    def disk_root(self, workspace_id: str) -> Path:
+        """真实作品目录；本地模式就是登记路径，server 模式由存储键解析。"""
+        return Path(self.get(workspace_id).path)
+
     def workspace(self, workspace_id: str) -> Workspace:
         """按绑定 ID 打开作品；目录已被移动或删除时给出可理解的失败。"""
-        binding = self.get(workspace_id)
+        self.get(workspace_id)
+        root = self.disk_root(workspace_id)
         try:
-            workspace = Workspace.open(Path(binding.path))
+            workspace = Workspace.open(root)
         except WorkspaceError as exc:
+            location = "服务器存储" if self.managed else str(root)
+            details: dict[str, object] = {"id": workspace_id}
+            if not self.managed:
+                details["path"] = str(root)
             raise WorkspaceError(
                 code="WORKSPACE_NOT_FOUND",
                 where="workspace.resolve",
-                why=f"已登记的目录当前不可用：{binding.path}（{exc.why}）",
+                why=f"已登记的目录当前不可用：{location}（{exc.why}）",
                 fix="确认目录仍在原位置，或在顶栏重新打开目录",
-                details={"id": workspace_id, "path": binding.path},
+                details=details,
             ) from exc
         # 作品重新进入读取／写入流程之前，先补完已决定的正文与结构提交。
         from hastings.workspace.chapter_write_policy import ChapterWritePolicy
@@ -134,6 +155,24 @@ class RecentWorkspaces:
         return workspace
 
     # -- 登记 ---------------------------------------------------------------
+
+    def open_managed(self, *, name: str, create: bool) -> WorkspaceBinding:
+        """server 模式按名称新建或打开作品；本地登记不支持服务器分配目录。"""
+        raise WorkspaceError(
+            code="WORKSPACE_SERVER_MANAGED",
+            where="workspace.open",
+            why="当前运行模式不使用服务器分配的作品目录",
+            fix="本地模式请通过作品位置对话框选择目录",
+        )
+
+    def remove_managed(self, workspace_id: str) -> WorkspaceBinding:
+        """server 模式删除服务器分配的作品。"""
+        raise WorkspaceError(
+            code="WORKSPACE_SERVER_MANAGED",
+            where="workspace.delete",
+            why="当前运行模式不使用服务器分配的作品目录",
+            fix="本地模式请通过作品菜单删除目录",
+        )
 
     def bind(self, root: Path) -> WorkspaceBinding:
         """登记一个已存在的目录并放到最前；同一目录不会产生第二条记录。"""
@@ -189,7 +228,7 @@ class RecentWorkspaces:
         作品标识由路径算出，目录改名后标识随之变化；目录、应用状态与登记三处
         必须一起换掉，失败时尽量回到原状，不留下只改了一半的结果。
         """
-        clean = _clean_workspace_name(name)
+        clean = clean_workspace_name(name)
         with self._lock:
             entries = self._load()
             binding = next((item for item in entries if item.id == workspace_id), None)
@@ -1280,7 +1319,7 @@ def _rename_with_retry(source: Path, target: Path) -> None:
             delay = min(delay * 2, 0.5)
 
 
-def _clean_workspace_name(name: str) -> str:
+def clean_workspace_name(name: str) -> str:
     """作品名必须是单个文件夹名：不带路径分隔符，也不带 Windows 不允许的字符。"""
     clean = name.strip()
     invalid = (

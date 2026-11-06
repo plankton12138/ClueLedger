@@ -72,8 +72,8 @@ interface WorkspaceStore {
   commitDiff: string;
 
   init(preferredId?: string | null): Promise<void>;
-  /** 打开或新建作品并切过去；成功返回作品标识，失败返回 null。 */
-  open(path: string, create: boolean): Promise<string | null>;
+  /** 打开或新建作品并切过去；server 模式只传名称，路径由服务器分配。 */
+  open(path: string, create: boolean, name?: string): Promise<string | null>;
   selectWorkspace(id: string): Promise<void>;
   /** 明确确认完整路径后删除作品文件与应用记录。 */
   remove(id: string, confirmedPath: string): Promise<boolean>;
@@ -168,10 +168,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     }
   },
 
-  async open(path, create) {
+  async open(path, create, name = "") {
     set({ loading: true, error: null });
     try {
-      const binding = await openWorkspace(path, create);
+      const binding = await openWorkspace(path, create, name);
       set({ bindings: await listWorkspaces() });
       await get().selectWorkspace(binding.id);
       return binding.id;

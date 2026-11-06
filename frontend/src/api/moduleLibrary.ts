@@ -7,6 +7,7 @@
  * 错误沿用统一信封，转成带 code 的 `WorkspaceApiError`；界面按 code 分支。
  */
 
+import { apiFetch } from "./http";
 import { WorkspaceApiError } from "./workspace";
 
 export type ModuleKind =
@@ -182,7 +183,7 @@ const LIBRARY = "/api/module-library";
 const WORKSPACES = "/api/file-workspaces";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });

@@ -2,7 +2,7 @@
 
 Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作品为本地 Markdown 目录，人物小传一人一文件，接口前缀 `/api/file-workspaces`；本轮材料、修改范围与只读检查按 0.6 契约执行，故事资料页与资料任务按 0.7 契约执行。
 
-`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。模型能力是应用级的一组 `/api/model-*` 接口：供应商预设 → 连接（地址、协议、凭据引用、模型）→ 当前选择，写作轮次在受理时固定这一轮的连接与模型。写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；模型连接已用真实 DeepSeek 在接口层取证，界面渲染由构建与状态测试覆盖。
+`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。默认是 local 模式：进程即作者，沿用本地目录与凭据边界。`--mode server` 增加邮箱账号、服务器会话与 `/api/auth/*`，作品目录、任务、模型配置/凭据与私有模块库都按账号隔离；线上模型双账号与部署验收仍按 v1.4 P5/P6 执行。模型能力是应用级的一组 `/api/model-*` 接口：供应商预设 → 连接（地址、协议、凭据引用、模型）→ 当前选择，写作轮次在受理时固定这一轮的连接与模型。写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；模型连接已用真实 DeepSeek 在接口层取证，界面渲染由构建与状态测试覆盖。
 
 0.3 的模块与测试已在 V04-5 删除，只剩少量仍在用的文件（见「包职责」）。0.3 文档作为历史记录保留，其中描述的代码已不存在，不要据此推断可用能力。解释现状时先读[0.7 模块导航](../../dev-notes/v0.7/modules/README.md)，运行与验收口径见[0.7 运行说明](../../dev-notes/v0.7/release.md)；没有变化的会话、连接与执行契约按 0.6/0.5/0.4 模块说明的具体链接读取。
 
@@ -35,6 +35,12 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/v0.6/notes/V06-C1-review.md) |
 | 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/v0.6/notes/V06-B2-scope-events.md) |
 | HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |
+| 邮箱账号、会话、验证与 CSRF | `accounts/`、`server/__main__.py`、`server/file_app.py` | [P1 记录](../../dev-notes/v1.4/notes/P1-email-accounts.md) |
+| 账号作品注册与服务器目录 | `accounts/workspaces.py`、`identity.py` | [P2 记录](../../dev-notes/v1.4/notes/P2-isolation.md) |
+| 按账号模型、凭据与私有模块库 | `server/user_services.py`、`infrastructure/credentials.py` | [P2 记录](../../dev-notes/v1.4/notes/P2-isolation.md) |
+| 订单、权益、通知与退款 | `relay/app.py`、`relay/service.py`、`relay/store.py` | [P3 记录](../../dev-notes/v1.4/notes/P3-billing.md) |
+| 订阅模型代理与用量结算 | `relay/proxy.py`、`relay/metering.py`、`server/platform_channel.py` | [P4 记录](../../dev-notes/v1.4/notes/P4-metering.md) |
+| 生产配置、加密凭据与部署 | `server/production.py`、`infrastructure/credentials.py`、`deploy/` | [P5 记录](../../dev-notes/v1.4/notes/P5-deployment.md) |
 | 模型档案、provider 与凭据 | `server/provider_config.py`、`infrastructure/credentials.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 供应商预设、协议构造与实例关闭 | `server/provider_catalog.py`、`server/provider_runtime.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 连接增删改、凭据提交与选择 | `server/model_connections.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
@@ -49,6 +55,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | `workspace/` | 文件工作区与资料层：章节与人物文件、读写指纹、搜索、最近目录、Git 历史、写作 Agent、对话与事件、故事资料作者视图与资料任务 |
 | `prompts/` | 进入模型请求的固定文本：系统提示、试读与核对说明、摘要与连接测试提示、工具用途与使用时机、结构分栏说明 |
 | `server/` | 启动入口、文件应用装配、供应商预设与连接配置、模型设置接口、协议构造与连接测试 |
+| `accounts/` | 邮箱账号、密码哈希、服务器会话、一次性凭证、限速与认证邮件 |
 | `infrastructure/` | 凭据存储（系统凭据存储优先，回落内存） |
 | `domain/` | 仍在使用的遗留文件：`repository/serialization.py`（内容散列） |
 | `application/` | 错误基元与凭据端口 |

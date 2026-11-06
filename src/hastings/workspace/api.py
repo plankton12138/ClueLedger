@@ -109,11 +109,21 @@ __all__ = [
 PREFIX = "/api/file-workspaces"
 
 
-class OpenWorkspaceRequest(BaseModel):
-    """按服务器本地路径打开或新建；新建只建立正文目录，拒绝已有目标。"""
+def _managed_disabled(where: str) -> WorkspaceError:
+    return WorkspaceError(
+        code="WORKSPACE_SERVER_MANAGED",
+        where=where,
+        why="server 模式不支持本地目录选择或任意路径打开",
+        fix="从作品列表新建或打开作品",
+    )
 
-    path: str = Field(min_length=1)
+
+class OpenWorkspaceRequest(BaseModel):
+    """本地模式按路径打开或新建；server 模式只接受作品名，路径被忽略。"""
+
+    path: str = ""
     create: bool = False
+    name: str = Field(default="", max_length=120)
 
 
 class RenameWorkspaceRequest(BaseModel):
@@ -123,9 +133,9 @@ class RenameWorkspaceRequest(BaseModel):
 
 
 class DeleteWorkspaceRequest(BaseModel):
-    """用户确认框中展示并明确确认的完整作品路径。"""
+    """本地模式确认完整路径；server 模式路径为空，归属由会话确定。"""
 
-    confirmed_path: str = Field(min_length=1)
+    confirmed_path: str = ""
 
 
 class DefaultLocationView(BaseModel):
@@ -917,9 +927,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     """
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
     workspaces = hub.workspaces
-    library = hub.library
     run_registry = hub.run_registry
-    services = hub.turns
     ui_stores: dict[str, ConversationUiStore] = {}
     activity_lock = hub.lock
     activity_for = hub.activity_for
@@ -933,9 +941,10 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
 
     def ensure_idle(workspace_id: str, binding: WorkspaceBinding, where: str) -> None:
         """作品还有一轮在写时，不允许删除或改名，避免运行中的轮次失去落脚点。"""
-        service = services.get(workspace_id)
+        service = hub.cached_service(workspace_id)
         running = service is not None and service.active_turn() is not None
-        if running or (run_registry is not None and run_registry.is_busy(Path(binding.path))):
+        root = workspaces.disk_root(workspace_id)
+        if running or (run_registry is not None and run_registry.is_busy(root)):
             raise WorkspaceError(
                 code="WORKSPACE_BUSY_CONFLICT",
                 where=where,
@@ -1019,6 +1028,17 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
         """明确确认后删除作品目录和应用记录；与轮次受理在同一事件循环中执行。"""
         binding = workspaces.get(workspace_id)
         ensure_idle(workspace_id, binding, "workspace.remove")
+        if workspaces.managed:
+            try:
+                with activity_lock:
+                    removed = workspaces.remove_managed(workspace_id)
+            finally:
+                hub.forget(workspace_id)
+                ui_stores.pop(workspace_id, None)
+            return RemovedWorkspaceView(
+                removed=view(removed),
+                workspaces=[view(item) for item in workspaces.recent()],
+            )
         protected = [
             Path.home(),
             Path.cwd(),
@@ -1029,6 +1049,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             workspaces.root,
             *[Path(item.path) for item in workspaces.recent() if item.id != workspace_id],
         ]
+        library = hub.library
         if library is not None:
             protected.append(library.root)
         try:
@@ -1073,6 +1094,8 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     @router.get("/default-location", response_model=DefaultLocationView)
     def default_location() -> DefaultLocationView:
         """新作品默认归入文档 / ClueLedger / 作品；只查询，不创建目录。"""
+        if workspaces.managed:
+            raise _managed_disabled("workspace.default_location")
         return DefaultLocationView(root=str(default_workspace_root()))
 
     @router.post("/pick-directory", response_model=PickedDirectoryView)
@@ -1082,6 +1105,8 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
         界面不再接受手输路径，作者只能从系统对话框里选；这条接口是唯一入口。
         对话框阻塞到作者操作完为止，因此放在线程里等，不挡住其他请求。
         """
+        if workspaces.managed:
+            raise _managed_disabled("workspace.pick_directory")
         initial: Path | None = None
         if body is not None and body.initial.strip():
             candidate = Path(body.initial).expanduser()
@@ -1099,6 +1124,15 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
 
     @router.post("", response_model=WorkspaceView)
     def open_workspace(body: OpenWorkspaceRequest) -> WorkspaceView:
+        if workspaces.managed:
+            return view(workspaces.open_managed(name=body.name, create=body.create))
+        if not body.path:
+            raise WorkspaceError(
+                code="WORKSPACE_NOT_FOUND",
+                where="workspace.open",
+                why="没有给出作品目录",
+                fix="通过作品位置选择文件夹后重试",
+            )
         target = Path(body.path).expanduser()
         if body.create:
             # 新作品同时建立版本记录：历史从第一份内容开始，而不是从某次修改补起。

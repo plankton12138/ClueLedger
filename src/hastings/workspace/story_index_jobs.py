@@ -92,7 +92,10 @@ class IndexJobStore:
             job = IndexJob.model_validate(payload)
         except ValueError:
             return None
-        if job.status in ("queued", "running") and job.chapter_id not in _RUNNING:
+        if (
+            job.status in ("queued", "running")
+            and _run_key(self.root, job.chapter_id) not in _RUNNING
+        ):
             job.status = "failed"
             job.error = "分析在进程重启后中断，请重新保存正文触发索引"
             self.save(job)
@@ -118,6 +121,10 @@ class IndexJobStore:
 _RUNNING: dict[str, asyncio.Task[None]] = {}
 
 
+def _run_key(state_root: Path, chapter_id: str) -> str:
+    return f"{Path(state_root).resolve()}::{chapter_id}"
+
+
 class IndexAnalysisService:
     def __init__(
         self,
@@ -140,7 +147,8 @@ class IndexAnalysisService:
         context_revision: str,
         changed: str,
     ) -> str | None:
-        previous = _RUNNING.pop(plan.id, None)
+        key = _run_key(self.state_root, plan.id)
+        previous = _RUNNING.pop(key, None)
         if previous is not None:
             previous.cancel()
         if not changed.strip():
@@ -164,8 +172,8 @@ class IndexAnalysisService:
             self.jobs.save(job)
             return None
         task = asyncio.create_task(self._run(job, snapshot, variant, plan))
-        _RUNNING[plan.id] = task
-        task.add_done_callback(lambda _: _RUNNING.pop(plan.id, None))
+        _RUNNING[key] = task
+        task.add_done_callback(lambda _: _RUNNING.pop(key, None))
         self.jobs.save(job)
         return job.job_id
 

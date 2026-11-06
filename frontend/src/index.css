@@ -1531,6 +1531,100 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   }
 }
 
+@layer components {
+  /* ===== 账号页面 ===== */
+  .auth-shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 20px;
+    background:
+      radial-gradient(circle at 50% 18%, #ffffff 0, #f4f7fa 42%, #e7edf2 100%);
+  }
+  .auth-card {
+    width: min(430px, 100%);
+    display: grid;
+    gap: 16px;
+    padding: 30px 30px 26px;
+    border: 1px solid var(--aqua-border);
+    border-radius: 12px;
+    background: linear-gradient(#ffffff, #f8fafc);
+    box-shadow: 0 18px 48px #29313a24, 0 1px 0 #ffffff inset;
+  }
+  .auth-brand { display: flex; align-items: center; gap: 12px; }
+  .auth-mark {
+    width: 42px; height: 42px; display: grid; place-items: center;
+    border-radius: 10px; background: var(--aqua-blue-gradient); color: #ffffff;
+    font-size: 22px; font-weight: 700; text-shadow: 0 1px #285f9680;
+    box-shadow: 0 1px 0 #ffffff80 inset, 0 2px 5px #285f9640;
+  }
+  .auth-kicker {
+    margin: 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: theme("colors.ui.secondaryText");
+  }
+  .auth-name { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .08em; }
+  .auth-title { margin: 8px 0 0; font-size: 24px; font-weight: 700; color: theme("colors.fgStrong"); }
+  .auth-sub {
+    margin: 0; color: theme("colors.ui.secondaryText"); font-size: 14px; line-height: 1.65;
+  }
+  .auth-form { display: grid; gap: 14px; }
+  .auth-field { display: grid; gap: 6px; font-size: 13px; color: theme("colors.ui.secondaryText"); }
+  .auth-form .ui-button, .auth-card > .ui-button { width: 100%; justify-content: center; }
+  .auth-error {
+    margin: 0; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 6px;
+    background: #fff5f4; color: var(--danger); font-size: 13px; line-height: 1.5;
+  }
+  .auth-links {
+    display: flex; justify-content: space-between; gap: 12px;
+    border-top: 1px solid var(--aqua-divider); padding-top: 14px;
+  }
+  .auth-links button {
+    padding: 0; border: 0; background: none; color: #2465b5; font-size: 13px; cursor: pointer;
+  }
+  .auth-links button:hover { text-decoration: underline; }
+  .auth-loading { justify-items: center; text-align: center; }
+  .account-email { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@layer components {
+  /* ===== 订阅 ===== */
+  .billing-current {
+    display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--aqua-divider);
+    border-radius: 8px; background: #f7fafc;
+  }
+  .billing-current-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .billing-current-head span { color: theme("colors.ui.secondaryText"); font-size: 12px; }
+  .billing-meter { height: 8px; overflow: hidden; border-radius: 999px; background: #e4e9ee; }
+  .billing-meter > span { display: block; height: 100%; background: linear-gradient(90deg, #78b4e8, #2d6ca4); }
+  .billing-meter > span[data-low="true"] { background: linear-gradient(90deg, #d99a5e, #a44b2b); }
+  .billing-low { margin: 0; color: #a44b2b; font-size: 12px; line-height: 1.65; }
+  .billing-plans {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin-top: 14px;
+  }
+  .billing-plan {
+    display: flex; flex-direction: column; gap: 8px; padding: 14px;
+    border: 1px solid var(--aqua-border); border-radius: 10px; background: #ffffff;
+    box-shadow: 0 1px 0 #ffffff inset;
+  }
+  .billing-plan-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .billing-plan-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+  .billing-plan-head span { color: #a44b2b; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .billing-plan-meta { margin: 0; color: theme("colors.fgStrong"); font-size: 13px; }
+  .billing-plan-copy { margin: 0; flex: 1; color: theme("colors.ui.secondaryText"); font-size: 12px; line-height: 1.65; }
+  .billing-plan .ui-button { width: 100%; justify-content: center; margin-top: 4px; }
+  .billing-order {
+    display: grid; gap: 8px; margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--aqua-divider);
+  }
+  .billing-order-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .billing-order-head span { color: #a44b2b; font-size: 13px; font-weight: 700; }
+  .billing-refund { display: grid; gap: 6px; }
+  .billing-refund label { font-size: 13px; color: theme("colors.ui.secondaryText"); }
+  .billing-refund-row { display: flex; gap: 8px; }
+  .billing-refund-row .ui-input { flex: 1; min-height: 34px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
