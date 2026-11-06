@@ -16,8 +16,9 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
-function isAuthEndpoint(url: string): boolean {
-  return url.includes("/api/auth/");
+function isSessionEndpoint(url: string): boolean {
+  // 账单服务的 401 只代表订阅侧会话不可用；不能让工作区整页刷新或退出登录。
+  return url.includes("/api/auth/") || url.includes("/api/billing/");
 }
 
 function mergeHeaders(init?: HeadersInit): Record<string, string> {
@@ -49,7 +50,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   });
   if (response.status === 401) {
     const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
-    if (!isAuthEndpoint(url)) unauthorizedHandler?.();
+    if (!isSessionEndpoint(url)) unauthorizedHandler?.();
   }
   return response;
 }

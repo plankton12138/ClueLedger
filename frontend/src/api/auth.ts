@@ -69,6 +69,13 @@ export function register(email: string, password: string): Promise<{ status: "ac
   });
 }
 
+export function resendVerification(email: string): Promise<{ status: "accepted" }> {
+  return request("/resend-verification", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export function logout(): Promise<void> {
   return request<void>("/logout", { method: "POST" });
 }
@@ -80,16 +87,20 @@ export function forgotPassword(email: string): Promise<{ status: "accepted" }> {
   });
 }
 
-export function resetPassword(token: string, newPassword: string): Promise<{ reset: boolean }> {
+export function resetPassword(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<{ reset: boolean }> {
   return request("/reset-password", {
     method: "POST",
-    body: JSON.stringify({ token, new_password: newPassword }),
+    body: JSON.stringify({ email, code, new_password: newPassword }),
   });
 }
 
-export function verifyEmail(token: string): Promise<{ verified: boolean; email: string }> {
+export function verifyEmail(email: string, code: string): Promise<{ verified: boolean; email: string }> {
   return request("/verify-email", {
     method: "POST",
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ email, code }),
   });
 }

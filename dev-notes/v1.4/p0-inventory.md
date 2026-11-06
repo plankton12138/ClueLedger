@@ -37,7 +37,7 @@ server 模式启动必须显式给出 `--database`；缺项直接失败，不回
 - `user_id` 为 `usr_` + 16 字节随机十六进制，创建后不变；作品、模型连接、订单、权益、用量只引用该值。
 - 邮箱保存两份：`email` 保留用户输入的 NFKC 规范化结果，`email_norm` 为 `email.casefold()` 的唯一比较值；不删除点号、不删除 `+` 后缀。
 - 密码使用 `hashlib.scrypt`（N=16384、r=8、p=1、32 字节输出、16 字节随机盐），编码为 `scrypt$N$r$p$salt$hash`；校验使用常量时间比较。密码长度 8—128。
-- 邮箱未验证不创建会话。验证与重置凭证只存 SHA-256 哈希，绑定用途、账号与有效期，单次原子消费；同一用途重新发送会使旧凭证失效。
+- 邮箱未验证不创建会话。验证与重置使用 6 位数字验证码，数据库只存 SHA-256 哈希，绑定用途、账号与有效期；同一用途重新发送会使旧验证码失效，连续输错 5 次后需重新发送。
 - 会话为服务端记录，浏览器只持有随机 token；Cookie 名 `clue_session`，`HttpOnly`、`SameSite=Lax`，公共地址为 HTTPS 时加 `Secure`。会话默认 30 天，与订阅有效期无关。
 - 写操作校验来源：`Origin` 存在时必须等于公共地址或显式允许的来源；有会话的写请求还必须带 `X-CSRF-Token`，值与该会话记录一致。
 - 登录与邮件接口按「邮箱 + 来源地址」固定窗口限速；注册、重发验证、忘记密码统一返回已受理，不披露账号是否存在。
@@ -69,15 +69,16 @@ CREATE TABLE auth_sessions (
 );
 CREATE INDEX idx_auth_sessions_user ON auth_sessions(user_id);
 
-CREATE TABLE auth_challenges (
-    token_hash TEXT PRIMARY KEY,
+CREATE TABLE auth_codes (
     user_id TEXT NOT NULL REFERENCES accounts(user_id) ON DELETE CASCADE,
     purpose TEXT NOT NULL,                      -- verify_email | reset_password
+    code_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
-    consumed_at INTEGER
+    attempts INTEGER NOT NULL DEFAULT 0,
+    consumed_at INTEGER,
+    PRIMARY KEY (user_id, purpose)
 );
-CREATE INDEX idx_auth_challenges_user ON auth_challenges(user_id, purpose);
 
 CREATE TABLE auth_rate_limits (
     scope TEXT NOT NULL,
@@ -109,13 +110,13 @@ CREATE UNIQUE INDEX idx_workspaces_owner_name ON workspaces(owner_user_id, name)
 | 方法与路径 | 请求 | 成功响应 | 约束 |
 |---|---|---|---|
 | `POST /api/auth/register` | `{email,password}` | `202 {status:"accepted"}` | 邮箱已存在也返回同一状态；限速 |
-| `POST /api/auth/verify-email` | `{token}` | `200 {verified:true,email}` | 页面确认后提交；单次消费 |
-| `POST /api/auth/resend-verification` | `{email}` | `202 {status:"accepted"}` | 仅未验证账号实际发信；限速 |
+| `POST /api/auth/verify-email` | `{email,code}` | `200 {verified:true,email}` | 6 位验证码；单次消费，连续错误 5 次失效 |
+| `POST /api/auth/resend-verification` | `{email}` | `202 {status:"accepted"}` | 仅未验证账号实际发信；限速；旧验证码失效 |
 | `POST /api/auth/login` | `{email,password}` | `200 {user,csrf_token}` + Cookie | 未验证返回 403；错误凭证统一 401 |
 | `GET /api/auth/me` | — | `200 {mode,authenticated,user,csrf_token}` | 无会话时 `authenticated:false`，不返回 401 |
 | `POST /api/auth/logout` | — | `204` | 需会话与 CSRF；撤销当前会话 |
 | `POST /api/auth/forgot-password` | `{email}` | `202 {status:"accepted"}` | 不披露账号存在；限速 |
-| `POST /api/auth/reset-password` | `{token,new_password}` | `200 {reset:true}` | 单次消费；撤销该账号全部旧会话 |
+| `POST /api/auth/reset-password` | `{email,code,new_password}` | `200 {reset:true}` | 6 位验证码；单次消费；撤销该账号全部旧会话 |
 
 `GET /api/auth/me` 的 `user` 字段为 `{user_id,email,verified}`。`mode=local` 时 `user` 为 `null`，前端直接进入工作区。
 
@@ -124,9 +125,9 @@ CREATE UNIQUE INDEX idx_workspaces_owner_name ON workspaces(owner_user_id, name)
 | 发送器 | 触发条件 | 行为 |
 |---|---|---|
 | SMTP | 配置 `--smtp-host` | 通过 `smtplib` 发送纯文本邮件；密码只从 `CLUELEDGER_SMTP_PASSWORD` 读取 |
-| 文件投递 | 未配置 SMTP | 写入 `<state-dir>/mail-outbox/*.json`，并在日志输出验证/重置链接 |
+| 文件投递 | 未配置 SMTP | 写入 `<state-dir>/mail-outbox/*.json`，并在日志输出验证码邮件内容（仅本地） |
 
-验证链接形如 `<public-base-url>/#/verify-email?token=…`，重置链接形如 `<public-base-url>/#/reset-password?token=…`。链接打开只展示确认按钮，不自动提交，避免邮件预览消耗凭证。
+邮件只包含 6 位数字验证码和有效期，不发送链接。验证码 10 分钟内有效，同一用途重新发送会替换旧码；验证码只能使用一次，连续输错 5 次后需重新发送。
 
 ### 2.6 配置项
 
@@ -145,7 +146,7 @@ CREATE UNIQUE INDEX idx_workspaces_owner_name ON workspaces(owner_user_id, name)
 
 - 新增 `state/session.ts`：保存 `mode`、当前账号、CSRF token；启动先请求 `/api/auth/me`，server 模式未登录时整页进入认证界面，不初始化作品与模型 store。
 - 所有 `/api` 客户端经统一 `apiFetch` 发出：自动带 Cookie、写请求附加 `X-CSRF-Token`、收到 401 时标记会话失效并回到登录页；草稿保留在现有 localStorage 键中。
-- 认证页面使用 hash：`#/verify-email?token=…`、`#/reset-password?token=…`；登录、注册、忘记密码在同一页面切换。
+- 验证码在账号页面内输入：注册后进入验证码页，找回密码后进入重置页；不使用链接路由，也不从 URL 读取凭证。
 - 顶栏在 server 模式显示当前邮箱与「退出」；local 模式不显示账号入口。
 
 ## 三、P0 盘点证据

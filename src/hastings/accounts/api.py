@@ -22,7 +22,8 @@ class RegisterBody(BaseModel):
 
 
 class VerifyEmailBody(BaseModel):
-    token: str = Field(max_length=512)
+    email: str = Field(max_length=254)
+    code: str = Field(max_length=12)
 
 
 class ResendBody(BaseModel):
@@ -39,7 +40,8 @@ class ForgotBody(BaseModel):
 
 
 class ResetBody(BaseModel):
-    token: str = Field(max_length=512)
+    email: str = Field(max_length=254)
+    code: str = Field(max_length=12)
     new_password: str = Field(max_length=128)
 
 
@@ -143,7 +145,7 @@ def create_auth_router(auth: AuthRuntime | None) -> APIRouter:
     def verify_email(body: VerifyEmailBody, request: Request) -> VerifyResponse:
         rt = runtime()
         _check_origin(request, rt.config)
-        account = rt.service.verify_email(body.token)
+        account = rt.service.verify_email(body.email, body.code, _client_key(request, rt.config))
         return VerifyResponse(verified=True, email=account.email)
 
     @router.post("/resend-verification", response_model=AcceptedResponse, status_code=202)
@@ -200,7 +202,9 @@ def create_auth_router(auth: AuthRuntime | None) -> APIRouter:
     def reset_password(body: ResetBody, request: Request) -> ResetResponse:
         rt = runtime()
         _check_origin(request, rt.config)
-        rt.service.reset_password(body.token, body.new_password)
+        rt.service.reset_password(
+            body.email, body.code, body.new_password, _client_key(request, rt.config)
+        )
         return ResetResponse(reset=True)
 
     return router

@@ -25,6 +25,7 @@ interface SessionState {
   refresh: () => Promise<void>;
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string) => Promise<boolean>;
+  resendVerification: (email: string) => Promise<boolean>;
   forgotPassword: (email: string) => Promise<boolean>;
   logout: () => Promise<void>;
   clearError: () => void;
@@ -114,6 +115,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ busy: true, error: null });
     try {
       await authApi.register(email, password);
+      set({ busy: false });
+      return true;
+    } catch (reason) {
+      set({ busy: false, error: await messageOf(reason) });
+      return false;
+    }
+  },
+
+  async resendVerification(email) {
+    set({ busy: true, error: null });
+    try {
+      await authApi.resendVerification(email);
       set({ busy: false });
       return true;
     } catch (reason) {

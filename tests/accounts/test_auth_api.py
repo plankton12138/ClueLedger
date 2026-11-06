@@ -43,8 +43,8 @@ def _client(tmp_path: Path, runtime: AuthRuntime | None = None) -> tuple[TestCli
     return TestClient(app), resolved
 
 
-def _token_from(message_body: str, route: str) -> str:
-    match = re.search(rf"#/{route}\?token=([A-Za-z0-9_-]+)", message_body)
+def _code_from(message_body: str) -> str:
+    match = re.search(r"验证码[：:]\s*(\d{6})", message_body)
     assert match is not None, message_body
     return match.group(1)
 
@@ -57,8 +57,11 @@ def _register_and_verify(
         == 202
     )
     message = read_outbox(runtime.config.mail_outbox)[-1]
-    token = _token_from(message.body, "verify-email")
-    assert client.post("/api/auth/verify-email", json={"token": token}).status_code == 200
+    code = _code_from(message.body)
+    assert (
+        client.post("/api/auth/verify-email", json={"email": email, "code": code}).status_code
+        == 200
+    )
 
 
 def _login(client: TestClient, *, email: str = _EMAIL, password: str = _PASSWORD) -> dict[str, str]:
@@ -78,19 +81,19 @@ def test_register_verify_login_and_me(tmp_path: Path) -> None:
     messages = read_outbox(runtime.config.mail_outbox)
     assert len(messages) == 1
     assert messages[0].to == _EMAIL
-    token = _token_from(messages[0].body, "verify-email")
+    code = _code_from(messages[0].body)
 
     blocked = client.post("/api/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "AUTH_EMAIL_UNVERIFIED"
 
-    verified = client.post("/api/auth/verify-email", json={"token": token})
+    verified = client.post("/api/auth/verify-email", json={"email": _EMAIL, "code": code})
     assert verified.status_code == 200
     assert verified.json() == {"verified": True, "email": _EMAIL}
 
-    repeated = client.post("/api/auth/verify-email", json={"token": token})
+    repeated = client.post("/api/auth/verify-email", json={"email": _EMAIL, "code": code})
     assert repeated.status_code == 400
-    assert repeated.json()["code"] == "AUTH_TOKEN_INVALID"
+    assert repeated.json()["code"] == "AUTH_CODE_INVALID"
 
     login = client.post("/api/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
     assert login.status_code == 200
@@ -216,10 +219,11 @@ def test_password_reset_revokes_old_sessions(tmp_path: Path) -> None:
         client.post("/api/auth/forgot-password", json={"email": _EMAIL.lower()}).status_code == 202
     )
     message = read_outbox(runtime.config.mail_outbox)[-1]
-    token = _token_from(message.body, "reset-password")
+    code = _code_from(message.body)
 
     reset = client.post(
-        "/api/auth/reset-password", json={"token": token, "new_password": "new password phrase"}
+        "/api/auth/reset-password",
+        json={"email": _EMAIL.lower(), "code": code, "new_password": "new password phrase"},
     )
     assert reset.status_code == 200
     assert reset.json() == {"reset": True}
@@ -232,24 +236,65 @@ def test_password_reset_revokes_old_sessions(tmp_path: Path) -> None:
     assert new.status_code == 200
 
     reused = client.post(
-        "/api/auth/reset-password", json={"token": token, "new_password": "another password"}
+        "/api/auth/reset-password",
+        json={
+            "email": _EMAIL,
+            "code": code,
+            "new_password": "another password",
+        },
     )
     assert reused.status_code == 400
-    assert reused.json()["code"] == "AUTH_TOKEN_INVALID"
+    assert reused.json()["code"] == "AUTH_CODE_INVALID"
 
 
-def test_expired_verification_token_is_rejected(tmp_path: Path) -> None:
+def test_expired_verification_code_is_rejected(tmp_path: Path) -> None:
     client, runtime = _client(tmp_path)
     assert (
         client.post("/api/auth/register", json={"email": _EMAIL, "password": _PASSWORD}).status_code
         == 202
     )
-    token = _token_from(read_outbox(runtime.config.mail_outbox)[0].body, "verify-email")
+    code = _code_from(read_outbox(runtime.config.mail_outbox)[0].body)
 
     with sqlite3.connect(runtime.config.database_path) as conn:
-        conn.execute("UPDATE auth_challenges SET expires_at = 0")
+        conn.execute("UPDATE auth_codes SET expires_at = 0")
 
-    assert client.post("/api/auth/verify-email", json={"token": token}).status_code == 400
+    assert (
+        client.post("/api/auth/verify-email", json={"email": _EMAIL, "code": code}).status_code
+        == 400
+    )
+
+
+def test_verification_code_attempt_limit_and_resend(tmp_path: Path) -> None:
+    client, runtime = _client(tmp_path)
+    assert (
+        client.post("/api/auth/register", json={"email": _EMAIL, "password": _PASSWORD}).status_code
+        == 202
+    )
+    first = _code_from(read_outbox(runtime.config.mail_outbox)[-1].body)
+
+    for _ in range(5):
+        wrong = client.post(
+            "/api/auth/verify-email",
+            json={"email": _EMAIL, "code": "000000" if first != "000000" else "111111"},
+        )
+        assert wrong.status_code == 400
+        assert wrong.json()["code"] == "AUTH_CODE_INVALID"
+    blocked = client.post("/api/auth/verify-email", json={"email": _EMAIL, "code": first})
+    assert blocked.status_code == 429
+    assert blocked.json()["code"] == "AUTH_CODE_ATTEMPTS"
+
+    resent = client.post("/api/auth/resend-verification", json={"email": _EMAIL})
+    assert resent.status_code == 202
+    second = _code_from(read_outbox(runtime.config.mail_outbox)[-1].body)
+    assert second != first
+    assert (
+        client.post("/api/auth/verify-email", json={"email": _EMAIL, "code": first}).status_code
+        == 400
+    )
+    assert (
+        client.post("/api/auth/verify-email", json={"email": _EMAIL, "code": second}).status_code
+        == 200
+    )
 
 
 def test_existing_email_response_does_not_reveal_state(tmp_path: Path) -> None:

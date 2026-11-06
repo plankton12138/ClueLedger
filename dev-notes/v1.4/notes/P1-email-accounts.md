@@ -9,7 +9,7 @@
 | 账号存储 | `src/hastings/accounts/db.py`：共享 SQLite、WAL、外键、`BEGIN IMMEDIATE` 写事务 |
 | 密码 | `passwords.py`：标准库 scrypt（N=16384、r=8、p=1），参数随哈希保存 |
 | 会话 | `store.py` / `service.py`：服务端会话、可撤销、30 天有效，Cookie 名 `clue_session` |
-| 凭证 | 验证与重置 token 只存 SHA-256 哈希；消费与生效在同一写事务内完成 |
+| 验证码 | 注册验证与找回密码使用 6 位数字验证码；只存 SHA-256 哈希，10 分钟有效，连续错误 5 次失效；消费与生效在同一写事务内完成 |
 | 限速 | 注册、登录、重发验证、找回密码按邮箱与来源地址固定窗口计数 |
 | 邮件 | `email.py`：SMTP 发送；未配置时写入 `<state-dir>/mail-outbox/*.json` |
 | 接口 | `api.py`：`/api/auth/register|verify-email|resend-verification|login|me|logout|forgot-password|reset-password` |
@@ -22,12 +22,12 @@
 
 | 项 | 结果 |
 |---|---|
-| 新增账号接口测试 | `tests/accounts/test_auth_api.py` 12 项通过：注册验证、未验证拒绝登录、跨客户端登录、CSRF、登录门与公开接口的来源拒绝、退出撤销、重置撤销、过期与重复凭证、限速、local 模式、server 模式缺库拒绝 |
+| 新增账号接口测试 | `tests/accounts/test_auth_api.py` 13 项通过：注册验证码、未验证拒绝登录、跨客户端登录、CSRF、登录门与公开接口的来源拒绝、退出撤销、重置撤销、过期/重复/错误次数验证码、重发替换、限速、local 模式、server 模式缺库拒绝 |
 | 受影响后端测试 | `tests/accounts`、`tests/workspace/test_api.py`、`test_entry.py` 共 67 项通过 |
 | 后端静态检查 | mypy 203 个源文件通过；ruff check 与 format 通过 |
 | 前端测试 | 339 项单测通过；`npm run build` 通过 |
 | 本地模式浏览器 | `writing-workbench` 5 项 Playwright 用例通过，登录门未影响原有工作区 |
-| server 模式浏览器 | 注册 → 文件投递取验证链接 → 确认验证 → 登录 → 工作区 → 退出 → 找回密码 → 重置 → 新密码登录，全部通过；控制台无错误；`/api/auth/me` 登录后返回 CSRF，退出后 `authenticated:false` |
+| server 模式浏览器 | 注册 → 文件投递取 6 位验证码 → 页面输入验证码 → 登录 → 工作区 → 退出 → 找回密码 → 输入重置验证码 → 新密码登录，全部通过；控制台无错误；`/api/auth/me` 登录后返回 CSRF，退出后 `authenticated:false` |
 
 浏览器验证使用 `--mode server --database .pytest-tmp/... --public-base-url http://127.0.0.1:8932`，静态目录为构建后的 `frontend/dist`。
 

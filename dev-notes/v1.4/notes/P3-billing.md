@@ -18,7 +18,7 @@
 | 回跳 | 回跳页只显示状态；签名订单号可查询状态，但不建立会话、不发权益、不写 Cookie |
 | 退款 | 用户侧仅提交 `refund-request`；运营用 `X-Admin-Token` 执行 `/v1/orders/{id}/refund` 与退款查询 |
 | 网站入口 | 顶栏「订阅」；套餐卡、权益摘要、最近订单、支付结果查询与退款申请；待查订单号不是登录凭证，退出时清除 |
-| 本地代理 | Vite `/api/billing` 指向支付服务；生产由反向代理映射同一路径，浏览器保持同源 |
+| 本地代理 | 写作服务在配置 `--billing-url` 时提供受登录门保护的 `/api/billing` 反向代理；Vite 与生产 nginx 也可直接转发同一路径 |
 
 主要入口：[relay/service.py](../../../src/hastings/relay/service.py)、[relay/store.py](../../../src/hastings/relay/store.py)、[relay/app.py](../../../src/hastings/relay/app.py)、[SubscriptionDialog.tsx](../../../frontend/src/components/billing/SubscriptionDialog.tsx)。
 

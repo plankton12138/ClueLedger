@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 
 from hastings.accounts.db import AccountDatabase
@@ -81,19 +82,21 @@ class AccountsStore:
             ).fetchone()
         return None if row is None else _account(row)
 
-    def verify_with_challenge(self, token_hash: str, purpose: str, now: int) -> Account | None:
-        """凭证消费与标记验证在同一写事务内完成，避免「已消费但未生效」。"""
+    def verify_email_code(
+        self,
+        user_id: str,
+        code_hash: str,
+        *,
+        now: int,
+        max_attempts: int,
+    ) -> tuple[str, Account | None]:
+        """验证码消费与标记邮箱已验证在同一写事务内完成。"""
         with self._db.write() as conn:
-            row = conn.execute(
-                "UPDATE auth_challenges SET consumed_at = ? "
-                "WHERE token_hash = ? AND purpose = ? AND consumed_at IS NULL "
-                "  AND expires_at > ? "
-                "RETURNING user_id",
-                (now, token_hash, purpose, now),
-            ).fetchone()
-            if row is None:
-                return None
-            user_id = str(row["user_id"])
+            status = self._consume_code_locked(
+                conn, user_id, "verify_email", code_hash, now, max_attempts
+            )
+            if status != "ok":
+                return status, None
             conn.execute(
                 "UPDATE accounts SET verified_at = COALESCE(verified_at, ?), updated_at = ? "
                 "WHERE user_id = ?",
@@ -104,23 +107,24 @@ class AccountsStore:
                 "FROM accounts WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
-        return None if account is None else _account(account)
+        return ("ok", _account(account)) if account is not None else ("missing", None)
 
-    def reset_with_challenge(
-        self, token_hash: str, purpose: str, now: int, password_hash: str
-    ) -> str | None:
-        """重置密码、标记邮箱已验证并撤销旧会话，三件事一次提交。"""
+    def reset_with_code(
+        self,
+        user_id: str,
+        code_hash: str,
+        *,
+        now: int,
+        max_attempts: int,
+        password_hash: str,
+    ) -> str:
+        """验证码、密码更新与撤销旧会话一次提交。"""
         with self._db.write() as conn:
-            row = conn.execute(
-                "UPDATE auth_challenges SET consumed_at = ? "
-                "WHERE token_hash = ? AND purpose = ? AND consumed_at IS NULL "
-                "  AND expires_at > ? "
-                "RETURNING user_id",
-                (now, token_hash, purpose, now),
-            ).fetchone()
-            if row is None:
-                return None
-            user_id = str(row["user_id"])
+            status = self._consume_code_locked(
+                conn, user_id, "reset_password", code_hash, now, max_attempts
+            )
+            if status != "ok":
+                return status
             conn.execute(
                 "UPDATE accounts SET password_hash = ?, verified_at = COALESCE(verified_at, ?), "
                 "updated_at = ? WHERE user_id = ?",
@@ -130,7 +134,39 @@ class AccountsStore:
                 "UPDATE auth_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
                 (now, user_id),
             )
-        return user_id
+            return "ok"
+
+    @staticmethod
+    def _consume_code_locked(
+        conn: sqlite3.Connection,
+        user_id: str,
+        purpose: str,
+        code_hash: str,
+        now: int,
+        max_attempts: int,
+    ) -> str:
+        row = conn.execute(
+            "SELECT code_hash, expires_at, attempts, consumed_at FROM auth_codes "
+            "WHERE user_id = ? AND purpose = ?",
+            (user_id, purpose),
+        ).fetchone()
+        if row is None or row["consumed_at"] is not None:
+            return "missing"
+        if int(row["expires_at"]) <= now:
+            return "expired"
+        if int(row["attempts"]) >= max_attempts:
+            return "attempts"
+        if secrets.compare_digest(code_hash, str(row["code_hash"])):
+            conn.execute(
+                "UPDATE auth_codes SET consumed_at = ? WHERE user_id = ? AND purpose = ?",
+                (now, user_id, purpose),
+            )
+            return "ok"
+        conn.execute(
+            "UPDATE auth_codes SET attempts = attempts + 1 WHERE user_id = ? AND purpose = ?",
+            (user_id, purpose),
+        )
+        return "mismatch"
 
     def create_session(
         self,
@@ -192,10 +228,10 @@ class AccountsStore:
                 (now, user_id),
             )
 
-    def replace_challenge(
+    def replace_code(
         self,
         *,
-        token_hash: str,
+        code_hash: str,
         user_id: str,
         purpose: str,
         now: int,
@@ -203,15 +239,13 @@ class AccountsStore:
     ) -> None:
         with self._db.write() as conn:
             conn.execute(
-                "UPDATE auth_challenges SET consumed_at = ? "
-                "WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL",
-                (now, user_id, purpose),
-            )
-            conn.execute(
-                "INSERT INTO auth_challenges "
-                "(token_hash, user_id, purpose, created_at, expires_at, consumed_at) "
-                "VALUES (?, ?, ?, ?, ?, NULL)",
-                (token_hash, user_id, purpose, now, expires_at),
+                "INSERT INTO auth_codes "
+                "(user_id, purpose, code_hash, created_at, expires_at, attempts, consumed_at) "
+                "VALUES (?, ?, ?, ?, ?, 0, NULL) "
+                "ON CONFLICT(user_id, purpose) DO UPDATE SET "
+                "code_hash = excluded.code_hash, created_at = excluded.created_at, "
+                "expires_at = excluded.expires_at, attempts = 0, consumed_at = NULL",
+                (user_id, purpose, code_hash, now, expires_at),
             )
 
     def bump_rate_limit(self, scope: str, key: str, window_start: int) -> int:

@@ -36,16 +36,16 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 
-CREATE TABLE IF NOT EXISTS auth_challenges (
-    token_hash TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS auth_codes (
     user_id TEXT NOT NULL REFERENCES accounts(user_id) ON DELETE CASCADE,
     purpose TEXT NOT NULL CHECK (purpose IN ('verify_email', 'reset_password')),
+    code_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
-    consumed_at INTEGER
+    attempts INTEGER NOT NULL DEFAULT 0,
+    consumed_at INTEGER,
+    PRIMARY KEY (user_id, purpose)
 );
-CREATE INDEX IF NOT EXISTS idx_auth_challenges_user
-    ON auth_challenges(user_id, purpose);
 
 CREATE TABLE IF NOT EXISTS auth_rate_limits (
     scope TEXT NOT NULL,
@@ -81,7 +81,7 @@ class AccountDatabase:
         with self.read() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
-            conn.execute("PRAGMA user_version=2")
+            conn.execute("PRAGMA user_version=3")
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15.0, isolation_level=None)

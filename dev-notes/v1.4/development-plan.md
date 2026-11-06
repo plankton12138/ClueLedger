@@ -27,7 +27,7 @@
 
 - 内部用户 ID 创建后不变。保存邮箱原始值与唯一比较值，统一注册、登录、重置、换邮箱的比较规则；不擅自删除邮箱中的点号或 `+` 后缀。
 - 邮箱未验证前不创建正式会话；密码用成熟的自适应密码哈希方案保存，不自写算法、不存可逆密码。
-- 验证与找回凭证只存哈希，绑定用途、账号、有效期，原子单次消费。验证链接不自动消耗于邮件预览，页面由用户确认后提交。
+- 验证与找回使用 6 位数字验证码，只存哈希，绑定用途、账号与 10 分钟有效期；原子单次消费，同一用途重发会替换旧码，连续错误 5 次后需重新发送。
 - 登录成功建立可撤销的服务器会话，浏览器使用 `Secure / HttpOnly / SameSite=Lax` Cookie。会话寿命与订阅寿命分别管理。
 - 写操作校验来源与 CSRF；退出撤销当前会话，重置密码撤销旧会话。登录和邮件接口限制发送、尝试频率，统一响应避免暴露注册状态。
 - 普通用户走邮箱账号；运营后台独立授权，敏感管理操作增加二次验证。账号状态检查覆盖禁用、密码重置和后台任务执行。
@@ -148,11 +148,11 @@ def create_order(principal, body, orders, plans):
 | 页面动作 | 方法与路径 | 请求 → 响应要点 |
 |---|---|---|
 | 注册 | `POST /api/auth/register` | `{email,password}` → 通用已受理状态，不披露账号是否存在 |
-| 验证邮箱 | `POST /api/auth/verify-email` | `{token}` → 验证结果；随后正常登录 |
+| 验证邮箱 | `POST /api/auth/verify-email` | `{email,code}` → 验证结果；随后正常登录 |
 | 重新发送验证 | `POST /api/auth/resend-verification` | `{email}` → 通用已受理状态，限速 |
 | 登录与恢复 | `POST /api/auth/login`、`GET /api/auth/me` | 邮箱密码 → Cookie；当前账号 → 用户 ID、邮箱显示值与验证状态 |
 | 退出 | `POST /api/auth/logout` | CSRF 校验 → 撤销会话并清 Cookie |
-| 找回与重置 | `POST /api/auth/forgot-password`、`POST /api/auth/reset-password` | 邮箱 → 通用受理；`{token,new_password}` → 撤销旧会话 |
+| 找回与重置 | `POST /api/auth/forgot-password`、`POST /api/auth/reset-password` | 邮箱 → 通用受理；`{email,code,new_password}` → 撤销旧会话 |
 | 作品列表与新建 | `GET/POST /api/file-workspaces` | 用户内列表；创建只传名称，不传服务器路径或拥有者 |
 | 作品、内容与任务 | 现有作品 ID 下的路由 | 保留已消费的业务字段；加入统一鉴权，不另建平行的作品接口体系 |
 | 套餐 | `GET /api/billing/plans` | 套餐代码、名称、价格分、天数与额度 |

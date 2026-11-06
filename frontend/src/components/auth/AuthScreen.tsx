@@ -1,11 +1,11 @@
 /**
- * 账号页面（v1.4 P1）：登录、注册、验证邮箱、忘记与重置密码。
+ * 账号页面（v1.4）：邮箱 + 6 位验证码，不使用邮件链接。
  *
- * 验证与重置链接只负责打开本页；用户点击按钮后才提交凭证，避免邮件预览
- * 自动消耗一次性 token。页面不依赖路由库，hash 变化由 App 与本组件共同观察。
+ * 注册后停留在验证码页面；找回密码同样先收验证码，再设置新密码。
+ * 页面不依赖路由库，也不从 URL 读取凭证。
  */
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { AuthApiError, resetPassword, verifyEmail } from "../../api/auth";
 import { useSessionStore } from "../../state/session";
 import { Button } from "../ui/Button";
@@ -13,63 +13,40 @@ import { Button } from "../ui/Button";
 type View =
   | "login"
   | "register"
-  | "register-sent"
-  | "forgot"
-  | "forgot-sent"
   | "verify"
   | "verified"
+  | "forgot"
   | "reset"
   | "reset-done";
-
-type AuthRoute = { kind: "verify" | "reset"; token: string };
-
-export function authRouteFromHash(hash: string): AuthRoute | null {
-  const raw = hash.replace(/^#/, "");
-  if (!raw.startsWith("/")) return null;
-  const [path, query = ""] = raw.split("?");
-  const token = new URLSearchParams(query).get("token") ?? "";
-  if (path === "/verify-email") return { kind: "verify", token };
-  if (path === "/reset-password") return { kind: "reset", token };
-  return null;
-}
-
-function clearAuthHash(): void {
-  if (!authRouteFromHash(window.location.hash)) return;
-  window.history.replaceState(null, "", window.location.pathname + window.location.search);
-  window.dispatchEvent(new HashChangeEvent("hashchange"));
-}
 
 function isEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+function isCode(value: string): boolean {
+  return /^\d{6}$/.test(value.trim());
+}
+
 export default function AuthScreen() {
   const login = useSessionStore((state) => state.login);
   const register = useSessionStore((state) => state.register);
+  const resendVerification = useSessionStore((state) => state.resendVerification);
   const forgotPassword = useSessionStore((state) => state.forgotPassword);
   const busy = useSessionStore((state) => state.busy);
   const error = useSessionStore((state) => state.error);
   const clearError = useSessionStore((state) => state.clearError);
-  const [route, setRoute] = useState<AuthRoute | null>(() => authRouteFromHash(window.location.hash));
-  const [view, setView] = useState<View>(route?.kind ?? "login");
+  const [view, setView] = useState<View>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [code, setCode] = useState("");
   const [localError, setLocalError] = useState("");
+  const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    function onHashChange() {
-      const next = authRouteFromHash(window.location.hash);
-      setRoute(next);
-      if (next) setView(next.kind);
-    }
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
 
   function go(next: View) {
     setLocalError("");
+    setNotice("");
     clearError();
     setView(next);
   }
@@ -100,7 +77,37 @@ export default function AuthScreen() {
     setSubmitting(true);
     const ok = await register(email.trim(), password);
     setSubmitting(false);
-    if (ok) go("register-sent");
+    if (ok) {
+      setCode("");
+      setNotice(`验证码已发送到 ${email.trim()}，10 分钟内有效。`);
+      setView("verify");
+    }
+  }
+
+  async function resendCode() {
+    setLocalError("");
+    setNotice("");
+    const ok = await resendVerification(email.trim());
+    if (ok) setNotice("新的验证码已发送，请查收。");
+  }
+
+  async function submitVerify(event?: FormEvent) {
+    event?.preventDefault();
+    setLocalError("");
+    if (!isCode(code)) {
+      setLocalError("请输入邮件中的 6 位数字验证码。");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await verifyEmail(email.trim(), code.trim());
+      setNotice("");
+      setView("verified");
+    } catch (reason) {
+      setLocalError(reason instanceof AuthApiError ? reason.message : "验证失败，请重新获取验证码。");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function submitForgot(event: FormEvent) {
@@ -113,30 +120,22 @@ export default function AuthScreen() {
     setSubmitting(true);
     const ok = await forgotPassword(email.trim());
     setSubmitting(false);
-    if (ok) go("forgot-sent");
-  }
-
-  async function submitVerify() {
-    if (!route?.token) {
-      setLocalError("链接缺少验证凭证。请重新发送验证邮件。");
-      return;
-    }
-    setLocalError("");
-    setSubmitting(true);
-    try {
-      await verifyEmail(route.token);
-      setView("verified");
-      clearAuthHash();
-    } catch (reason) {
-      setLocalError(reason instanceof AuthApiError ? reason.message : "验证失败，请重新发送验证邮件。");
-    } finally {
-      setSubmitting(false);
+    if (ok) {
+      setCode("");
+      setPassword("");
+      setConfirm("");
+      setNotice("如果该邮箱已注册，验证码会在几分钟内送达。");
+      setView("reset");
     }
   }
 
   async function submitReset(event: FormEvent) {
     event.preventDefault();
     setLocalError("");
+    if (!isCode(code)) {
+      setLocalError("请输入邮件中的 6 位数字验证码。");
+      return;
+    }
     if (password.length < 8) {
       setLocalError("密码至少需要 8 个字符。");
       return;
@@ -145,19 +144,15 @@ export default function AuthScreen() {
       setLocalError("两次输入的密码不一致。");
       return;
     }
-    if (!route?.token) {
-      setLocalError("链接缺少重置凭证。请重新发送找回邮件。");
-      return;
-    }
     setSubmitting(true);
     try {
-      await resetPassword(route.token, password);
+      await resetPassword(email.trim(), code.trim(), password);
       setPassword("");
       setConfirm("");
+      setCode("");
       setView("reset-done");
-      clearAuthHash();
     } catch (reason) {
-      setLocalError(reason instanceof AuthApiError ? reason.message : "重置失败，请重新发送找回邮件。");
+      setLocalError(reason instanceof AuthApiError ? reason.message : "重置失败，请重新获取验证码。");
     } finally {
       setSubmitting(false);
     }
@@ -203,7 +198,7 @@ export default function AuthScreen() {
         {view === "register" && (
           <>
             <h1 id="auth-title" className="auth-title">注册</h1>
-            <p className="auth-sub">先验证邮箱，再开始写作。第一版一个邮箱对应一个账号。</p>
+            <p className="auth-sub">验证邮箱后会发送 6 位验证码，不需要点击链接。</p>
             <form className="auth-form" onSubmit={(event) => void submitRegister(event)}>
               <label className="auth-field">邮箱
                 <input className="ui-input" type="email" autoComplete="email" value={email}
@@ -215,7 +210,7 @@ export default function AuthScreen() {
               </label>
               <p className="ui-field-hint">至少 8 个字符；不要使用其他网站已经用过的密码。</p>
               {shownError && <p className="auth-error" role="alert">{shownError}</p>}
-              <Button type="submit" variant="primary" busy={working} disabled={working}>发送验证邮件</Button>
+              <Button type="submit" variant="primary" busy={working} disabled={working}>发送验证码</Button>
             </form>
             <div className="auth-links">
               <button type="button" onClick={() => go("login")}>已有账号，去登录</button>
@@ -223,49 +218,23 @@ export default function AuthScreen() {
           </>
         )}
 
-        {view === "register-sent" && (
-          <>
-            <h1 id="auth-title" className="auth-title">验证邮件已发送</h1>
-            <p className="auth-sub">打开邮件里的链接完成验证，然后回来登录。链接 24 小时内有效。</p>
-            <Button variant="primary" onClick={() => go("login")}>去登录</Button>
-          </>
-        )}
-
-        {view === "forgot" && (
-          <>
-            <h1 id="auth-title" className="auth-title">找回密码</h1>
-            <p className="auth-sub">填写注册邮箱。如果账号存在，会收到一封重置邮件。</p>
-            <form className="auth-form" onSubmit={(event) => void submitForgot(event)}>
-              <label className="auth-field">邮箱
-                <input className="ui-input" type="email" autoComplete="email" value={email}
-                  onChange={(event) => setEmail(event.target.value)} required />
-              </label>
-              {shownError && <p className="auth-error" role="alert">{shownError}</p>}
-              <Button type="submit" variant="primary" busy={working} disabled={working}>发送重置邮件</Button>
-            </form>
-            <div className="auth-links">
-              <button type="button" onClick={() => go("login")}>返回登录</button>
-            </div>
-          </>
-        )}
-
-        {view === "forgot-sent" && (
-          <>
-            <h1 id="auth-title" className="auth-title">重置邮件已发送</h1>
-            <p className="auth-sub">如果该邮箱已注册，重置链接会在几分钟内送达。链接 1 小时内有效。</p>
-            <Button variant="primary" onClick={() => go("login")}>返回登录</Button>
-          </>
-        )}
-
         {view === "verify" && (
           <>
-            <h1 id="auth-title" className="auth-title">验证邮箱</h1>
-            <p className="auth-sub">确认是你本人打开这个链接后，再完成验证。</p>
-            {shownError && <p className="auth-error" role="alert">{shownError}</p>}
-            <Button variant="primary" busy={working} disabled={working} onClick={() => void submitVerify()}>
-              完成验证
-            </Button>
+            <h1 id="auth-title" className="auth-title">输入验证码</h1>
+            <p className="auth-sub">验证码已发送到 <strong>{email}</strong>，10 分钟内有效。</p>
+            <form className="auth-form" onSubmit={(event) => void submitVerify(event)}>
+              <label className="auth-field">6 位验证码
+                <input className="ui-input" inputMode="numeric" autoComplete="one-time-code"
+                  maxLength={6} pattern="\d{6}" value={code}
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  required />
+              </label>
+              {notice && <p className="ui-field-hint">{notice}</p>}
+              {shownError && <p className="auth-error" role="alert">{shownError}</p>}
+              <Button type="submit" variant="primary" busy={working} disabled={working}>完成验证</Button>
+            </form>
             <div className="auth-links">
+              <button type="button" disabled={working} onClick={() => void resendCode()}>重新发送验证码</button>
               <button type="button" onClick={() => go("login")}>返回登录</button>
             </div>
           </>
@@ -279,11 +248,35 @@ export default function AuthScreen() {
           </>
         )}
 
+        {view === "forgot" && (
+          <>
+            <h1 id="auth-title" className="auth-title">找回密码</h1>
+            <p className="auth-sub">填写注册邮箱，我们会发送 6 位重置验证码。</p>
+            <form className="auth-form" onSubmit={(event) => void submitForgot(event)}>
+              <label className="auth-field">邮箱
+                <input className="ui-input" type="email" autoComplete="email" value={email}
+                  onChange={(event) => setEmail(event.target.value)} required />
+              </label>
+              {shownError && <p className="auth-error" role="alert">{shownError}</p>}
+              <Button type="submit" variant="primary" busy={working} disabled={working}>发送重置验证码</Button>
+            </form>
+            <div className="auth-links">
+              <button type="button" onClick={() => go("login")}>返回登录</button>
+            </div>
+          </>
+        )}
+
         {view === "reset" && (
           <>
-            <h1 id="auth-title" className="auth-title">设置新密码</h1>
-            <p className="auth-sub">设置成功后，其他设备上的登录会失效。</p>
+            <h1 id="auth-title" className="auth-title">重置密码</h1>
+            <p className="auth-sub">验证码已发送到 <strong>{email}</strong>，10 分钟内有效。</p>
             <form className="auth-form" onSubmit={(event) => void submitReset(event)}>
+              <label className="auth-field">6 位验证码
+                <input className="ui-input" inputMode="numeric" autoComplete="one-time-code"
+                  maxLength={6} pattern="\d{6}" value={code}
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  required />
+              </label>
               <label className="auth-field">新密码
                 <input className="ui-input" type="password" autoComplete="new-password" minLength={8}
                   value={password} onChange={(event) => setPassword(event.target.value)} required />
@@ -292,9 +285,14 @@ export default function AuthScreen() {
                 <input className="ui-input" type="password" autoComplete="new-password"
                   value={confirm} onChange={(event) => setConfirm(event.target.value)} required />
               </label>
+              {notice && <p className="ui-field-hint">{notice}</p>}
               {shownError && <p className="auth-error" role="alert">{shownError}</p>}
               <Button type="submit" variant="primary" busy={working} disabled={working}>保存新密码</Button>
             </form>
+            <div className="auth-links">
+              <button type="button" onClick={() => go("forgot")}>重新获取验证码</button>
+              <button type="button" onClick={() => go("login")}>返回登录</button>
+            </div>
           </>
         )}
 

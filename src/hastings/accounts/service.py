@@ -13,7 +13,6 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from urllib.parse import quote
 
 from hastings.accounts.config import AccountsConfig
 from hastings.accounts.email import EmailSender, OutgoingEmail
@@ -38,6 +37,10 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "resend:email": (3, 3600),
     "forgot:client": (10, 3600),
     "forgot:email": (3, 3600),
+    "verify:client": (30, 900),
+    "verify:email": (10, 900),
+    "reset:client": (30, 900),
+    "reset:email": (10, 900),
 }
 
 
@@ -106,6 +109,10 @@ def new_user_id() -> str:
     return "usr_" + secrets.token_hex(16)
 
 
+def new_code() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
 class AuthService:
     def __init__(
         self,
@@ -155,14 +162,26 @@ class AuthService:
         if account is not None and not account.verified:
             self._send_verification(account, now)
 
-    def verify_email(self, token: str) -> Account:
+    def verify_email(self, email: str, code: str, client_key: str) -> Account:
+        _, norm = normalize_email(email)
         now = self._now()
-        if not token:
-            raise self._token_invalid()
-        account = self._store.verify_with_challenge(hash_token(token), "verify_email", now)
+        self._rate("verify:client", client_key, now)
+        self._rate("verify:email", norm, now)
+        clean = code.strip()
+        if len(clean) != 6 or not clean.isdigit():
+            raise self._code_error("mismatch")
+        account = self._store.account_by_email(norm)
         if account is None:
-            raise self._token_invalid()
-        return account
+            raise self._code_error("mismatch")
+        status, verified = self._store.verify_email_code(
+            account.user_id,
+            hash_token(clean),
+            now=now,
+            max_attempts=self._config.code_max_attempts,
+        )
+        if verified is None:
+            raise self._code_error(status)
+        return verified
 
     def login(self, email: str, password: str, client_key: str) -> LoginResult:
         _, norm = normalize_email(email)
@@ -189,7 +208,7 @@ class AuthService:
                 code="AUTH_EMAIL_UNVERIFIED",
                 where="auth.login",
                 why="邮箱尚未验证",
-                fix="打开注册时收到的验证邮件完成验证，或重新发送验证邮件",
+                fix="输入注册时收到的 6 位验证码，或重新发送验证码",
                 status_code=403,
             )
         token = new_token()
@@ -234,35 +253,47 @@ class AuthService:
         if not account.verified:
             self._send_verification(account, now)
             return
-        token = new_token()
-        self._store.replace_challenge(
-            token_hash=hash_token(token),
+        code = new_code()
+        self._store.replace_code(
+            code_hash=hash_token(code),
             user_id=account.user_id,
             purpose="reset_password",
             now=now,
             expires_at=now + self._config.reset_ttl_seconds,
         )
-        link = f"{self._config.public_base}/#/reset-password?token={quote(token, safe='')}"
+        minutes = max(1, self._config.reset_ttl_seconds // 60)
         self._deliver(
             account.email,
             "重置线簿密码",
             "你好：\n\n"
-            "请在浏览器打开下面的地址设置新密码：\n"
-            f"{link}\n\n"
-            "链接 1 小时内有效，只能使用一次。设置成功后，其他设备上的登录会失效。\n\n"
+            f"你的线簿密码重置验证码：{code}\n\n"
+            f"{minutes} 分钟内有效。请勿将验证码告诉他人。\n"
+            "设置成功后，其他设备上的登录会失效。\n\n"
             "如果这不是你的操作，请忽略这封邮件。\n",
             now,
         )
 
-    def reset_password(self, token: str, password: str) -> None:
+    def reset_password(self, email: str, code: str, password: str, client_key: str) -> None:
+        _, norm = normalize_email(email)
         validate_password(password)
-        if not token:
-            raise self._token_invalid()
-        user_id = self._store.reset_with_challenge(
-            hash_token(token), "reset_password", self._now(), hash_password(password)
+        now = self._now()
+        self._rate("reset:client", client_key, now)
+        self._rate("reset:email", norm, now)
+        clean = code.strip()
+        if len(clean) != 6 or not clean.isdigit():
+            raise self._code_error("mismatch")
+        account = self._store.account_by_email(norm)
+        if account is None:
+            raise self._code_error("mismatch")
+        status = self._store.reset_with_code(
+            account.user_id,
+            hash_token(clean),
+            now=now,
+            max_attempts=self._config.code_max_attempts,
+            password_hash=hash_password(password),
         )
-        if user_id is None:
-            raise self._token_invalid()
+        if status != "ok":
+            raise self._code_error(status)
 
     def _rate(self, scope: str, key: str, now: int) -> None:
         limit, window = _RATE_LIMITS[scope]
@@ -278,22 +309,22 @@ class AuthService:
             )
 
     def _send_verification(self, account: Account, now: int) -> None:
-        token = new_token()
-        self._store.replace_challenge(
-            token_hash=hash_token(token),
+        code = new_code()
+        self._store.replace_code(
+            code_hash=hash_token(code),
             user_id=account.user_id,
             purpose="verify_email",
             now=now,
             expires_at=now + self._config.verification_ttl_seconds,
         )
-        link = f"{self._config.public_base}/#/verify-email?token={quote(token, safe='')}"
+        minutes = max(1, self._config.verification_ttl_seconds // 60)
         self._deliver(
             account.email,
             "验证你的线簿邮箱",
             "你好：\n\n"
-            "请在浏览器打开下面的地址完成邮箱验证：\n"
-            f"{link}\n\n"
-            "链接 24 小时内有效，只能使用一次。验证后即可返回网站登录。\n\n"
+            f"你的线簿邮箱验证码：{code}\n\n"
+            f"{minutes} 分钟内有效。请勿将验证码告诉他人。\n"
+            "验证后即可返回网站登录。\n\n"
             "如果这不是你的操作，请忽略这封邮件。\n",
             now,
         )
@@ -322,11 +353,19 @@ class AuthService:
         )
 
     @staticmethod
-    def _token_invalid() -> AuthError:
+    def _code_error(status: str) -> AuthError:
+        if status == "attempts":
+            return AuthError(
+                code="AUTH_CODE_ATTEMPTS",
+                where="auth.code",
+                why="验证码尝试次数过多",
+                fix="重新发送验证码后再试",
+                status_code=429,
+            )
         return AuthError(
-            code="AUTH_TOKEN_INVALID",
-            where="auth.token",
-            why="链接无效、已使用或已过期",
-            fix="回到网站重新发送验证或找回邮件",
+            code="AUTH_CODE_INVALID",
+            where="auth.code",
+            why="验证码无效、已使用或已过期",
+            fix="核对邮箱中的 6 位验证码，或重新发送",
             status_code=400,
         )

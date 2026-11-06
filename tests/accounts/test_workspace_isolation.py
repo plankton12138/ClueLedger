@@ -39,8 +39,8 @@ def _setup(tmp_path: Path) -> tuple[TestClient, AuthRuntime, Path]:
     return TestClient(app), runtime, storage_root
 
 
-def _token(body: str) -> str:
-    match = re.search(r"#/verify-email\?token=([A-Za-z0-9_-]+)", body)
+def _code(body: str) -> str:
+    match = re.search(r"验证码[：:]\s*(\d{6})", body)
     assert match is not None
     return match.group(1)
 
@@ -53,7 +53,9 @@ def _account(client: TestClient, runtime: AuthRuntime, email: str) -> tuple[str,
     )
     messages = [item for item in read_outbox(runtime.config.mail_outbox) if item.to == email]
     assert (
-        client.post("/api/auth/verify-email", json={"token": _token(messages[-1].body)}).status_code
+        client.post(
+            "/api/auth/verify-email", json={"email": email, "code": _code(messages[-1].body)}
+        ).status_code
         == 200
     )
     login = client.post("/api/auth/login", json={"email": email, "password": password})

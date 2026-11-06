@@ -36,8 +36,9 @@ class AccountsConfig:
     smtp: SmtpSettings | None = None
     cookie_name: str = "clue_session"
     session_ttl_seconds: int = 30 * 24 * 3600
-    verification_ttl_seconds: int = 24 * 3600
-    reset_ttl_seconds: int = 3600
+    verification_ttl_seconds: int = 10 * 60
+    reset_ttl_seconds: int = 10 * 60
+    code_max_attempts: int = 5
     trust_proxy: bool = False
 
     @property

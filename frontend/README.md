@@ -44,7 +44,7 @@ npm run dev
 uv run python -m hastings.server --mode server --database .\data\clueledger.sqlite3
 ```
 
-未配置 SMTP 时，验证与重置链接写入应用状态目录下的 `mail-outbox/`。
+未配置 SMTP 时，验证码邮件写入应用状态目录下的 `mail-outbox/`；注册和找回密码都在页面内输入 6 位验证码。
 
 ## 状态与数据边界
 

@@ -30,6 +30,7 @@ from hastings.accounts.runtime import AuthRuntime
 from hastings.library.api import create_library_router
 from hastings.library.assembly_api import create_assembly_router
 from hastings.library.modules import ModuleLibrary
+from hastings.server.billing_proxy import create_billing_proxy_router
 from hastings.server.model_api import create_model_router
 from hastings.server.model_connections import ModelConnectionService
 from hastings.server.model_factory import (
@@ -78,6 +79,7 @@ def create_workspace_app(
     limits_factory: Callable[[], ModelLimits | None] | None = None,
     auth: AuthRuntime | None = None,
     resources: UserResourcesRegistry | None = None,
+    billing_proxy_url: str | None = None,
 ) -> FastAPI:
     """装配文件工作区应用；``model_service`` 存在时同时挂模型设置接口。
 
@@ -138,6 +140,8 @@ def create_workspace_app(
         )
     )
     app.include_router(create_auth_router(auth))
+    if billing_proxy_url is not None:
+        app.include_router(create_billing_proxy_router(billing_proxy_url))
     register_auth_error_handlers(app)
     if auth is not None:
         app.add_middleware(AuthGuardMiddleware, service=auth.service, config=auth.config)

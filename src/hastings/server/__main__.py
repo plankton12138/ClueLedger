@@ -496,6 +496,7 @@ def assemble_server(
             static_dir=resolved_static,
             auth=auth_runtime,
             resources=resources,
+            billing_proxy_url=billing_url,
         )
     else:
         # 订阅登录的本机身份落在应用状态目录：换机器会重新注册一次，属于预期行为。
