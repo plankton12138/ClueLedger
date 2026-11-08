@@ -36,7 +36,7 @@ export default defineConfig({
   projects: [
     {
       name: "workspace",
-      testMatch: ["writing-workbench.spec.ts", "aqua-layout.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "chat-rendering.spec.ts", "context-usage.spec.ts", "shared-interactions.spec.ts", "model-thinking.spec.ts"],
+      testMatch: ["writing-workbench.spec.ts", "aqua-layout.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "chat-rendering.spec.ts", "context-usage.spec.ts", "shared-interactions.spec.ts", "model-thinking.spec.ts", "runtime-trace.spec.ts"],
       timeout: 45_000,
     },
     {

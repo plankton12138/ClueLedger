@@ -24,8 +24,10 @@ import json
 import os
 import re
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import aclosing, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -93,6 +95,7 @@ from tau_agent.events import (
     MessageUpdateEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
+    TurnEndEvent,
     TurnStartEvent,
 )
 from tau_agent.harness import AgentHarness
@@ -117,6 +120,8 @@ from tau_agent.provider_events import (
     ThinkingDeltaEvent,
     ThinkingEndEvent,
 )
+
+_trace_loop: ContextVar[tuple[str, str] | None] = ContextVar("trace_loop", default=None)
 
 __all__ = [
     "EXTERNAL_CHANGE_MESSAGE",
@@ -708,12 +713,14 @@ class TurnService:
             if kind == "model_request_started" or summary
             else self._request_ids.get(info.turn_id)
         )
+        loop = _trace_loop.get()
+        loop_fields = {"loop_id": loop[1]} if loop and loop[0] == info.turn_id else {}
         _append_event(
             self.store,
             info.conversation_id,
             info.turn_id,
             kind,
-            redact({"parent_operation_id": parent, **payload}),
+            redact({"parent_operation_id": parent, **loop_fields, **payload}),
         )
 
     @property
@@ -3743,24 +3750,71 @@ class TurnService:
             info.turn_id,
             guard=self._text_guard(info),
         )
-        queue: asyncio.Queue[tuple[Any, str | None, float, str] | None] = asyncio.Queue()
+        queue: asyncio.Queue[tuple[Any, str | None, str | None, float, str] | None] = (
+            asyncio.Queue()
+        )
         failure: list[Exception] = []
 
         async def pump() -> None:
+            token = _trace_loop.set(None)
+            loop_id: str | None = None
+            loop_started = 0.0
+
+            def finish_loop(status: str, observed_at: float, at: str) -> None:
+                self._record_activity(
+                    info,
+                    "loop_finished",
+                    {
+                        "loop_id": loop_id,
+                        "at": at,
+                        "duration_ms": int((observed_at - loop_started) * 1000),
+                        "status": status,
+                    },
+                )
+
             try:
                 async for item in harness.prompt(text):
+                    observed_at = time.monotonic()
+                    at = datetime.now().astimezone().isoformat(timespec="milliseconds")
+                    if isinstance(item, TurnStartEvent):
+                        loop_id = uuid.uuid4().hex
+                        loop_started = observed_at
+                        _trace_loop.set((info.turn_id, loop_id))
+                        self._record_activity(info, "loop_started", {"at": at})
+                    elif isinstance(item, TurnEndEvent) and loop_id:
+                        reason = getattr(item.message, "stop_reason", None)
+                        status = {"aborted": "stopped", "error": "failed", "length": "truncated"}
+                        finish_loop(status.get(reason or "", "completed"), observed_at, at)
+                        loop_id = None
+                        _trace_loop.set(None)
                     await queue.put(
                         (
                             item,
                             self._request_ids.get(info.turn_id),
-                            time.monotonic(),
-                            datetime.now().astimezone().isoformat(timespec="milliseconds"),
+                            loop_id,
+                            observed_at,
+                            at,
                         )
                     )
             except Exception as exc:  # provider 自己抛错：由读循环统一落成失败
                 failure.append(exc)
             finally:
-                await queue.put(None)
+                try:
+                    if loop_id:
+                        finish_loop(
+                            "stopped"
+                            if info.turn_id in self._stopped
+                            else "failed"
+                            if failure
+                            else "interrupted",
+                            time.monotonic(),
+                            datetime.now().astimezone().isoformat(timespec="milliseconds"),
+                        )
+                except Exception as exc:
+                    failure.append(exc)
+                finally:
+                    _trace_loop.reset(token)
+                    await queue.put(None)
 
         reader = asyncio.create_task(pump())
         tools: dict[str, tuple[dict[str, Any], float]] = {}
@@ -3775,7 +3829,7 @@ class TurnService:
                     continue
                 if observed is None:
                     break
-                event, request_id, observed_at, occurred_at = observed
+                event, request_id, loop_id, observed_at, occurred_at = observed
                 bridge.parent_operation_id = request_id
                 truncated = (
                     self._handle_agent_event(
@@ -3785,6 +3839,7 @@ class TurnService:
                         tools,
                         turns_used=turns_used,
                         request_id=request_id,
+                        loop_id=loop_id,
                         observed_at=observed_at,
                         occurred_at=occurred_at,
                     )
@@ -3829,6 +3884,7 @@ class TurnService:
         request_id: str | None,
         observed_at: float,
         occurred_at: str,
+        loop_id: str | None = None,
         turns_used: list[int] | None = None,
     ) -> bool:
         """翻译单条模型事件；返回这一条是否让回复被截断。"""
@@ -3900,6 +3956,7 @@ class TurnService:
                         "args": _short_args(args),
                         "input_detail": detail,
                         "parent_operation_id": request_id,
+                        "loop_id": loop_id,
                         "at": occurred_at,
                     }
                 ],
@@ -3921,6 +3978,7 @@ class TurnService:
                 "result_detail": self.activity.attachment(event.result.text),
                 "result_chars": len(event.result.text),
                 "parent_operation_id": request_id,
+                "loop_id": loop_id,
                 "at": occurred_at,
             }
             if started is not None:

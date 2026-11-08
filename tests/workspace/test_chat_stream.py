@@ -249,12 +249,23 @@ def test_deltas_are_readable_before_the_response_ends(
     request_end = _of_type(events, "model_request_finished")[0]
     assert request_start["operation_id"] == request_end["operation_id"]
     assert request_start["seq"] < request_end["seq"]
+    loop_start = _of_type(events, "loop_started")[0]
+    loop_end = _of_type(events, "loop_finished")[0]
+    assert loop_start["loop_id"] == request_start["loop_id"] == loop_end["loop_id"]
+    assert loop_start["seq"] < request_start["seq"] < request_end["seq"] < loop_end["seq"]
     # 活动诊断事件不改变回复流的既有顺序与内容。
     events = [
         event
         for event in events
         if event["type"]
-        not in ("model_request_started", "model_request_finished", "version_finished")
+        not in (
+            "model_request_started",
+            "model_request_finished",
+            "loop_started",
+            "loop_finished",
+            "gate_decided",
+            "version_finished",
+        )
     ]
     assert [event["type"] for event in events] == [
         "turn_started",

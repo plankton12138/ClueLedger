@@ -10,12 +10,14 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator, Mapping
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.runtime_trace import TRACE_TYPES, trace_snapshot, turn_summary
 from hastings.workspace.state import _repair_tail
 
 _SECRET = re.compile(
@@ -233,7 +235,14 @@ def classify(event: dict[str, Any], event_id: str = "") -> ActivityText:
     phase = status
     pair = f"event:{event_id or event.get('seq', '')}"
 
-    if kind == "turn_started":
+    if kind in ("loop_started", "loop_finished"):
+        action, title = "conversation", "模型回合开始" if kind == "loop_started" else "模型回合结束"
+        pair = f"loop:{event.get('loop_id', event_id)}"
+    elif kind == "gate_decided":
+        action, title = "conversation", str(event.get("name", "规则检查"))
+        subject, note = str(event.get("where", "")), str(event.get("message", ""))
+        status = str(event.get("decision", status))
+    elif kind == "turn_started":
         scope = event.get("material_scope")
         scope = scope if isinstance(scope, Mapping) else {}
         if str(event.get("origin") or "writing") == "materials":
@@ -856,6 +865,73 @@ class ActivityStore:
                     db.close()
             except (OSError, sqlite3.Error, ValueError) as exc:
                 raise _error(exc) from exc
+
+    def trace_turns(self, conversation_id: str, *, before: int, limit: int) -> dict[str, Any]:
+        with self._lock:
+            try:
+                with closing(self._connect()) as db:
+                    self._sync(db)
+                    rows = db.execute(
+                        """
+                        SELECT start.seq, start.payload, (
+                            SELECT CASE WHEN terminal.type='run_finished' THEN terminal.payload END
+                            FROM events terminal
+                            WHERE terminal.conversation_id=start.conversation_id
+                              AND terminal.turn_id=start.turn_id AND terminal.seq>start.seq
+                              AND terminal.type IN ('run_finished','attempt_started')
+                            ORDER BY terminal.seq DESC LIMIT 1
+                        ) AS terminal
+                        FROM events start
+                        WHERE start.conversation_id=? AND start.type='turn_started'
+                          AND (?=0 OR start.seq<?)
+                        ORDER BY start.seq DESC LIMIT ?
+                        """,
+                        (conversation_id, before, before, limit + 1),
+                    ).fetchall()
+                    items = [
+                        turn_summary(
+                            json.loads(row["payload"]),
+                            json.loads(row["terminal"]) if row["terminal"] else None,
+                        )
+                        for row in rows[:limit]
+                    ]
+                    return {
+                        "items": items,
+                        "next_before": rows[limit - 1]["seq"] if len(rows) > limit else None,
+                    }
+            except (OSError, sqlite3.Error, ValueError) as exc:
+                raise _error(exc) from exc
+
+    def turn_trace(self, conversation_id: str, turn_id: str) -> dict[str, Any]:
+        with self._lock:
+            try:
+                with closing(self._connect()) as db:
+                    self._sync(db)
+                    generation = db.execute(
+                        "SELECT value FROM meta WHERE key='generation'"
+                    ).fetchone()[0]
+                    latest = db.execute("SELECT COALESCE(MAX(id),0) FROM events").fetchone()[0]
+                    kinds = ",".join("?" for _ in TRACE_TYPES)
+                    rows = [
+                        {**json.loads(row["payload"]), "event_id": row["event_id"]}
+                        for row in db.execute(
+                            "SELECT event_id,payload FROM events "
+                            f"WHERE conversation_id=? AND turn_id=? AND type IN ({kinds}) "
+                            "ORDER BY seq,id",
+                            (conversation_id, turn_id, *TRACE_TYPES),
+                        )
+                    ]
+                    start = next((row for row in rows if row["type"] == "turn_started"), None)
+                    if start is not None:
+                        return trace_snapshot(start, rows, f"{generation}:{latest}")
+            except (OSError, sqlite3.Error, ValueError) as exc:
+                raise _error(exc) from exc
+        raise WorkspaceError(
+            code="TURN_NOT_FOUND",
+            where="activity.trace",
+            why="该会话下没有这轮记录",
+            fix="刷新轮次列表后重新选择",
+        )
 
     def detail(self, event_id: str) -> dict[str, Any]:
         with self._lock:

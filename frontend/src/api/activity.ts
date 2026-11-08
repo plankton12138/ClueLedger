@@ -55,6 +55,58 @@ export interface ActivityFilters {
   verbose?: boolean;
 }
 
+export interface TraceTurn {
+  turn_id: string;
+  seq: number;
+  text: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  status: string;
+  trace_available: boolean;
+}
+
+export interface TraceEvent {
+  span_id: string;
+  parent_span_id: string | null;
+  kind: "loop" | "model" | "tool_call" | "gate" | "retrieval" | "write" | "reply";
+  name: string;
+  start_offset_ms: number | null;
+  duration_ms: number | null;
+  point: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  status: string;
+  summary: string;
+  error_code: string | null;
+  tool_calls?: number;
+  usage: { input?: number; output?: number } | null;
+  start_event_id: string | null;
+  finish_event_id: string | null;
+  retry_of_span_id: string | null;
+}
+
+export interface TurnTrace {
+  turn: TraceTurn;
+  events: TraceEvent[];
+  range_ms: number;
+  cursor: string;
+  usage: { input: number | null; output: number | null; partial: boolean };
+}
+
+function traceUrl(workspace: string, conversation: string): string {
+  return `/api/file-workspaces/${encodeURIComponent(workspace)}/conversations/${encodeURIComponent(conversation)}/turns`;
+}
+
+export async function traceTurns(workspace: string, conversation: string, before = 0, signal?: AbortSignal):
+  Promise<{ items: TraceTurn[]; next_before: number | null }> {
+  return (await checked(await apiFetch(`${traceUrl(workspace, conversation)}?before=${before}`, { signal }))).json();
+}
+
+export async function turnTrace(workspace: string, conversation: string, turn: string, signal: AbortSignal): Promise<TurnTrace> {
+  return (await checked(await apiFetch(`${traceUrl(workspace, conversation)}/${encodeURIComponent(turn)}/trace`, { signal }))).json();
+}
+
 export function activityUrl(id: string, path = "", filters: object = {}): string {
   const query = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {

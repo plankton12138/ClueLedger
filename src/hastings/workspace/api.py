@@ -1492,6 +1492,21 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             revision=service.store.revision(),
         )
 
+    @router.get("/{workspace_id}/conversations/{conversation_id}/turns")
+    def list_trace_turns(
+        workspace_id: str,
+        conversation_id: str,
+        before: int = Query(default=0, ge=0),
+        limit: int = Query(default=30, ge=1, le=100),
+    ) -> dict[str, Any]:
+        service_for(workspace_id).store.get(conversation_id)
+        return activity_for(workspace_id).trace_turns(conversation_id, before=before, limit=limit)
+
+    @router.get("/{workspace_id}/conversations/{conversation_id}/turns/{turn_id}/trace")
+    def read_turn_trace(workspace_id: str, conversation_id: str, turn_id: str) -> dict[str, Any]:
+        service_for(workspace_id).store.get(conversation_id)
+        return activity_for(workspace_id).turn_trace(conversation_id, turn_id)
+
     @router.post(
         "/{workspace_id}/conversations/{conversation_id}/compact",
         response_model=CompactionOperationView,

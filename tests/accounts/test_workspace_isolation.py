@@ -92,6 +92,13 @@ def test_two_accounts_cannot_see_or_open_each_others_workspaces(tmp_path: Path) 
 
     assert second.get(f"/api/file-workspaces/{workspace_id}/files").status_code == 404
     assert second.get(f"/api/file-workspaces/{workspace_id}/activity").status_code == 404
+    for path in (
+        "/conversations/conv_1/turns",
+        "/conversations/conv_1/turns/turn_1/trace",
+        "/activity/stream?conversation_id=conv_1&turn_id=turn_1",
+        "/activity/attachments/example",
+    ):
+        assert second.get(f"/api/file-workspaces/{workspace_id}{path}").status_code == 404
     assert (
         second.get(
             f"/api/file-workspaces/{workspace_id}/events",

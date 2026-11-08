@@ -683,6 +683,7 @@ class ConversationStore:
                 "event_id": f"{cid}:1",
                 "conversation_id": cid,
                 "type": "turn_started",
+                "trace_version": 1,
                 "turn_id": turn_id,
                 "text": prompt,
                 "request_key": request_key,
@@ -750,6 +751,7 @@ class ConversationStore:
                 )
             event: dict[str, Any] = {
                 "type": "turn_started",
+                "trace_version": 1,
                 "turn_id": turn_id,
                 "text": prompt,
                 "request_key": request_key,

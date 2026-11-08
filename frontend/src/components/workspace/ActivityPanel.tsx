@@ -27,6 +27,7 @@ import {
   type ActivityBand,
   type ActivityRow,
 } from "./activityRows";
+import RuntimeTrace from "./RuntimeTrace";
 
 const STATUS: Record<string, string> = {
   started: "已开始", running: "进行中", completed: "完成", failed: "失败", stopped: "已停止",
@@ -260,12 +261,16 @@ export default function ActivityPanel() {
       <header className="flex flex-none flex-wrap items-center gap-3 border-b border-ui-edge px-4 py-3">
         <Button variant={tab === "events" ? "primary" : "secondary"} aria-pressed={tab === "events"}
           onClick={() => setTab("events")}>事件流</Button>
+        <Button variant={tab === "trace" ? "primary" : "secondary"} aria-pressed={tab === "trace"}
+          onClick={() => setTab("trace")}>运行追踪</Button>
         <Button variant={tab === "versions" ? "primary" : "secondary"} aria-pressed={tab === "versions"}
           onClick={() => setTab("versions")}>文件版本</Button>
         <div className="flex-1" />
         <FontSizeControl />
       </header>
-      {tab === "versions" ? <ChangesDrawer embedded /> : <>
+      {tab === "versions" ? <ChangesDrawer embedded /> : tab === "trace"
+        ? <RuntimeTrace key={workspace} workspace={workspace} currentConversation={selected}
+          conversations={conversations} /> : <>
         <div className="flex min-h-0 flex-1 flex-col-reverse md:flex-row">
           <main ref={scroll} className="min-h-0 min-w-0 flex-1 overflow-auto"
             onScroll={() => { const el = scroll.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 80) setFollow(false); }}>

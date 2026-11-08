@@ -226,6 +226,8 @@ class RecordedProvider:
         definitions: list[dict[str, Any]],
         operation: str,
         error_text: str | None,
+        attempt_duration_ms: int,
+        attempt_usage: dict[str, Any],
     ) -> list[AgentMessage] | None:
         """供应商明确拒绝上下文时，保留更少的近期消息并重发一次。
 
@@ -266,6 +268,8 @@ class RecordedProvider:
                 "dropped_messages": len(messages) - len(trimmed),
                 "stage": self.stage,
                 "request_estimate": after,
+                "attempt_duration_ms": attempt_duration_ms,
+                "attempt_usage": attempt_usage,
             },
         )
         return trimmed
@@ -288,7 +292,22 @@ class RecordedProvider:
         # 只在请求副本上裁剪：harness 手里的消息列表保持原样，下一轮重新判断。
         working = list(messages)
         if self.before_request is not None:
-            working = await self.before_request(working, system, definitions, signal)
+            try:
+                working = await self.before_request(working, system, definitions, signal)
+            except WorkspaceError as budget_error:
+                if budget_error.code == "CONTEXT_REQUIRED_INPUT_TOO_LARGE":
+                    self.emit(
+                        "gate_decided",
+                        {
+                            "name": "模型输入预算",
+                            "decision": "blocked",
+                            "where": budget_error.where,
+                            "code": budget_error.code,
+                            "message": budget_error.why,
+                            "fix": budget_error.fix,
+                        },
+                    )
+                raise
         estimate = request_estimate(
             identity=self.identity or model,
             system=system,
@@ -301,12 +320,34 @@ class RecordedProvider:
         if trim is not None:
             working, estimate = trim.pop("messages"), trim.pop("estimate")
         limit = self.limits.input_limit() if self.limits else None
-        if (
-            (self.before_request is not None or self.enforce_budget)
-            and limit is not None
+        checked = (self.before_request is not None or self.enforce_budget) and limit is not None
+        blocked = (
+            limit is not None
+            and checked
             and isinstance(estimate["total_tokens"], int)
             and estimate["total_tokens"] > limit
-        ):
+        )
+        if checked:
+            self.emit(
+                "gate_decided",
+                {
+                    "name": "模型输入预算",
+                    "decision": "blocked" if blocked else "passed",
+                    "where": "conversation.context",
+                    "input_tokens": estimate["total_tokens"],
+                    "limit_tokens": limit,
+                    **(
+                        {
+                            "code": "CONTEXT_REQUIRED_INPUT_TOO_LARGE",
+                            "message": "请求超过模型输入预算",
+                            "fix": "缩小本次处理范围，或选择容量更大的模型",
+                        }
+                        if blocked
+                        else {}
+                    ),
+                },
+            )
+        if blocked:
             raise WorkspaceError(
                 code="CONTEXT_REQUIRED_INPUT_TOO_LARGE",
                 where="conversation.context",
@@ -339,6 +380,7 @@ class RecordedProvider:
             },
         )
         started = time.monotonic()
+        attempt_started = started
         first: int | None = None
         status, reason, usage, error = "interrupted", "", None, None
         partial = AssistantMessage(model=model)
@@ -372,6 +414,10 @@ class RecordedProvider:
                             definitions,
                             operation,
                             event.error.error_message,
+                            int((time.monotonic() - attempt_started) * 1000),
+                            event.error.usage.model_dump(
+                                mode="json", exclude={"cost"}, exclude_unset=True
+                            ),
                         )
                         if trimmed is not None:
                             retried = True
@@ -406,7 +452,9 @@ class RecordedProvider:
                         )
                         # 上游 Usage 的默认 0 不代表供应商确实提供了用量。
                         if message.usage.model_fields_set:
-                            usage = message.usage.model_dump(mode="json", exclude={"cost"})
+                            usage = message.usage.model_dump(
+                                mode="json", exclude={"cost"}, exclude_unset=True
+                            )
                         if message.error_message:
                             error = message.error_message
                     else:
@@ -414,6 +462,7 @@ class RecordedProvider:
                     yield event
                 if not retry:
                     break
+                attempt_started = time.monotonic()
                 source = self.provider.stream_response(
                     model=model,
                     system=system,
@@ -444,6 +493,7 @@ class RecordedProvider:
                     "usage": usage,
                     "message": error,
                     "duration_ms": int((time.monotonic() - started) * 1000),
+                    "attempt_duration_ms": int((time.monotonic() - attempt_started) * 1000),
                     "first_output_ms": first,
                 },
             )

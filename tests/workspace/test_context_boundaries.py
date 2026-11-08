@@ -239,6 +239,10 @@ def test_oversized_required_input_fails_without_provider_call(tmp_path: Path):
         errors = [e for e in store.events(cid) if e["type"] == "error"]
         assert errors[-1]["code"] == "CONTEXT_REQUIRED_INPUT_TOO_LARGE"
         assert not any(r["tools"] for r in provider.requests)
+        trace = service.activity.turn_trace(cid, info.turn_id)
+        blocked = [e for e in trace["events"] if e["kind"] == "gate" and e["status"] == "blocked"]
+        assert len(blocked) == 1
+        assert blocked[0]["error_code"] == "CONTEXT_REQUIRED_INPUT_TOO_LARGE"
 
     asyncio.run(scenario())
 

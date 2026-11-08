@@ -435,23 +435,37 @@ class RunContext:
 
     def require_writable(self, where: str) -> None:
         """应用完成后本任务进入收尾；提问后只等作者回答：两种情况都不再继续写入。"""
-        if self.session.guard is not None:
-            self.session.guard()
-        if self.pending_question is not None:
-            raise WorkspaceError(
-                code="TASK_AWAITING_INPUT_CONFLICT",
-                where=where,
-                why="本轮已经向作者提问，正在等待回答",
-                fix="只读取现有内容并简短说明；作者回答后会在下一轮继续原请求",
+        try:
+            if self.session.guard is not None:
+                self.session.guard()
+            if self.pending_question is not None:
+                raise WorkspaceError(
+                    code="TASK_AWAITING_INPUT_CONFLICT",
+                    where=where,
+                    why="本轮已经向作者提问，正在等待回答",
+                    fix="只读取现有内容并简短说明；作者回答后会在下一轮继续原请求",
+                )
+            if self.finalizing:
+                raise WorkspaceError(
+                    code="TASK_FINALIZING_CONFLICT",
+                    where=where,
+                    why="本轮的模块内容已经应用，任务正在收尾",
+                    fix="只读取本次结果并给出完成回复；新的修改请由作者在下一轮提出",
+                )
+        except WorkspaceError as error:
+            self.record(
+                "gate_decided",
+                {
+                    "name": "写入资格",
+                    "where": where,
+                    "decision": "blocked",
+                    "code": error.code,
+                    "message": error.why,
+                    "fix": error.fix,
+                },
             )
-        if not self.finalizing:
-            return
-        raise WorkspaceError(
-            code="TASK_FINALIZING_CONFLICT",
-            where=where,
-            why="本轮的模块内容已经应用，任务正在收尾",
-            fix="只读取本次结果并给出完成回复；新的修改请由作者在下一轮提出",
-        )
+            raise
+        self.record("gate_decided", {"name": "写入资格", "where": where, "decision": "passed"})
 
 
 def build_tools(

@@ -310,6 +310,52 @@ def test_service_model_and_tool_events_keep_chat_replay_compatible(tmp_path: Pat
     asyncio.run(run())
 
 
+def test_trace_preserves_recovery_and_unknown_duration(tmp_path: Path) -> None:
+    write_log(
+        tmp_path,
+        "trace",
+        [
+            event(1, type="turn_started", trace_version=1, text="读取章节"),
+            event(2, type="loop_started", loop_id="l1"),
+            event(3, type="model_request_started", operation_id="m1", loop_id="l1"),
+            event(4, type="model_request_retried", operation_id="m1", attempt_duration_ms=1000),
+            event(
+                5,
+                type="model_request_finished",
+                operation_id="m1",
+                status="completed",
+                attempt_duration_ms=1000,
+                usage={"input": 12, "output": 2},
+            ),
+            event(6, type="loop_finished", loop_id="l1", duration_ms=4000),
+            event(7, type="loop_started", loop_id="l2"),
+            event(8, type="model_request_started", operation_id="m2", loop_id="l2"),
+            event(
+                9,
+                type="model_request_finished",
+                operation_id="m2",
+                status="interrupted",
+                duration_ms=None,
+            ),
+            event(10, type="run_finished", status="interrupted"),
+            event(11, type="attempt_started"),
+            event(12, type="loop_started", loop_id="l3"),
+        ],
+    )
+    snapshot = ActivityStore(tmp_path).turn_trace("trace", "t1")
+    spans = {item["span_id"]: item for item in snapshot["events"]}
+    assert spans["loop:l1"]["status"] == "recovered"
+    assert spans["model:m1"]["status"] == "failed"
+    assert spans["model:m1:retry"]["retry_of_span_id"] == "model:m1"
+    assert spans["model:m1:retry"]["duration_ms"] == 1000
+    assert spans["model:m2"]["duration_ms"] is None
+    assert spans["loop:l2"]["status"] == "interrupted"
+    assert spans["loop:l3"]["status"] == "running"
+    assert snapshot["usage"] == {"input": 12, "output": 2, "partial": True}
+    assert snapshot["turn"]["status"] == "running"
+    assert snapshot["turn"]["duration_ms"] is None
+
+
 def test_queued_tool_and_reply_events_keep_the_request_that_produced_them(tmp_path: Path) -> None:
     class FastProvider(Provider):
         async def stream_response(self, **kwargs: Any) -> Any:
@@ -355,6 +401,23 @@ def test_queued_tool_and_reply_events_keep_the_request_that_produced_them(tmp_pa
                 assert item["parent_operation_id"] == requests[0]["operation_id"]
         replies = [e for e in events if e["type"] == "assistant_started"]
         assert [r["parent_operation_id"] for r in replies] == [r["operation_id"] for r in requests]
+        trace = service.activity.turn_trace(accepted.conversation_id, accepted.turn_id)
+        spans = trace["events"]
+        loops = [span for span in spans if span["kind"] == "loop"]
+        models = [span for span in spans if span["kind"] == "model"]
+        tool = next(span for span in spans if span["kind"] == "tool_call")
+        assert len(loops) == 2 and all(span["status"] == "completed" for span in loops)
+        assert [span["parent_span_id"] for span in models] == [span["span_id"] for span in loops]
+        assert tool["parent_span_id"] == loops[0]["span_id"]
+        assert tool["duration_ms"] >= 0
+        assert trace["turn"]["status"] == "completed"
+        assert service.activity.trace_turns(accepted.conversation_id, before=0, limit=1)[
+            "items"
+        ] == [trace["turn"]]
+        service.activity.rebuild()
+        rebuilt = service.activity.turn_trace(accepted.conversation_id, accepted.turn_id)
+        assert rebuilt["events"] == spans
+        assert rebuilt["cursor"] != trace["cursor"]
 
     asyncio.run(run())
 
