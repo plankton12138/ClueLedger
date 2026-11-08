@@ -11,7 +11,7 @@
 1. 保留自带模型连接（BYOK）这一产品能力，另加一条**订阅通道**：作者买天数，用线簿提供的模型密钥写作，按实际用量扣点。网站版的两条通道均由服务端执行，并按账号隔离凭据。
 2. 计量单位是「点」。以 `deepseek-v4-pro` 为 1.0 倍率基准，`deepseek-flash` 为 0.30 倍率。
 3. 月卡设**每日点数上限**，额度按 24 小时窗口滚动重置；体验卡以全期总点数封顶。
-4. 本版选择支付宝 **AI 网页应用收款**（`alipay.trade.page.pay` / `FAST_INSTANT_TRADE_PAY`），采用「一次购买 N 天」，到期不自动续费。
+4. 本版选择支付宝 **AI 网页应用收款**（`alipay.trade.page.pay` / `FAST_INSTANT_TRADE_PAY`），采用「一次购买 N 天」，到期不自动续费。沙箱的电脑网站支付收银台返回 SYSTEM_ERROR，故沙箱改走手机网站支付（`alipay.trade.wap.pay` / `QUICK_WAP_WAY`）；生产应用只授权了 `page.pay`，调用 `wap.pay` 会返回 `insufficient-isv-permissions`。
 5. 订阅通道的模型请求必须经过中转服务，密钥不下发客户端。
 6. 邮箱注册并验证，邮箱＋密码登录；内部稳定的 `user_id` 关联作品、模型连接、订单、权益和用量。第一版一部作品只属于一个账号。
 7. 必须先登录再购买；支付与写作使用同一账号身份。生产不开放匿名购买、先付款后认领或任意服务器目录访问。
@@ -237,12 +237,14 @@ points = (input_miss × 0.333 + input_hit × 0.011 + output × 1.000) × mult / 
 
 | 用途 | 接口 | 备注 |
 |---|---|---|
-| 下单 | `alipay.trade.page.pay` | `product_code=FAST_INSTANT_TRADE_PAY` |
+| 下单 | `alipay.trade.page.pay` | `product_code=FAST_INSTANT_TRADE_PAY`；仅沙箱改用 `wap.pay` / `QUICK_WAP_WAY` |
 | 查询 | `alipay.trade.query` | 通知未到或订单未决时主动确认 |
 | 退款与查询 | `alipay.trade.refund` / `alipay.trade.fastpay.refund.query` | 确认真实结果并同步调整权益 |
 | 关单 | `alipay.trade.close` | 确认未支付订单的关闭结果 |
 
 通知先验签，再核对应用、订单、金额、收款方与交易状态；持久化成功后返回 `success`。同步回跳只展示结果，不发放权益。生产建议配置公网 HTTPS 通知地址，并实现未决订单后台查单；即使用户关闭页面仍须处理。省略通知地址时，后台主动查单须独立完成确认。
+
+支付流程：下单接口返回 `payment_url`，内容是本站短链 `/pay/{order_no}?token=…`；前端下单成功后自动开新窗口打开它，被浏览器拦截时退回手动按钮。`/pay` 校验订单号与签名令牌后现签收银台地址并 302 过去，短链不改变订单状态；收银台地址带时间戳，每次打开才生成，不会过期。
 
 ### 8.2 网站与内部服务
 
@@ -255,6 +257,7 @@ points = (input_miss × 0.333 + input_hit × 0.011 + output × 1.000) × mult / 
 | `/api/model-*`、模块库、任务与事件 | 配置、凭据、资源与事件均限定当前用户 |
 | `/api/billing/*` | 网站统一的套餐、订单、权益与用量入口，内部映射现有 `/v1/*` 支付路由 |
 | `/notify/alipay`、`/return/alipay` | 受控公网通知与回跳；通知免用户登录但须验签，回跳不授予账号访问权 |
+| `/pay/{order_no}` | 扫码短链；凭订单号与签名令牌跳转支付宝收银台，不改订单状态 |
 | 内部 `/v1/chat/completions` | 订阅模型代理；仅接受可信用户上下文，不向浏览器发平台模型密钥 |
 
 移除原计划的 `/v1/entitlement/claim`。现有匿名 `POST /v1/session` 仅是开发基础，生产不用于创建可购买账号。请求、响应与页面消费关系见[开发计划](development-plan.md#三前后端接口对齐)。

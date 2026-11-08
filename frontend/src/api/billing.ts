@@ -41,7 +41,7 @@ export interface BillingOrder {
   created_at: string;
   paid_at: string;
   closed_at: string;
-  payment_html?: string;
+  payment_url?: string;
   gateway_code?: string;
   gateway_trade_status?: string;
 }

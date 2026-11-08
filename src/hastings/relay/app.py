@@ -15,7 +15,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -123,16 +123,6 @@ def _require_admin(request: Request, settings: RelaySettings) -> None:
             "管理令牌不正确",
             "使用服务端配置的 RELAY_ADMIN_TOKEN",
         )
-
-
-def _plan_checkout(order: Order, payment_html: str) -> dict[str, object]:
-    return {
-        "order_no": order.out_trade_no,
-        "plan_code": order.plan,
-        "amount_cents": order.amount_cents,
-        "status": order.status,
-        "payment_html": payment_html,
-    }
 
 
 def _return_page(order: Order | None, order_token: str, site_url: str) -> str:
@@ -359,7 +349,7 @@ def create_relay_app(
         record = _record(request, resolved, resolved_store)
         user_id = _require_write(request, resolved, record)
         payment = billing.create_order(user_id, body.plan_code, body.request_id)
-        return {**billing.order_payload(payment.order), "payment_html": payment.payment_html}
+        return {**billing.order_payload(payment.order), "payment_url": payment.payment_url}
 
     @app.get("/api/billing/orders/{order_no}")
     def get_order(order_no: str, request: Request) -> dict[str, object]:
@@ -417,6 +407,25 @@ def create_relay_app(
         return billing.close_order(order_no)
 
     # -- 支付宝：通知与回跳 ----------------------------------------------
+
+    @app.get("/pay/{order_no}")
+    def pay_redirect(order_no: str, request: Request) -> RedirectResponse:
+        token = request.query_params.get("token", "").strip()
+        order = resolved_store.get_order(order_no)
+        if order is None or not billing.valid_return_token(order_no, token):
+            raise _error(
+                404,
+                "BILLING_ORDER_NOT_FOUND",
+                "billing.pay",
+                "支付链接无效",
+                "回到订阅页重新下单",
+            )
+        if order.status != "PENDING":
+            query = urlencode({"out_trade_no": order_no, "order_token": token})
+            return RedirectResponse(
+                f"{resolved.site_url.rstrip('/')}/return/alipay?{query}", status_code=302
+            )
+        return RedirectResponse(billing.cashier_url(order), status_code=302)
 
     @app.post("/notify/alipay")
     async def alipay_notify(request: Request) -> PlainTextResponse:

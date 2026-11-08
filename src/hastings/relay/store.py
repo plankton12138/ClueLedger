@@ -428,11 +428,21 @@ class RelayStore:
             ).fetchone()
         return Order.from_row(row) if row is not None else None
 
-    def experience_order_exists(self, user_id: str) -> bool:
+    def pending_order_for_plan(self, user_id: str, plan: str) -> Order | None:
+        with self._read() as connection:
+            row = connection.execute(
+                "SELECT * FROM billing_orders WHERE user_id = ? AND plan = ? "
+                "AND status = 'PENDING' ORDER BY rowid DESC LIMIT 1",
+                (user_id, plan),
+            ).fetchone()
+        return Order.from_row(row) if row is not None else None
+
+    def experience_paid_exists(self, user_id: str) -> bool:
+        """体验卡是否已经买过（付款成功，或付款后又退款）。未支付的订单不算。"""
         with self._read() as connection:
             row = connection.execute(
                 "SELECT 1 FROM billing_orders WHERE user_id = ? AND plan = 'experience' "
-                "AND status != 'CLOSED' LIMIT 1",
+                "AND status IN ('PAID', 'REFUNDED') LIMIT 1",
                 (user_id,),
             ).fetchone()
         return row is not None

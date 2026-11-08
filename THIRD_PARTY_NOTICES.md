@@ -16,6 +16,18 @@ The Tau-derived portions include `src/tau_ai/`, `src/tau_agent/`, and `src/tau_c
 
 源自 Tau 的内容包括 `src/tau_ai/`、`src/tau_agent/` 和 `src/tau_coding/`。复制或分发这些软件的全部或重要部分时，须随附原始版权声明与完整许可文本。
 
+## qrcode-generator
+
+- Project / 项目：[kazuhikoarase/qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
+- Vendored via / 经由此包提取：[qrcode-terminal](https://github.com/gtanner/qrcode-terminal)（`vendor/QRCode`）
+- Copyright / 版权：Copyright (c) 2009 Kazuhiko Arase
+- License / 许可证：MIT
+- Full license text / 许可证全文：[LICENSES/qrcode-generator-MIT.txt](LICENSES/qrcode-generator-MIT.txt)
+
+The vendored portion is `frontend/src/vendor/qrcode/`, copied with only CommonJS-to-ESM syntax changes.
+
+`frontend/src/vendor/qrcode/` 中的二维码编码器来自该项目，仅做了 CommonJS 到 ESM 的语法转换。
+
 This notice records third-party licensing. It does not designate a license for ClueLedger as a whole.
 
 本声明记录第三方软件的许可信息，不为线簿整体指定许可证。

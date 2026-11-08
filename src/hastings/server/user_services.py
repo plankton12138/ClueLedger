@@ -260,8 +260,6 @@ def build_user_resources(
         }
     )
     server_config = load_server_config(config_path)
-    if platform is not None:
-        server_config = platform.attach(server_config)
     book = ProviderBook(
         server_config,
         boot_name="",
@@ -269,6 +267,8 @@ def build_user_resources(
         config_path=config_path,
         credentials=credentials,
         auth=auth,
+        # 每次读盘/重载都重新注入订阅连接，切换模型后连接才不会消失。
+        transform=platform.attach if platform is not None else None,
     )
     service = ModelConnectionService(
         book=book, config_path=config_path, credentials=credentials, auth=auth

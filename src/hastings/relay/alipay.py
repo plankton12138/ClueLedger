@@ -28,6 +28,9 @@ from alipay.aop.api.domain.AlipayTradeQueryModel import (  # type: ignore[import
 from alipay.aop.api.domain.AlipayTradeRefundModel import (  # type: ignore[import-untyped]
     AlipayTradeRefundModel,
 )
+from alipay.aop.api.domain.AlipayTradeWapPayModel import (  # type: ignore[import-untyped]
+    AlipayTradeWapPayModel,
+)
 from alipay.aop.api.request.AlipayTradeCloseRequest import (  # type: ignore[import-untyped]
     AlipayTradeCloseRequest,
 )
@@ -43,6 +46,9 @@ from alipay.aop.api.request.AlipayTradeQueryRequest import (  # type: ignore[imp
 from alipay.aop.api.request.AlipayTradeRefundRequest import (  # type: ignore[import-untyped]
     AlipayTradeRefundRequest,
 )
+from alipay.aop.api.request.AlipayTradeWapPayRequest import (  # type: ignore[import-untyped]
+    AlipayTradeWapPayRequest,
+)
 from alipay.aop.api.util.SignatureUtils import (  # type: ignore[import-untyped]
     get_sign_content,
     verify_with_rsa,
@@ -56,7 +62,7 @@ class AlipayGatewayError(RuntimeError):
 
 
 class AlipayGateway(Protocol):
-    def page_pay(
+    def pay_url(
         self,
         *,
         out_trade_no: str,
@@ -93,8 +99,15 @@ def _response(raw: object, key: str) -> dict[str, Any]:
             raise AlipayGatewayError("支付宝返回内容不是 JSON") from exc
     if not isinstance(payload, dict):
         raise AlipayGatewayError("支付宝返回结构无法识别")
+    # 当前 SDK 的 execute() 已经剥掉 alipay_xxx_response 外层，直接返回内层 JSON；
+    # 只有部分版本或原始报文才带包装键，因此两种形态都要认。
     value = payload.get(key)
-    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+    if isinstance(value, dict):
+        return cast(dict[str, Any], value)
+    error = payload.get("error_response")
+    if isinstance(error, dict):
+        return cast(dict[str, Any], error)
+    return cast(dict[str, Any], payload)
 
 
 class SdkAlipayGateway:
@@ -109,7 +122,7 @@ class SdkAlipayGateway:
         self._settings = settings
         self._client = DefaultAlipayClient(alipay_client_config=config)
 
-    def page_pay(
+    def pay_url(
         self,
         *,
         out_trade_no: str,
@@ -118,20 +131,30 @@ class SdkAlipayGateway:
         return_url: str,
         notify_url: str,
     ) -> str:
-        request = AlipayTradePagePayRequest()
+        # 本应用开通的是 AI 网页应用收款，只授权 alipay.trade.page.pay；
+        # 调用 wap.pay 会返回 insufficient-isv-permissions。沙箱则相反，
+        # page.pay 收银台报 SYSTEM_ERROR，只能用 wap.pay。
+        request: AlipayTradeWapPayRequest | AlipayTradePagePayRequest
+        model: AlipayTradeWapPayModel | AlipayTradePagePayModel
+        if self._settings.sandbox:
+            request = AlipayTradeWapPayRequest()
+            model = AlipayTradeWapPayModel()
+            model.product_code = "QUICK_WAP_WAY"
+        else:
+            request = AlipayTradePagePayRequest()
+            model = AlipayTradePagePayModel()
+            model.product_code = "FAST_INSTANT_TRADE_PAY"
         request.return_url = return_url
         if notify_url:
             request.notify_url = notify_url
-        model = AlipayTradePagePayModel()
         model.out_trade_no = out_trade_no
         model.total_amount = amount
         model.subject = subject
-        model.product_code = "FAST_INSTANT_TRADE_PAY"
         request.biz_model = model
-        form = self._client.page_execute(request, "POST")
-        if not isinstance(form, str) or not form.strip():
-            raise AlipayGatewayError("支付宝未返回可用的支付表单")
-        return form
+        url = self._client.page_execute(request, "GET")
+        if not isinstance(url, str) or not url.strip():
+            raise AlipayGatewayError("支付宝未返回可用的支付地址")
+        return url
 
     def query(self, out_trade_no: str) -> dict[str, Any]:
         request = AlipayTradeQueryRequest()

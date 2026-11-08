@@ -26,10 +26,7 @@ USER_B = "usr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 class FakeGateway:
     def __init__(self) -> None:
-        self.payment_html = (
-            '<form id="pay" method="post" action="https://sandbox.example/gateway.do">'
-            '<input type="hidden" name="biz_content" value="{}"></form>'
-        )
+        self.payment_url = "https://sandbox.example/gateway.do?method=alipay.trade.wap.pay"
         self.last_return_url = ""
         self.verify_result = True
         self.query_result: dict[str, Any] = {
@@ -49,7 +46,7 @@ class FakeGateway:
         self.page_calls = 0
         self.refund_calls = 0
 
-    def page_pay(
+    def pay_url(
         self,
         *,
         out_trade_no: str,
@@ -64,7 +61,7 @@ class FakeGateway:
         assert notify_url == ""
         self.page_calls += 1
         self.last_return_url = return_url
-        return self.payment_html
+        return self.payment_url
 
     def query(self, out_trade_no: str) -> dict[str, Any]:
         assert out_trade_no
@@ -213,13 +210,14 @@ def test_plans_are_public_and_prices_come_from_server(
     plans = client.get("/api/billing/plans")
     assert plans.status_code == 200
     rows = plans.json()["plans"]
-    assert [row["code"] for row in rows] == ["experience", "standard", "long"]
-    assert rows[0]["price_cents"] == 900
+    assert [row["code"] for row in rows] == ["experience", "light", "standard", "long"]
+    assert rows[0]["price_cents"] == 300
 
     order = _create(client)
-    assert order["amount_cents"] == 900
+    assert order["amount_cents"] == 300
     assert order["status"] == "PENDING"
-    assert "payment_html" in order
+    assert str(order["payment_url"]).startswith("http://testserver/pay/")
+    assert "token=" in str(order["payment_url"])
 
 
 def test_order_creation_is_idempotent_and_scoped_to_the_account(tmp_path: Path) -> None:
@@ -227,11 +225,16 @@ def test_order_creation_is_idempotent_and_scoped_to_the_account(tmp_path: Path) 
     first = _create(client, request_id="same-request")
     again = _create(client, request_id="same-request")
     assert again["order_no"] == first["order_no"]
-    assert gateway.page_calls == 2
+    assert again["payment_url"] == first["payment_url"]
 
+    # 未支付的体验单直接复用，不再当成「已购买」。
+    resumed = _create(client, request_id="another-request")
+    assert resumed["order_no"] == first["order_no"]
+
+    assert _notify(client, first["order_no"]).text == "success"
     used = client.post(
         "/api/billing/orders",
-        json={"plan_code": "experience", "request_id": "another-request"},
+        json={"plan_code": "experience", "request_id": "third-request"},
         headers=_headers(USER_A, write=True),
     )
     assert used.status_code == 409
@@ -246,6 +249,22 @@ def test_order_creation_is_idempotent_and_scoped_to_the_account(tmp_path: Path) 
     assert (
         client.get(f"/api/billing/orders/{own['order_no']}", headers=_headers(USER_B)).status_code
         == 200
+    )
+
+
+def test_pay_short_link_redirects_to_cashier(tmp_path: Path) -> None:
+    client, gateway, _, _, _ = _build(tmp_path)
+    order = _create(client)
+    token = urlsplit(str(order["payment_url"])).query.split("token=", 1)[1]
+
+    redirect = client.get(f"/pay/{order['order_no']}?token={token}", follow_redirects=False)
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == gateway.payment_url
+    assert gateway.page_calls == 1
+
+    assert (
+        client.get(f"/pay/{order['order_no']}?token=nope", follow_redirects=False).status_code
+        == 404
     )
 
 

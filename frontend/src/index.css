@@ -1613,6 +1613,11 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   .billing-plan-meta { margin: 0; color: theme("colors.fgStrong"); font-size: 13px; }
   .billing-plan-copy { margin: 0; flex: 1; color: theme("colors.ui.secondaryText"); font-size: 12px; line-height: 1.65; }
   .billing-plan .ui-button { width: 100%; justify-content: center; margin-top: 4px; }
+  .billing-pay {
+    display: grid; gap: 6px; justify-items: center; margin-top: 14px; padding: 12px;
+    border: 1px solid var(--aqua-border); border-radius: 10px; background: #ffffff;
+  }
+  .billing-pay .ui-button { width: 100%; text-decoration: none; }
   .billing-order {
     display: grid; gap: 8px; margin-top: 14px; padding-top: 12px;
     border-top: 1px solid var(--aqua-divider);

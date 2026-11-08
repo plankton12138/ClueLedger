@@ -64,7 +64,7 @@ class BillingError(Exception):
 @dataclass(frozen=True, slots=True)
 class OrderPayment:
     order: Order
-    payment_html: str
+    payment_url: str
 
 
 def amount_text(cents: int) -> str:
@@ -204,14 +204,18 @@ class BillingService:
         existing = self.store.find_order_by_request(user_id, request_id.strip())
         if existing is not None:
             return self._resume(existing, plan)
-        if plan.code == "experience" and self.store.experience_order_exists(user_id):
-            raise BillingError(
-                code="BILLING_EXPERIENCE_USED",
-                where="billing.order",
-                why="体验卡每个账号只能购买一次",
-                fix="选择标准月卡或长篇月卡",
-                status_code=409,
-            )
+        if plan.code == "experience":
+            pending = self.store.pending_order_for_plan(user_id, plan.code)
+            if pending is not None:
+                return self._resume(pending, plan)
+            if self.store.experience_paid_exists(user_id):
+                raise BillingError(
+                    code="BILLING_EXPERIENCE_USED",
+                    where="billing.order",
+                    why="体验卡每个账号只能购买一次",
+                    fix="选择标准月卡或长篇月卡",
+                    status_code=409,
+                )
         order_no = new_order_no()
         try:
             order = self.store.create_order(
@@ -227,7 +231,7 @@ class BillingService:
             if raced is None:
                 raise
             return self._resume(raced, plan)
-        return OrderPayment(order=order, payment_html=self._page_pay(order))
+        return OrderPayment(order=order, payment_url=self._checkout_url(order))
 
     def _resume(self, order: Order, plan: Plan) -> OrderPayment:
         if order.plan != plan.code:
@@ -239,8 +243,8 @@ class BillingService:
                 status_code=409,
             )
         if order.status != "PENDING":
-            return OrderPayment(order=order, payment_html="")
-        return OrderPayment(order=order, payment_html=self._page_pay(order))
+            return OrderPayment(order=order, payment_url="")
+        return OrderPayment(order=order, payment_url=self._checkout_url(order))
 
     def return_token(self, order_no: str) -> str:
         return hmac.new(
@@ -261,9 +265,14 @@ class BillingService:
             (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
         )
 
-    def _page_pay(self, order: Order) -> str:
+    def _checkout_url(self, order: Order) -> str:
+        """扫码地址：二维码只放这个短链，扫开后由 /pay 再跳支付宝收银台。"""
+        base = self.settings.site_url.rstrip("/")
+        return f"{base}/pay/{order.out_trade_no}?token={self.return_token(order.out_trade_no)}"
+
+    def cashier_url(self, order: Order) -> str:
         try:
-            return self.gateway.page_pay(
+            return self.gateway.pay_url(
                 out_trade_no=order.out_trade_no,
                 amount=amount_text(order.amount_cents),
                 subject=order.subject,
@@ -271,12 +280,12 @@ class BillingService:
                 notify_url=self.settings.notify_url,
             )
         except Exception as exc:
-            logger.warning("alipay page pay failed: %s", type(exc).__name__)
+            logger.warning("alipay pay url failed: %s", type(exc).__name__)
             raise BillingError(
                 code="BILLING_PAYMENT_CREATE_FAILED",
-                where="billing.order",
-                why="支付宝下单暂时不可用",
-                fix="稍后使用同一请求标识重试；订单号已经保留",
+                where="billing.pay",
+                why="支付宝收银台暂时不可用",
+                fix="稍后回到订阅页重新发起支付",
                 status_code=502,
             ) from exc
 

@@ -220,7 +220,7 @@ def test_quota_and_concurrency_are_enforced_before_upstream(tmp_path: Path) -> N
         return httpx.Response(200, json={"usage": {"prompt_tokens": 1, "completion_tokens": 1}})
 
     client, store, _ = _build(tmp_path, handler)
-    # 体验卡总额 180 点；构造一个超过总额的输入，必须在下游调用前拒绝。
+    # 体验卡总额 100 点；构造一个超过总额的输入，必须在下游调用前拒绝。
     huge = _body()
     huge["messages"] = [{"role": "user", "content": "字" * 600_000}]
     too_big = _chat(client, _grant(), huge)
@@ -265,7 +265,7 @@ def test_refunded_entitlement_blocks_proxy(tmp_path: Path) -> None:
     store.create_refund(
         out_request_no="refund-1",
         out_trade_no="CLmetering",
-        amount_cents=900,
+        amount_cents=300,
         now=utc_now(),
     )
     store.mark_refund_result(

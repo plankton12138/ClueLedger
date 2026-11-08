@@ -25,7 +25,7 @@ import contextlib
 import hashlib
 import os
 from asyncio import AbstractEventLoop, get_running_loop
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -500,8 +500,11 @@ class ProviderBook:
         credentials: Any | None = None,
         cli_model: str = "",
         auth: Any | None = None,
+        transform: Callable[[ServerConfig], ServerConfig] | None = None,
     ) -> None:
         self._credentials = credentials
+        # 运行时注入的连接（如「线簿订阅」）不落盘，读盘与重载后都必须重新装回。
+        self._transform = transform
         # 订阅连接的续期由授权服务完成：凭据存储只负责存放，不解释令牌。
         self._auth = auth
         self.credential_migration: dict[str, list[str]] = {"migrated": [], "failed": []}
@@ -516,6 +519,8 @@ class ProviderBook:
                 # 继续持有一份「有明文 key、没有 credential_ref」的旧对象。
                 config = load_server_config(config_path or DEFAULT_CONFIG_PATH)
             config = _materialize_credentials(config, credentials)
+        if self._transform is not None:
+            config = self._transform(config)
         self._config = config
         self._boot_name = boot_name
         self._boot_model = boot_model
@@ -553,6 +558,8 @@ class ProviderBook:
         """装入新配置并装回系统凭据，返回运行时视图。"""
         if self._credentials is not None:
             new = _materialize_credentials(new, self._credentials)
+        if self._transform is not None:
+            new = self._transform(new)
         self._config = new
         return new
 
