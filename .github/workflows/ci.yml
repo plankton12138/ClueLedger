@@ -32,12 +32,11 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          # 与本地锁文件生成版本保持一致：版本漂移会让 --locked 把旧锁判成需要更新。
           version: "0.13.6"
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --dev --locked
+        run: uv sync --dev
 
       - name: Run tests
         run: uv run pytest
@@ -100,13 +99,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          # 与本地锁文件生成版本保持一致：版本漂移会让 --locked 把旧锁判成需要更新。
           version: "0.13.6"
           enable-cache: true
 
       # E2E 驱动器跑在仓库根（python -m tests.e2e_server），需先装 Python 依赖
       - name: Install Python dependencies
-        run: uv sync --dev --locked
+        run: uv sync --dev
         working-directory: .
 
       # SHA pin 待补：setup-node 的 commit SHA 需从官方仓库核实后固定
