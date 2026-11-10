@@ -160,6 +160,7 @@ def build_provider(
         max_retries=max_retries,
         timeout_seconds=timeout_seconds,
         thinking_level=thinking_level,
+        credential_resolver=credential_resolver,
     )
 
 
@@ -176,6 +177,7 @@ def _compatible_config(
     max_retries: int | None,
     timeout_seconds: float | None,
     thinking_level: ThinkingLevel | None = None,
+    credential_resolver: RuntimeProviderAuthResolver | None = None,
 ) -> OpenAICompatibleConfig:
     key = profile.resolved_api_key()
     loopback = is_loopback_url(profile.base_url)
@@ -200,6 +202,9 @@ def _compatible_config(
         thinking_format=(
             "deepseek" if thinking_level is not None and is_deepseek(profile) else "openai"
         ),
+        # 订阅通道的凭据是短期授权：每次模型调用解析一次，调用内的 HTTP 重试沿用
+        # 同一个授权，才能让代理侧按 jti 去重。
+        credential_resolver=credential_resolver,
     )
 
 
@@ -210,6 +215,7 @@ def _openai_compatible(
     max_retries: int | None,
     timeout_seconds: float | None,
     thinking_level: ThinkingLevel | None = None,
+    credential_resolver: RuntimeProviderAuthResolver | None = None,
 ) -> ManagedModelProvider:
     config = _compatible_config(
         profile,
@@ -217,6 +223,7 @@ def _openai_compatible(
         max_retries=max_retries,
         timeout_seconds=timeout_seconds,
         thinking_level=thinking_level,
+        credential_resolver=credential_resolver,
     )
     provider_cls = _LocalProvider if is_loopback_url(profile.base_url) else OpenAICompatibleProvider
     return provider_cls(config)

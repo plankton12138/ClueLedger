@@ -1,7 +1,7 @@
 """线簿订阅作为模型来源接入现有 ProviderProfile。
 
 连接是服务器注入的只读档案：浏览器只看到「线簿订阅」和可选模型，不持有平台密钥。
-每轮受理时由 ``configured_provider_factory`` 用短期 grant 替换 Authorization。
+每次模型调用前由 ``configured_provider_factory`` 用短期 grant 替换 Authorization。
 """
 
 from __future__ import annotations

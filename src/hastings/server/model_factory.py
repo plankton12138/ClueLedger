@@ -9,8 +9,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from pydantic import SecretStr
-
 from hastings.identity import current_user_id
 from hastings.server.model_limits import ModelLimits, resolve_model_limits
 from hastings.server.platform_channel import PLATFORM_CONNECTION, PlatformChannel
@@ -18,6 +16,7 @@ from hastings.server.provider_config import ProviderBook, ProviderConfigError
 from hastings.server.provider_runtime import ModelSnapshot, snapshot
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.service import ProviderFactory
+from tau_ai.env import RuntimeProviderAuth
 
 __all__ = ["configured_limits_factory", "configured_provider_factory"]
 
@@ -25,12 +24,13 @@ __all__ = ["configured_limits_factory", "configured_provider_factory"]
 def configured_provider_factory(
     book: ProviderBook, *, platform: PlatformChannel | None = None
 ) -> ProviderFactory:
-    """受理一轮时固定模型快照；订阅连接每轮换成短期授权。"""
+    """受理一轮时固定模型快照；订阅连接每次模型调用换一份短期授权。"""
 
     def factory() -> ModelSnapshot:
         selection = book.selection()
         if selection.connection_id == PLATFORM_CONNECTION:
-            if platform is None:
+            channel = platform
+            if channel is None:
                 raise WorkspaceError(
                     code="MODEL_NOT_CONFIGURED",
                     where="turn.model",
@@ -51,12 +51,14 @@ def configured_provider_factory(
                         "model": selection.model,
                     },
                 )
-            granted = profile.model_copy(
-                update={
-                    "api_key": SecretStr(platform.grant(user_id)),
-                    "no_auth": False,
-                }
-            )
+            granted = profile.model_copy(update={"no_auth": False})
+
+            async def resolve_credential() -> RuntimeProviderAuth:
+                # 代理把 grant 的 jti 当作幂等请求号。一轮里工具循环会发多次模型
+                # 请求，共用同一份授权会让第二次起被判成「重放」；同一次调用内的
+                # HTTP 重试才应沿用同一份，所以这里按调用签发。
+                return RuntimeProviderAuth(api_key=channel.grant(user_id))
+
             try:
                 limits = resolve_model_limits(
                     granted,
@@ -75,6 +77,7 @@ def configured_provider_factory(
                     granted,
                     selection.model,
                     thinking_level=selection.thinking_level,
+                    credential_resolver=resolve_credential,
                 ),
                 limits=limits,
             )
