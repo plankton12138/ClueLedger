@@ -91,8 +91,12 @@ class SubscriptionAuthProvider(Protocol):
     @property
     def name(self) -> str: ...
 
-    def begin(self) -> AuthStart:
-        """发起授权并返回浏览器地址；本地回调监听由适配自己持有。"""
+    async def begin(self) -> AuthStart:
+        """发起授权并返回给作者看的信息。
+
+        设备码流程要先向授权服务器申请一次，所以这里是异步的；本地回调流程没有
+        网络步骤，实现可以直接返回。
+        """
 
     async def poll(self, flow: AuthFlow | None) -> AuthOutcome:
         """查询一次进度；可以重复调用，成功之后再调用仍应返回同一结果。"""
@@ -199,15 +203,19 @@ class ModelAuthService:
             )
         await self._purge()
         try:
-            start = provider.begin()
+            start = await provider.begin()
         except WorkspaceError:
             raise
         except Exception as exc:  # 适配起不来（端口被占用等）不能变成 500
+            fix = (
+                getattr(exc, "fix", "")
+                or "稍后重试；若持续失败，检查网络连接或本机回调端口是否被别的程序占用"
+            )
             raise WorkspaceError(
                 code="MODEL_AUTH_UNAVAILABLE",
                 where="model.auth",
                 why=f"无法开始这次授权：{exc}",
-                fix="稍后重试；若持续失败，检查本机回调端口是否被别的程序占用",
+                fix=fix,
                 details={"provider": provider_id},
             ) from exc
         session = _Session(

@@ -64,7 +64,7 @@ class _RefreshingProvider:
         self.refresh_calls = 0
         self.fail = fail
 
-    def begin(self) -> AuthStart:
+    async def begin(self) -> AuthStart:
         raise AssertionError("这个替身只用于续期")
 
     async def poll(self, flow: Any) -> AuthOutcome:

@@ -72,7 +72,7 @@ class _FakeAuthProvider:
         self.cancelled = 0
         self._outcome = AuthOutcome(status="pending")
 
-    def begin(self) -> AuthStart:
+    async def begin(self) -> AuthStart:
         self.started += 1
         return AuthStart(url="https://auth.example.com/authorize?state=abc", flow=_Flow())
 
@@ -495,7 +495,7 @@ def test_unknown_session_is_reported() -> None:
 
 def test_provider_failure_to_start_is_reported() -> None:
     class _Broken(_FakeAuthProvider):
-        def begin(self) -> AuthStart:
+        async def begin(self) -> AuthStart:
             raise RuntimeError("127.0.0.1 上没有可用端口")
 
     auth = ModelAuthService(providers={"chatgpt": _Broken()})

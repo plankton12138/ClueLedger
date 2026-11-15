@@ -316,7 +316,7 @@ class ChatGPTCodexAuthProvider:
 
     # -- 登录 -------------------------------------------------------------
 
-    def begin(self) -> AuthStart:
+    async def begin(self) -> AuthStart:
         listener = self._listener_factory()
         listener.start()
         verifier, challenge = _pkce_pair()

@@ -41,6 +41,7 @@ from hastings.server.file_app import (
 )
 from hastings.server.model_auth import ModelAuthService
 from hastings.server.model_auth_chatgpt import ChatGPTCodexAuthProvider, ChatGPTHostIdentity
+from hastings.server.model_auth_xai import XAIGrokAuthProvider
 from hastings.server.model_connections import ModelConnectionService
 from hastings.server.platform_channel import DEFAULT_PLATFORM_MODELS, PlatformChannel
 from hastings.server.production import production_config_errors
@@ -50,6 +51,7 @@ from hastings.server.provider_config import (
     ServerConfig,
     load_server_config,
 )
+from hastings.server.proxy_env import apply_system_proxy_env, normalize_no_proxy_env
 from hastings.server.user_services import UserResourcesRegistry, build_user_resources
 from hastings.workspace.state import RecentWorkspaces
 
@@ -327,6 +329,9 @@ def assemble_server(
     credentials_file: Path | None = None,
 ) -> AssembledServer:
     """按生产默认值装配文件工作区应用；任何位置失败都带可读的错误信息抛出，不静默降级。"""
+    # httpx 解析带方括号的 IPv6 NO_PROXY 会失败；系统代理也会被 NO_PROXY 挡住。
+    normalize_no_proxy_env()
+    apply_system_proxy_env()
     if mode not in {"local", "server"}:
         raise StartupError(f"未知运行模式：{mode}。建议：使用 local 或 server。")
     if mode == "server" and database is None:
@@ -504,7 +509,8 @@ def assemble_server(
             providers={
                 "chatgpt": ChatGPTCodexAuthProvider(
                     identity=ChatGPTHostIdentity(recent.root / "chatgpt-host.json")
-                )
+                ),
+                "xai": XAIGrokAuthProvider(),
             }
         )
         book, boot_profile, boot_model = load_provider_book(config_path, model, credentials, auth)

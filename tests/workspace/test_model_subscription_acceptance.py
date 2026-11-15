@@ -45,7 +45,7 @@ class _Provider:
     def __init__(self) -> None:
         self.refresh_calls = 0
 
-    def begin(self) -> AuthStart:
+    async def begin(self) -> AuthStart:
         raise AssertionError("本组用例不发起登录")
 
     async def poll(self, flow: Any) -> AuthOutcome:

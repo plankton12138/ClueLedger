@@ -154,11 +154,18 @@ export default function SubscriptionLogin({
         {succeeded
           ? `已登录 ${session?.account || "该账号"}，保存后仍要测试一次工具调用。`
           : pending
-            ? "在浏览器里完成授权，完成后这一页会自动更新。"
+            ? session?.instructions || "在浏览器里完成授权，完成后这一页会自动更新。"
             : savedAccount
               ? `当前账号 ${savedAccount}；要换账号请重新登录。`
               : `用 ${providerName} 订阅账号登录；按订阅额度计费，不消耗 API Key。`}
       </p>
+
+      {pending && session?.user_code && (
+        <p className="mt-1 text-sm text-[#4b4737]">
+          用户码{" "}
+          <span className="font-mono text-xs font-bold tracking-wider">{session.user_code}</span>
+        </p>
+      )}
 
       {pending && session && (
         <a

@@ -78,6 +78,8 @@ def test_catalog_covers_planned_presets_and_only_implemented_apis() -> None:
         "openrouter",
         "anthropic",
         "google",
+        "xai",
+        "grok",
     } <= ids
     assert "custom" in ids
     for item in PRESETS:
@@ -86,6 +88,26 @@ def test_catalog_covers_planned_presets_and_only_implemented_apis() -> None:
         if not item.custom:
             # 预设地址必须显式给出，不靠运行时拼接域名补齐。
             assert item.base_url.startswith("https://")
+
+
+def test_xai_preset_uses_openai_compatible_endpoint() -> None:
+    xai = preset("xai")
+
+    assert xai is not None
+    assert xai.base_url == "https://api.x.ai/v1"
+    assert xai.api == "openai-completions"
+    assert xai.discovery == "openai-models"
+    assert xai.apis == ("openai-completions", "openai-responses")
+
+
+def test_grok_subscription_preset_uses_xai_login() -> None:
+    grok = preset("grok")
+
+    assert grok is not None
+    assert grok.base_url == "https://api.x.ai/v1"
+    assert grok.api == "openai-responses"
+    assert grok.discovery == "openai-models"
+    assert grok.auth_providers == ("xai",)
 
 
 def test_region_specific_provider_exposes_region_options() -> None:

@@ -246,6 +246,8 @@ def subscription_provider_config(
     credential = getattr(profile, "subscription", None)
     if credential is None:
         raise RuntimeError("这条订阅连接没有可用的凭据；需要重新登录后再使用")
+    auth_provider = getattr(profile, "auth_provider", "")
+    provider_name = f"{auth_provider}-subscription" if auth_provider else "subscription"
     return OpenAICompatibleConfig(
         api_key=credential.access_token,
         base_url=profile.base_url.rstrip("/"),
@@ -257,7 +259,7 @@ def subscription_provider_config(
         max_connect_retries=WORKER_CONNECT_RETRIES if worker else 0,
         timeout_seconds=timeout_seconds or (180.0 if worker else 45.0),
         credential_resolver=credential_resolver,
-        provider_name="chatgpt-subscription",
+        provider_name=provider_name,
         reasoning_effort="none" if thinking_level == "off" else thinking_level,
     )
 

@@ -168,6 +168,29 @@ PRESETS: tuple[ProviderPreset, ...] = (
         note="用 Google AI Studio 的 API Key，不用订阅账号登录。",
     ),
     ProviderPreset(
+        id="xai",
+        display_name="xAI（Grok）",
+        api="openai-completions",
+        base_url="https://api.x.ai/v1",
+        docs_url="https://docs.x.ai/docs/api-reference",
+        discovery="openai-models",
+        # 官方两种协议都提供；Completions 是文档里的基础用法，Responses 放高级设置。
+        api_options=("openai-completions", "openai-responses"),
+        note="用 xAI 控制台签发的 API Key；默认走 Completions，高级设置可切到 Responses。"
+        "用订阅账号登录请选「Grok 订阅」。",
+    ),
+    ProviderPreset(
+        id="grok",
+        display_name="Grok 订阅",
+        api="openai-responses",
+        base_url="https://api.x.ai/v1",
+        docs_url="https://docs.x.ai/docs/api-reference",
+        discovery="openai-models",
+        # 这个连接用 SuperGrok / X Premium+ 订阅账号登录，不填 API Key。
+        auth_providers=("xai",),
+        note="用 SuperGrok 或 X Premium+ 订阅账号登录；按订阅额度计费，不消耗 API Key。",
+    ),
+    ProviderPreset(
         id="custom",
         display_name="自定义服务",
         api="openai-completions",

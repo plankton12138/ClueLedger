@@ -169,7 +169,7 @@ def _provider(
 
 
 def _begin(provider: ChatGPTCodexAuthProvider) -> tuple[AuthStart, dict[str, list[str]]]:
-    start = provider.begin()
+    start = asyncio.run(provider.begin())
     assert start.flow is not None
     return start, parse_qs(urlparse(start.url).query)
 

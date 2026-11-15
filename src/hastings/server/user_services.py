@@ -21,6 +21,7 @@ from hastings.infrastructure.credentials import ScopedCredentialStore
 from hastings.library.modules import ModuleLibrary
 from hastings.server.model_auth import ModelAuthService
 from hastings.server.model_auth_chatgpt import ChatGPTCodexAuthProvider, ChatGPTHostIdentity
+from hastings.server.model_auth_xai import XAIGrokAuthProvider
 from hastings.server.model_connections import ModelConnectionService
 from hastings.server.model_factory import configured_limits_factory, configured_provider_factory
 from hastings.server.platform_channel import PlatformChannel
@@ -256,7 +257,8 @@ def build_user_resources(
         providers={
             "chatgpt": ChatGPTCodexAuthProvider(
                 identity=ChatGPTHostIdentity(user_state / "chatgpt-host.json")
-            )
+            ),
+            "xai": XAIGrokAuthProvider(),
         }
     )
     server_config = load_server_config(config_path)
