@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from evaluation.harness.schema import CaseLoadError, load_case, load_cases
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,12 +30,7 @@ def _write_case(tmp: Path, payload: dict) -> Path:
 
 
 def test_load_case_resolves_anchors(tmp_path: Path) -> None:
-    chapter = (
-        "前文保留。\n"
-        "林岚推开客栈的门，雨还在下。\n"
-        "「你昨晚去了哪里？」\n"
-        "她没有回答。\n"
-    )
+    chapter = "前文保留。\n林岚推开客栈的门，雨还在下。\n「你昨晚去了哪里？」\n她没有回答。\n"
     _write_work(tmp_path, chapter=chapter)
     case_path = _write_case(
         tmp_path,

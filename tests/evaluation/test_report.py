@@ -115,7 +115,9 @@ def test_quality_regression_vs_baseline() -> None:
     gate = gate_decision(compared)
     assert gate["passed"] is False
     assert any(item["kind"] == "quality_regression" for item in gate["blockers"])
-    case_cmp = next(item for item in compared["baseline_compare"]["cases"] if item["case_id"] == "a")
+    case_cmp = next(
+        item for item in compared["baseline_compare"]["cases"] if item["case_id"] == "a"
+    )
     assert case_cmp["delta"] == "worse"
     assert case_cmp["quality_pass_count"] == 1
     assert case_cmp["baseline_quality_pass_count"] == 3
@@ -132,12 +134,8 @@ def test_quality_warn_only_when_down_by_one() -> None:
             ),
         )
 
-    baseline = build_report(
-        [quality_pass(True, 1), quality_pass(True, 2), quality_pass(True, 3)]
-    )
-    current = build_report(
-        [quality_pass(True, 1), quality_pass(True, 2), quality_pass(False, 3)]
-    )
+    baseline = build_report([quality_pass(True, 1), quality_pass(True, 2), quality_pass(True, 3)])
+    current = build_report([quality_pass(True, 1), quality_pass(True, 2), quality_pass(False, 3)])
     compared = compare_to_baseline(current, baseline)
     gate = gate_decision(compared)
     assert gate["passed"] is True

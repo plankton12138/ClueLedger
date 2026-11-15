@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
@@ -69,19 +70,15 @@ class HttpEvalClient:
     def _json(self, response: httpx.Response) -> Any:
         if response.status_code >= 400:
             detail = response.text
-            try:
+            with contextlib.suppress(Exception):
                 detail = response.json()
-            except Exception:
-                pass
             raise EvalClientError(f"HTTP {response.status_code}: {detail}")
         if response.status_code == 204 or not response.content:
             return None
         return response.json()
 
     def open_workspace(self, path: str) -> str:
-        body = self._json(
-            self._client.post("/api/file-workspaces", json={"path": path})
-        )
+        body = self._json(self._client.post("/api/file-workspaces", json={"path": path}))
         return str(body["id"])
 
     def set_capture_inputs(self, workspace_id: str, enabled: bool) -> None:
@@ -177,7 +174,5 @@ class HttpEvalClient:
 
     def read_attachment(self, workspace_id: str, key: str) -> Any:
         return self._json(
-            self._client.get(
-                f"/api/file-workspaces/{workspace_id}/activity/attachments/{key}"
-            )
+            self._client.get(f"/api/file-workspaces/{workspace_id}/activity/attachments/{key}")
         )

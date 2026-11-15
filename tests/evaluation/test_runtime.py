@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from evaluation.harness.client import AcceptedTurn, EvalClientError
 from evaluation.harness.evidence import extract_commit_receipts, snapshot_files
 from evaluation.harness.runtime import AttemptRunner, CallBudget, prepare_work_copy

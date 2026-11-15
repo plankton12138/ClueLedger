@@ -8,7 +8,11 @@ from evaluation.harness.checks import AttemptEvidence, grade_attempt
 from evaluation.harness.schema import Case, Check, Expect, Region, Step
 
 
-def _case(*, preserve: tuple[str, ...] = ("「你昨晚去了哪里？」",), checks: list[Check] | None = None) -> Case:
+def _case(
+    *,
+    preserve: tuple[str, ...] = ("「你昨晚去了哪里？」",),
+    checks: list[Check] | None = None,
+) -> Case:
     return Case(
         id="revise_snow",
         version=1,
@@ -35,20 +39,14 @@ def _case(*, preserve: tuple[str, ...] = ("「你昨晚去了哪里？」",), ch
 
 BEFORE = {
     "正文/0003.md": (
-        "前文保留。\n"
-        "林岚推开客栈的门，雨还在下。\n"
-        "「你昨晚去了哪里？」\n"
-        "她没有回答。\n"
+        "前文保留。\n林岚推开客栈的门，雨还在下。\n「你昨晚去了哪里？」\n她没有回答。\n"
     ),
     "写作约定.md": "约定：人名勿混。\n",
 }
 
 AFTER_OK = {
     "正文/0003.md": (
-        "前文保留。\n"
-        "林岚推开客栈的门，雪落在石阶上。\n"
-        "「你昨晚去了哪里？」\n"
-        "她没有回答。\n"
+        "前文保留。\n林岚推开客栈的门，雪落在石阶上。\n「你昨晚去了哪里？」\n她没有回答。\n"
     ),
     "写作约定.md": "约定：人名勿混。\n",
 }
@@ -72,10 +70,7 @@ def test_grade_pass_must_and_pending_human() -> None:
 def test_only_region_changed_fails_when_prefix_edited() -> None:
     after = dict(AFTER_OK)
     after["正文/0003.md"] = (
-        "前文被改。\n"
-        "林岚推开客栈的门，雪落在石阶上。\n"
-        "「你昨晚去了哪里？」\n"
-        "她没有回答。\n"
+        "前文被改。\n林岚推开客栈的门，雪落在石阶上。\n「你昨晚去了哪里？」\n她没有回答。\n"
     )
     evidence = AttemptEvidence(
         before_files=BEFORE,
@@ -101,11 +96,7 @@ def test_only_region_changed_fails_when_other_file_edited() -> None:
 
 def test_preserved_verbatim_fails_when_dialogue_missing() -> None:
     after = dict(AFTER_OK)
-    after["正文/0003.md"] = (
-        "前文保留。\n"
-        "林岚推开客栈的门，雪落在石阶上。\n"
-        "她没有回答。\n"
-    )
+    after["正文/0003.md"] = "前文保留。\n林岚推开客栈的门，雪落在石阶上。\n她没有回答。\n"
     evidence = AttemptEvidence(
         before_files=BEFORE,
         after_files=after,
@@ -118,14 +109,16 @@ def test_preserved_verbatim_fails_when_dialogue_missing() -> None:
 def test_committed_via_candidate_fails_without_receipt() -> None:
     evidence = AttemptEvidence(before_files=BEFORE, after_files=AFTER_OK, commit_receipts=[])
     result = grade_attempt(_case(), evidence)
-    assert next(c for c in result.checks if c.check_id == "committed_via_candidate").verdict == "fail"
+    check = next(c for c in result.checks if c.check_id == "committed_via_candidate")
+    assert check.verdict == "fail"
 
 
 def test_region_actually_changed_fails_when_unchanged() -> None:
     case = _case(checks=[Check(id="region_actually_changed", level="must")])
     evidence = AttemptEvidence(before_files=BEFORE, after_files=BEFORE, commit_receipts=[])
     result = grade_attempt(case, evidence)
-    assert next(c for c in result.checks if c.check_id == "region_actually_changed").verdict == "fail"
+    check = next(c for c in result.checks if c.check_id == "region_actually_changed")
+    assert check.verdict == "fail"
 
 
 def test_region_actually_changed_passes_when_region_edited() -> None:
@@ -136,7 +129,8 @@ def test_region_actually_changed_passes_when_region_edited() -> None:
         commit_receipts=[{"path": "正文/0003.md", "via": "candidate"}],
     )
     result = grade_attempt(case, evidence)
-    assert next(c for c in result.checks if c.check_id == "region_actually_changed").verdict == "pass"
+    check = next(c for c in result.checks if c.check_id == "region_actually_changed")
+    assert check.verdict == "pass"
 
 
 def test_quality_skipped_without_model_input() -> None:
@@ -152,7 +146,8 @@ def test_quality_skipped_without_model_input() -> None:
         commit_receipts=[{"path": "正文/0003.md", "via": "candidate"}],
     )
     result = grade_attempt(case, evidence)
-    assert next(c for c in result.checks if c.check_id == "chapter_in_model_input").verdict == "skipped"
+    check = next(c for c in result.checks if c.check_id == "chapter_in_model_input")
+    assert check.verdict == "skipped"
 
 
 def test_quality_pass_when_chapter_in_input() -> None:
@@ -168,7 +163,8 @@ def test_quality_pass_when_chapter_in_input() -> None:
         model_inputs_before_candidate=[BEFORE["正文/0003.md"]],
     )
     result = grade_attempt(case, evidence)
-    assert next(c for c in result.checks if c.check_id == "chapter_in_model_input").verdict == "pass"
+    check = next(c for c in result.checks if c.check_id == "chapter_in_model_input")
+    assert check.verdict == "pass"
 
 
 def test_external_change_rejected() -> None:
@@ -184,7 +180,8 @@ def test_external_change_rejected() -> None:
         rejected_commits=[{"error_code": "VERSION_CONFLICT", "path": "正文/0003.md"}],
     )
     result = grade_attempt(case, evidence)
-    assert next(c for c in result.checks if c.check_id == "stale_candidate_rejected").verdict == "pass"
+    check = next(c for c in result.checks if c.check_id == "stale_candidate_rejected")
+    assert check.verdict == "pass"
 
 
 def test_unknown_check_fails() -> None:

@@ -61,8 +61,13 @@ def test_committed_fail_emits_missing_evidence() -> None:
     item = next(c for c in result.checks if c.check_id == "committed_via_candidate")
     assert item.verdict == "fail"
     assert isinstance(item.evidence, tuple)
-    assert any(ref.get("type") == "missing" and "回执" in str(ref.get("expected")) for ref in item.evidence)
-    assert any(ref.get("type") == "span" and ref.get("span_id", "").startswith("tool_call:") for ref in item.evidence)
+    assert any(
+        ref.get("type") == "missing" and "回执" in str(ref.get("expected")) for ref in item.evidence
+    )
+    assert any(
+        ref.get("type") == "span" and ref.get("span_id", "").startswith("tool_call:")
+        for ref in item.evidence
+    )
 
 
 def test_file_checks_emit_file_refs() -> None:

@@ -115,7 +115,9 @@ def load_case_expect(case_id: str) -> dict[str, Any] | None:
     }
 
 
-def build_attempt_payload(run_dir: Path, report: dict[str, Any], case_id: str, attempt: int) -> dict[str, Any] | None:
+def build_attempt_payload(
+    run_dir: Path, report: dict[str, Any], case_id: str, attempt: int
+) -> dict[str, Any] | None:
     row = find_attempt_row(report, case_id, attempt)
     if row is None:
         return None
@@ -139,7 +141,9 @@ def build_attempt_payload(run_dir: Path, report: dict[str, Any], case_id: str, a
         "expect": load_case_expect(case_id),
         "has_evidence": paths.before.is_file(),
         "stage_labels": STAGE_LABELS,
-        "default_attribution": STAGE_TO_ATTRIBUTION.get(str(row.get("first_failed_stage") or ""), "tool"),
+        "default_attribution": STAGE_TO_ATTRIBUTION.get(
+            str(row.get("first_failed_stage") or ""), "tool"
+        ),
         "attribution_options": [
             {"id": key, "label": label, "hint": hint} for key, label, hint in ATTRIBUTION_OPTIONS
         ],

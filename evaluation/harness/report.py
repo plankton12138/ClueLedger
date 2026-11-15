@@ -22,7 +22,10 @@ def _serialize_evidence(evidence: Any) -> list[Any]:
     if isinstance(evidence, str):
         return [{"type": "note", "text": evidence}] if evidence else []
     if isinstance(evidence, (list, tuple)):
-        return [dict(item) if isinstance(item, dict) else {"type": "note", "text": str(item)} for item in evidence]
+        return [
+            dict(item) if isinstance(item, dict) else {"type": "note", "text": str(item)}
+            for item in evidence
+        ]
     return [{"type": "note", "text": str(evidence)}]
 
 
@@ -64,8 +67,7 @@ def _quality_passed(row: dict[str, Any]) -> bool:
 
 def _must_failed(row: dict[str, Any]) -> bool:
     return any(
-        c.get("level") == "must" and c.get("verdict") == "fail"
-        for c in (row.get("checks") or [])
+        c.get("level") == "must" and c.get("verdict") == "fail" for c in (row.get("checks") or [])
     )
 
 
@@ -160,7 +162,9 @@ def regrade_report(
                         "verdict": old.get("verdict") or item.verdict,
                         "reason": old.get("reason") or item.reason,
                         "evidence": _serialize_evidence(
-                            old.get("evidence") if old.get("evidence") is not None else item.evidence
+                            old.get("evidence")
+                            if old.get("evidence") is not None
+                            else item.evidence
                         ),
                     }
                 )
@@ -203,9 +207,7 @@ def regrade_report(
 def apply_reviews(report: dict[str, Any], reviews: list[dict[str, Any]]) -> dict[str, Any]:
     """把人工复核写回各检查项，并重算 outcome / summary。"""
     updated = json.loads(json.dumps(report))
-    index = {
-        (row["case_id"], int(row["attempt"])): row for row in updated["attempts"]
-    }
+    index = {(row["case_id"], int(row["attempt"])): row for row in updated["attempts"]}
     applied: list[dict[str, Any]] = []
     for review in reviews:
         key = (review["case_id"], int(review["attempt"]))
@@ -225,9 +227,7 @@ def apply_reviews(report: dict[str, Any], reviews: list[dict[str, Any]]) -> dict
             check["verdict"] = verdict
             check["reason"] = review.get("reason") or check.get("reason") or ""
             evidence_ref = str(review.get("evidence_ref") or "")
-            check["evidence"] = (
-                [{"type": "note", "text": evidence_ref}] if evidence_ref else []
-            )
+            check["evidence"] = [{"type": "note", "text": evidence_ref}] if evidence_ref else []
             applied.append(dict(review))
             break
         # 重算该次试验 outcome
@@ -371,9 +371,10 @@ def render_report_md(report: dict[str, Any]) -> str:
     if compare:
         lines.append("## 相对基线")
         for item in compare.get("cases") or []:
+            quality = item["quality_pass_count"]
+            baseline = item["baseline_quality_pass_count"]
             lines.append(
-                f"- {item['case_id']}：{item['delta']} "
-                f"（质量通过 {item['quality_pass_count']} / 基线 {item['baseline_quality_pass_count']}）"
+                f"- {item['case_id']}：{item['delta']} （质量通过 {quality} / 基线 {baseline}）"
             )
         lines.append("")
     lines.append("## 案例")
@@ -385,15 +386,12 @@ def render_report_md(report: dict[str, Any]) -> str:
             f"质量通过次数 {case.get('quality_pass_count', 0)}"
         )
         for row in case.get("attempts") or []:
-            lines.append(
-                f"- #{row['attempt']} {row['status']} outcome={row.get('outcome')}"
-            )
+            lines.append(f"- #{row['attempt']} {row['status']} outcome={row.get('outcome')}")
             if row.get("first_failed_stage"):
                 lines.append(f"  - 最早失败环节：{row['first_failed_stage']}")
             for check in row.get("checks") or []:
-                lines.append(
-                    f"  - {check['id']} ({check['level']}): {check['verdict']} — {check.get('reason')}"
-                )
+                reason = check.get("reason")
+                lines.append(f"  - {check['id']} ({check['level']}): {check['verdict']} — {reason}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

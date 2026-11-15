@@ -104,9 +104,7 @@ def _last_turn_id(evidence: AttemptEvidence) -> str | None:
     return None
 
 
-def _related_tool_span(
-    evidence: AttemptEvidence, tools: set[str]
-) -> EvidenceRef | None:
+def _related_tool_span(evidence: AttemptEvidence, tools: set[str]) -> EvidenceRef | None:
     for event in evidence.events:
         if event.get("type") != "tool_started":
             continue
@@ -253,7 +251,6 @@ def _check_region_actually_changed(case: Case, evidence: AttemptEvidence) -> Che
 
 def _check_preserved_verbatim(case: Case, evidence: AttemptEvidence) -> CheckResult:
     path = _norm(case.expect.region.path)
-    file_ref = _file_ref(path, anchor=case.expect.region.from_anchor)
     try:
         after_text = next(v for k, v in evidence.after_files.items() if _norm(k) == path)
     except StopIteration:
@@ -281,9 +278,7 @@ def _check_preserved_verbatim(case: Case, evidence: AttemptEvidence) -> CheckRes
         "must",
         "pass",
         "保留片段均在",
-        evidence=_refs(
-            _file_ref(path, anchor=case.expect.region.from_anchor, fragment=frag)
-        ),
+        evidence=_refs(_file_ref(path, anchor=case.expect.region.from_anchor, fragment=frag)),
     )
 
 
@@ -304,9 +299,7 @@ def _check_committed_via_candidate(case: Case, evidence: AttemptEvidence) -> Che
                     _note_ref(str(receipt)),
                 ),
             )
-    related = _related_tool_span(
-        evidence, {"ask_author", "submit_candidate", "propose_candidate"}
-    )
+    related = _related_tool_span(evidence, {"ask_author", "submit_candidate", "propose_candidate"})
     return CheckResult(
         "committed_via_candidate",
         "must",
@@ -394,8 +387,7 @@ def _check_chapter_in_model_input(case: Case, evidence: AttemptEvidence) -> Chec
         "quality",
         "fail",
         "首次提交候选前输入未含目标章节全文",
-        evidence=input_refs
-        or _refs(_file_ref(path, fragment=case.expect.region.from_anchor)),
+        evidence=input_refs or _refs(_file_ref(path, fragment=case.expect.region.from_anchor)),
     )
 
 

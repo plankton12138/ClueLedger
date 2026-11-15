@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import shutil
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from evaluation.harness.checks import AttemptEvidence, AttemptGrade, grade_attempt
 from evaluation.harness.client import AcceptedTurn, EvalClient, EvalClientError
@@ -297,9 +298,7 @@ class AttemptRunner:
                 before=before,
                 after=after,
                 events=all_events,
-                model_inputs_before_candidate=_model_inputs_before_candidate(
-                    all_events, inputs
-                ),
+                model_inputs_before_candidate=_model_inputs_before_candidate(all_events, inputs),
             )
             grade = grade_attempt(case, evidence)
             self._persist(
@@ -335,9 +334,7 @@ class AttemptRunner:
                 before=before,
                 after=after,
                 events=all_events,
-                model_inputs_before_candidate=_model_inputs_before_candidate(
-                    all_events, inputs
-                ),
+                model_inputs_before_candidate=_model_inputs_before_candidate(all_events, inputs),
             )
             if work_dir.exists() or before:
                 self._persist(

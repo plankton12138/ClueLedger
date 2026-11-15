@@ -1,5 +1,8 @@
 """构思创建表单的隔离在线服务：只从 .env 读模型，凭据留在内存。"""
 
+# 先改 sys.path 再导入 scripts/online_env；其后的 hastings 导入会触发 E402。
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import argparse

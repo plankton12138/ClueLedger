@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from evaluation.harness.checks import grade_attempt
 from evaluation.harness.client import AcceptedTurn
 from evaluation.harness.evidence import (
@@ -55,12 +54,22 @@ def test_write_and_load_evidence_pack(tmp_path: Path) -> None:
     after = {"正文/0003.md": "前文。\n林岚推开客栈的门，雪。\n「你昨晚去了哪里？」\n"}
     (work / "正文" / "0003.md").write_text(after["正文/0003.md"], encoding="utf-8")
     events = [
-        {"seq": 1, "type": "model_request_started", "operation_id": "op1", "input_detail": "aabb" * 8},
+        {
+            "seq": 1,
+            "type": "model_request_started",
+            "operation_id": "op1",
+            "input_detail": "aabb" * 8,
+        },
         {"seq": 2, "type": "story_candidate_committed", "path": "正文/0003.md"},
         {"seq": 3, "type": "run_finished", "turn_id": "turn-1", "recording": "committed"},
     ]
     traces = {"turn-1": {"turn": {"id": "turn-1", "status": "completed"}, "events": []}}
-    inputs = {"op1": {"system": "sys", "messages": [{"role": "user", "content": before["正文/0003.md"]}]}}
+    inputs = {
+        "op1": {
+            "system": "sys",
+            "messages": [{"role": "user", "content": before["正文/0003.md"]}],
+        }
+    }
     write_evidence_pack(
         attempt_dir,
         meta={
@@ -208,7 +217,10 @@ class PackFakeClient:
         self, workspace_id: str, conversation_id: str, turn_id: str
     ) -> dict[str, Any]:
         del workspace_id, conversation_id
-        return {"turn": {"id": turn_id, "status": "completed"}, "events": [{"span_id": "model:op1"}]}
+        return {
+            "turn": {"id": turn_id, "status": "completed"},
+            "events": [{"span_id": "model:op1"}],
+        }
 
     def read_attachment(self, workspace_id: str, key: str) -> Any:
         del workspace_id

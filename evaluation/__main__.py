@@ -57,7 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         help="本地模式服务根地址，如 http://127.0.0.1:8000",
     )
     run_parser.add_argument("--case", action="append", default=[], help="只跑指定案例 id，可重复")
-    run_parser.add_argument("--repeat", type=int, default=1, help="每案试验次数（冒烟 1，完整门禁 3）")
+    run_parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="每案试验次数（冒烟 1，完整门禁 3）",
+    )
     run_parser.add_argument("--max-requests", type=int, default=30, help="本批模型请求上限")
     run_parser.add_argument("--out", type=Path, required=True, help="尚不存在的输出目录")
     run_parser.add_argument("--timeout", type=float, default=300.0, help="单轮等待秒数")
@@ -197,7 +202,8 @@ def main(argv: list[str] | None = None) -> int:
             report = compare_to_baseline(report, baseline)
         report["gate"] = gate_decision(report)
         write_report(args.out, report)
-        print(f"写入 {args.out / 'report.json'}；门禁={'通过' if report['gate']['passed'] else '不通过'}")
+        gate_label = "通过" if report["gate"]["passed"] else "不通过"
+        print(f"写入 {args.out / 'report.json'}；门禁={gate_label}")
         return 0 if report["gate"]["passed"] else 2
 
     if args.command == "score":

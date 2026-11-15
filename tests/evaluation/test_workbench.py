@@ -8,7 +8,6 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import httpx
-
 from evaluation.harness.checks import AttemptGrade, CheckResult
 from evaluation.harness.report import build_report, gate_decision, write_report
 from evaluation.harness.runtime import AttemptResult
@@ -68,7 +67,14 @@ def _seed_evidence(run_dir: Path) -> None:
         encoding="utf-8",
     )
     (evidence / "diff.json").write_text(
-        json.dumps({"changed": [], "unchanged": ["正文/0003 客栈夜询.md"], "added": [], "removed": []}),
+        json.dumps(
+            {
+                "changed": [],
+                "unchanged": ["正文/0003 客栈夜询.md"],
+                "added": [],
+                "removed": [],
+            }
+        ),
         encoding="utf-8",
     )
     (attempt / "meta.json").write_text(
@@ -76,7 +82,13 @@ def _seed_evidence(run_dir: Path) -> None:
             {
                 "case_id": "revise_ch3_ending_snow",
                 "attempt": 1,
-                "turns": [{"turn_id": "t_1", "author": "改成雪夜", "focus": "正文/0003 客栈夜询.md"}],
+                "turns": [
+                    {
+                        "turn_id": "t_1",
+                        "author": "改成雪夜",
+                        "focus": "正文/0003 客栈夜询.md",
+                    }
+                ],
             },
             ensure_ascii=False,
         ),

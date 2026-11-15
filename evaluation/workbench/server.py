@@ -71,7 +71,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
             if run_dir is None:
                 self._send_json(
                     404,
-                    _error("RUN_MISSING", "workbench.run", f"找不到运行 {run_id}", "从运行列表重新选择"),
+                    _error(
+                        "RUN_MISSING",
+                        "workbench.run",
+                        f"找不到运行 {run_id}",
+                        "从运行列表重新选择",
+                    ),
                 )
                 return True
             report_path = run_dir / "report.json"
@@ -101,7 +106,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     if not isinstance(body, dict):
                         self._send_json(
                             400,
-                            _error("REVIEWS_INVALID", "workbench.reviews", "请求体须为对象", "提交 reviews / attributions"),
+                            _error(
+                                "REVIEWS_INVALID",
+                                "workbench.reviews",
+                                "请求体须为对象",
+                                "提交 reviews / attributions",
+                            ),
                         )
                         return True
                     reviews = body.get("reviews")
@@ -120,7 +130,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     if problem:
                         self._send_json(
                             400,
-                            _error("EVIDENCE_REQUIRED", "workbench.reviews", problem, "填写 evidence_ref"),
+                            _error(
+                                "EVIDENCE_REQUIRED",
+                                "workbench.reviews",
+                                problem,
+                                "填写 evidence_ref",
+                            ),
                         )
                         return True
                     try:
@@ -148,7 +163,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                 if len(rest) < 3:
                     self._send_json(
                         400,
-                        _error("ATTEMPT_INVALID", "workbench.attempt", "案例或试验号无效", "检查路径"),
+                        _error(
+                            "ATTEMPT_INVALID",
+                            "workbench.attempt",
+                            "案例或试验号无效",
+                            "检查路径",
+                        ),
                     )
                     return True
                 case_id = unquote(rest[1])
@@ -157,7 +177,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                 except ValueError:
                     self._send_json(
                         400,
-                        _error("ATTEMPT_INVALID", "workbench.attempt", "案例或试验号无效", "检查路径"),
+                        _error(
+                            "ATTEMPT_INVALID",
+                            "workbench.attempt",
+                            "案例或试验号无效",
+                            "检查路径",
+                        ),
                     )
                     return True
                 report = wb.read_json(report_path, {})
@@ -168,7 +193,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     if payload is None:
                         self._send_json(
                             404,
-                            _error("ATTEMPT_MISSING", "workbench.attempt", "报告中无此试验", "核对 case_id / attempt"),
+                            _error(
+                                "ATTEMPT_MISSING",
+                                "workbench.attempt",
+                                "报告中无此试验",
+                                "核对 case_id / attempt",
+                            ),
                         )
                         return True
                     self._send_json(200, payload)
@@ -180,7 +210,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     if trace is None:
                         self._send_json(
                             404,
-                            _error("TRACE_MISSING", "workbench.trace", f"无 Trace {turn_id}", "确认证据包 traces/"),
+                            _error(
+                                "TRACE_MISSING",
+                                "workbench.trace",
+                                f"无 Trace {turn_id}",
+                                "确认证据包 traces/",
+                            ),
                         )
                         return True
                     self._send_json(200, trace)
@@ -208,7 +243,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     if event is None:
                         self._send_json(
                             404,
-                            _error("EVENT_MISSING", "workbench.event", f"无事件 {event_id}", "确认 events.jsonl"),
+                            _error(
+                                "EVENT_MISSING",
+                                "workbench.event",
+                                f"无事件 {event_id}",
+                                "确认 events.jsonl",
+                            ),
                         )
                         return True
                     self._send_json(200, event)
@@ -220,7 +260,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     if body is None:
                         self._send_json(
                             404,
-                            _error("INPUT_MISSING", "workbench.input", f"无输入 {operation_id}", "确认 inputs/"),
+                            _error(
+                                "INPUT_MISSING",
+                                "workbench.input",
+                                f"无输入 {operation_id}",
+                                "确认 inputs/",
+                            ),
                         )
                         return True
                     self._send_json(200, body)
@@ -256,30 +301,66 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                 )
                 return
 
-            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "runs":
-                if self._run_api(unquote(parts[2]), parts[3:], "GET"):
-                    return
+            if (
+                len(parts) >= 3
+                and parts[0] == "api"
+                and parts[1] == "runs"
+                and self._run_api(unquote(parts[2]), parts[3:], "GET")
+            ):
+                return
 
             if self._serve_static(path):
                 return
 
-            self._send_json(404, _error("NOT_FOUND", "workbench", f"未知路径 {path}", "打开 / 从运行列表进入"))
+            self._send_json(
+                404,
+                _error(
+                    "NOT_FOUND",
+                    "workbench",
+                    f"未知路径 {path}",
+                    "打开 / 从运行列表进入",
+                ),
+            )
 
         def do_PUT(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             parts = [part for part in path.split("/") if part]
-            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "runs":
-                if self._run_api(unquote(parts[2]), parts[3:], "PUT"):
-                    return
-            self._send_json(404, _error("NOT_FOUND", "workbench", f"未知路径 {path}", "使用 PUT /api/runs/<id>/reviews"))
+            if (
+                len(parts) >= 3
+                and parts[0] == "api"
+                and parts[1] == "runs"
+                and self._run_api(unquote(parts[2]), parts[3:], "PUT")
+            ):
+                return
+            self._send_json(
+                404,
+                _error(
+                    "NOT_FOUND",
+                    "workbench",
+                    f"未知路径 {path}",
+                    "使用 PUT /api/runs/<id>/reviews",
+                ),
+            )
 
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             parts = [part for part in path.split("/") if part]
-            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "runs":
-                if self._run_api(unquote(parts[2]), parts[3:], "POST"):
-                    return
-            self._send_json(404, _error("NOT_FOUND", "workbench", f"未知路径 {path}", "使用 POST /api/runs/<id>/score"))
+            if (
+                len(parts) >= 3
+                and parts[0] == "api"
+                and parts[1] == "runs"
+                and self._run_api(unquote(parts[2]), parts[3:], "POST")
+            ):
+                return
+            self._send_json(
+                404,
+                _error(
+                    "NOT_FOUND",
+                    "workbench",
+                    f"未知路径 {path}",
+                    "使用 POST /api/runs/<id>/score",
+                ),
+            )
 
     return Handler
 
