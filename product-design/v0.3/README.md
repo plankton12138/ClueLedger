@@ -1,7 +1,7 @@
 # Hastings 0.3：主工作区、故事账本与正文流程
 
-> 状态：历史目标方案，2026-10-17 确认范围并进入实施。0.4 及之后的决定优先于本目录内容；当前运行实现见 [产品设计导航](../README.md)与 [0.7 模块说明](../../dev-notes/v0.7/modules/README.md)。
-> [0.3 开发文档](../../dev-notes/v0.3/README.md) · [实际交付与缺口](../../dev-notes/v0.3/modules/README.md)
+> 状态：历史目标方案，2026-10-17 确认范围并进入实施。0.4 及之后的决定优先于本目录内容；当前运行实现见 [产品设计导航](../README.md)与 [0.7 模块说明](../../dev-notes/versions/v0.7/modules/README.md)。
+> [0.3 开发文档](../../dev-notes/versions/v0.3/README.md) · [实际交付与缺口](../../dev-notes/versions/v0.3/modules/README.md)
 
 ## 方案文档
 

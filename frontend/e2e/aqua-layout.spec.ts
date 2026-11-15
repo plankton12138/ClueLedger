@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 import { seedChapter } from "./fixtures/chapter";
 
-const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.0.9/artifacts/aqua");
+const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/versions/v1.0.9/artifacts/aqua");
 
 async function shot(page: Page, name: string) {
   mkdirSync(output, { recursive: true });

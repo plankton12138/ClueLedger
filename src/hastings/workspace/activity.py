@@ -228,7 +228,7 @@ def classify(event: dict[str, Any], event_id: str = "") -> ActivityText:
         category = "context"
     elif kind.startswith(("state_", "index_", "chapter_index_", "review_")):
         category = "state"
-    elif kind.startswith("version_"):
+    elif kind.startswith("version_") or kind == "work_revision_recorded":
         category = "version"
 
     action, title, subject, note = "other", kind, "", ""
@@ -309,16 +309,23 @@ def classify(event: dict[str, Any], event_id: str = "") -> ActivityText:
         subject = str(event.get("path") or "")
         note = _size(event.get("size"))
         pair = f"tool:{event['tool_call_id']}" if event.get("tool_call_id") else f"event:{event_id}"
-    elif kind in ("version_baseline", "version_finished"):
+    elif kind in ("version_baseline", "version_finished", "work_revision_recorded"):
         action = "version"
-        title = "建立版本基线" if kind == "version_baseline" else "记录版本"
-        subject = str(event.get("commit") or event.get("baseline_commit") or "")[:7]
-        if kind == "version_finished":
-            changed = event.get("changed_paths")
-            changed = changed if isinstance(changed, (list, tuple)) else []
-            note = _join(
-                f"{len(changed)} 个文件" if changed else "", _duration(event.get("duration_ms"))
-            )
+        if kind == "work_revision_recorded":
+            title = "受理时作品版本"
+            subject = str(event.get("work_commit") or event.get("baseline_commit") or "")[:7]
+            revision = str(event.get("story_revision") or "")
+            note = f"方案 {revision}" if revision else ""
+        else:
+            title = "建立版本基线" if kind == "version_baseline" else "记录版本"
+            subject = str(event.get("commit") or event.get("baseline_commit") or "")[:7]
+            note = ""
+            if kind == "version_finished":
+                changed = event.get("changed_paths")
+                changed = changed if isinstance(changed, (list, tuple)) else []
+                note = _join(
+                    f"{len(changed)} 个文件" if changed else "", _duration(event.get("duration_ms"))
+                )
         pair = f"version:{event.get('parent_operation_id') or event.get('turn_id') or event_id}"
     elif kind in ("task_scope_set", "task_scope_extended"):
         action = "scope"

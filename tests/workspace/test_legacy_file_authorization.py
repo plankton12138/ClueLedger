@@ -236,7 +236,7 @@ async def test_write_rechecks_policy_before_git_or_file_side_effects(tmp_path: P
     with pytest.raises(WorkspaceError) as denied:
         await _call(tools["write_file"], path=PROFILE, text="# 医生\n")
     assert denied.value.code == ERROR
-    assert not run.session.prepared and events == []
+    assert not run.session.prepared and events == ["gate_decided"]
     assert not (run.workspace.root / PROFILE).exists()
 
 

@@ -4,7 +4,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 
 `python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。默认是 local 模式：进程即作者，沿用本地目录与凭据边界。`--mode server` 增加邮箱账号、服务器会话与 `/api/auth/*`，作品目录、任务、模型配置/凭据与私有模块库都按账号隔离；线上模型双账号与部署验收仍按 v1.4 P5/P6 执行。模型能力是应用级的一组 `/api/model-*` 接口：供应商预设 → 连接（地址、协议、凭据引用、模型）→ 当前选择，写作轮次在受理时固定这一轮的连接与模型。写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；模型连接已用真实 DeepSeek 在接口层取证，界面渲染由构建与状态测试覆盖。
 
-0.3 的模块与测试已在 V04-5 删除，只剩少量仍在用的文件（见「包职责」）。0.3 文档作为历史记录保留，其中描述的代码已不存在，不要据此推断可用能力。解释现状时先读[0.7 模块导航](../../dev-notes/v0.7/modules/README.md)，运行与验收口径见[0.7 运行说明](../../dev-notes/v0.7/release.md)；没有变化的会话、连接与执行契约按 0.6/0.5/0.4 模块说明的具体链接读取。
+0.3 的模块与测试已在 V04-5 删除，只剩少量仍在用的文件（见「包职责」）。0.3 文档作为历史记录保留，其中描述的代码已不存在，不要据此推断可用能力。解释现状时先读[0.7 模块导航](../../dev-notes/versions/v0.7/modules/README.md)，运行与验收口径见[0.7 运行说明](../../dev-notes/versions/v0.7/release.md)；没有变化的会话、连接与执行契约按 0.6/0.5/0.4 模块说明的具体链接读取。
 
 ## 当前代码入口
 
@@ -12,41 +12,41 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 
 | 要修改的行为 | 主要位置 | 当前说明 |
 |---|---|---|
-| 作品活动索引、持续订阅、模型请求诊断、详情保留与导出 | `workspace/activity.py`、`workspace/model_activity.py`、`workspace/api.py` | [活动记录](../../dev-notes/v0.6/modules/activity-log.md) |
-| 服务入口、静态目录与退出码 | `server/__main__.py`、`server/file_app.py` | [运行与验收](../../dev-notes/v0.5/release.md) |
-| 文件规则、读写指纹与搜索 | `workspace/files.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 新作品的默认位置与位置选择 | `workspace/locations.py`、`workspace/directory_dialog.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 最近目录、会话索引、事件、追尾读取与界面草稿 | `workspace/state.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
-| 会话上下文回放与执行事实 | `workspace/conversation_context.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
-| Git 历史、提交与撤销 | `workspace/git.py` | [Git 历史](../../dev-notes/v0.4/modules/git-history.md)，受管路径见[当前文件规则](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 一轮请求的受理、执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md)，回复展示见[对话展示](../../dev-notes/v0.5/modules/chat-display.md) |
-| 模型增量到会话事件的桥接、合批与中断修复 | `workspace/chat_stream.py` | [对话展示与流式回复](../../dev-notes/v0.5/modules/chat-display.md) |
-| 章序、章节显示名与人物身份标签的解析和写入检查 | `workspace/metadata.py` | [文件工作区与角色小传](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 文件工具与系统提示 | `workspace/agent.py`、`prompts/` | [人物按需读取与文件工具](../../dev-notes/v0.5/modules/file-workspace.md) |
+| 作品活动索引、持续订阅、模型请求诊断、详情保留与导出 | `workspace/activity.py`、`workspace/model_activity.py`、`workspace/api.py` | [活动记录](../../dev-notes/versions/v0.6/modules/activity-log.md) |
+| 服务入口、静态目录与退出码 | `server/__main__.py`、`server/file_app.py` | [运行与验收](../../dev-notes/versions/v0.5/release.md) |
+| 文件规则、读写指纹与搜索 | `workspace/files.py` | [文件工作区](../../dev-notes/versions/v0.5/modules/file-workspace.md) |
+| 新作品的默认位置与位置选择 | `workspace/locations.py`、`workspace/directory_dialog.py` | [文件工作区](../../dev-notes/versions/v0.5/modules/file-workspace.md) |
+| 最近目录、会话索引、事件、追尾读取与界面草稿 | `workspace/state.py` | [会话与草稿](../../dev-notes/versions/v0.4/modules/conversations.md) |
+| 会话上下文回放与执行事实 | `workspace/conversation_context.py` | [会话与草稿](../../dev-notes/versions/v0.4/modules/conversations.md) |
+| Git 历史、提交与撤销 | `workspace/git.py` | [Git 历史](../../dev-notes/versions/v0.4/modules/git-history.md)，受管路径见[当前文件规则](../../dev-notes/versions/v0.5/modules/file-workspace.md) |
+| 一轮请求的受理、执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/versions/v0.4/modules/agent-and-chat.md)，回复展示见[对话展示](../../dev-notes/versions/v0.5/modules/chat-display.md) |
+| 模型增量到会话事件的桥接、合批与中断修复 | `workspace/chat_stream.py` | [对话展示与流式回复](../../dev-notes/versions/v0.5/modules/chat-display.md) |
+| 章序、章节显示名与人物身份标签的解析和写入检查 | `workspace/metadata.py` | [文件工作区与角色小传](../../dev-notes/versions/v0.5/modules/file-workspace.md) |
+| 文件工具与系统提示 | `workspace/agent.py`、`prompts/` | [人物按需读取与文件工具](../../dev-notes/versions/v0.5/modules/file-workspace.md) |
 | 发送给模型的提示词文本 | `prompts/` | 系统提示、一次性任务提示、工具用途与分栏说明都在这里；业务代码只决定装什么，不写文案 |
-| 材料来源、读取区间、受理快照与有界输出 | `workspace/materials.py` | [V06-A1 读取与材料基础](../../dev-notes/v0.6/notes/V06-A1-materials.md)、[V06-A2 可选参考闭环](../../dev-notes/v0.6/notes/V06-A2-references.md) |
-| 章节索引的生成、发布与状态 | `workspace/chapter_index.py` | [V06-A3 章节索引](../../dev-notes/v0.6/notes/V06-A3-chapter-index.md) |
-| 构思、方案隔离、来源与成组提交 | `workspace/story_models.py`、`workspace/story_store.py`、`workspace/story_changes.py` | [当前实现与验收](../../dev-notes/v1.0.1/notes/P7-implementation-and-acceptance.md) |
-| 采用的授权、范围、关系与实际时间 | `workspace/story_adoption.py`、`workspace/story_authorization.py`、`workspace/story_tools.py` | [授权与采用修复](../../dev-notes/v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md) |
-| 试读输入、可见性与已公开正文 | `workspace/story_context.py` | [授权与采用修复](../../dev-notes/v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md) |
-| L0 短目录、L1 有界查询与来源标签（0.8 F1） | `workspace/retrieval.py` | [F1 检索基础](../../dev-notes/v0.8/notes/F1-retrieval.md) |
-| 统一模型操作、暂停、继续与恢复 | `workspace/operations.py`、`workspace/compaction_ops.py`、`server/probe_ops.py` | [操作记录](../../dev-notes/v1.0.1/notes/P2-operations.md) |
-| 构思任务目标、候选确认与完成判定 | `workspace/task_intent.py` | [构思创作路由修复](../../dev-notes/v1.0.1/notes/2026-10-30-story-creation-routing-fixes.md) |
-| 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/v0.6/notes/V06-C1-review.md) |
-| 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/v0.6/notes/V06-B2-scope-events.md) |
-| HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |
-| 邮箱账号、会话、验证与 CSRF | `accounts/`、`server/__main__.py`、`server/file_app.py` | [P1 记录](../../dev-notes/v1.4/notes/P1-email-accounts.md) |
-| 账号作品注册与服务器目录 | `accounts/workspaces.py`、`identity.py` | [P2 记录](../../dev-notes/v1.4/notes/P2-isolation.md) |
-| 按账号模型、凭据与私有模块库 | `server/user_services.py`、`infrastructure/credentials.py` | [P2 记录](../../dev-notes/v1.4/notes/P2-isolation.md) |
-| 订单、权益、通知与退款 | `relay/app.py`、`relay/service.py`、`relay/store.py` | [P3 记录](../../dev-notes/v1.4/notes/P3-billing.md) |
-| 订阅模型代理与用量结算 | `relay/proxy.py`、`relay/metering.py`、`server/platform_channel.py` | [P4 记录](../../dev-notes/v1.4/notes/P4-metering.md) |
-| 生产配置、加密凭据与部署 | `server/production.py`、`infrastructure/credentials.py`、`deploy/` | [P5 记录](../../dev-notes/v1.4/notes/P5-deployment.md) |
-| 模型档案、provider 与凭据 | `server/provider_config.py`、`infrastructure/credentials.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
-| 供应商预设、协议构造与实例关闭 | `server/provider_catalog.py`、`server/provider_runtime.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
-| 连接增删改、凭据提交与选择 | `server/model_connections.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
-| 模型发现与连接测试 | `server/model_probe.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
-| 模型设置接口 | `server/model_api.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
-前端壳层在 `frontend/src/components/workspace/`，构思页面在 `frontend/src/components/story/`，对话展示在 `frontend/src/components/chat/`。构思状态在 `frontend/src/state/story.ts`，会话与草稿在 `conversations.ts`，事件归并在 `chatMessages.ts`；客户端入口为 `frontend/src/api/story.ts` 与 `workspace.ts`。当前接口见[接口与页面契约](../../dev-notes/v1.0.1/api-and-frontend.md)。
+| 材料来源、读取区间、受理快照与有界输出 | `workspace/materials.py` | [V06-A1 读取与材料基础](../../dev-notes/versions/v0.6/notes/V06-A1-materials.md)、[V06-A2 可选参考闭环](../../dev-notes/versions/v0.6/notes/V06-A2-references.md) |
+| 章节索引的生成、发布与状态 | `workspace/chapter_index.py` | [V06-A3 章节索引](../../dev-notes/versions/v0.6/notes/V06-A3-chapter-index.md) |
+| 构思、方案隔离、来源与成组提交 | `workspace/story_models.py`、`workspace/story_store.py`、`workspace/story_changes.py` | [当前实现与验收](../../dev-notes/versions/v1.0.1/notes/P7-implementation-and-acceptance.md) |
+| 采用的授权、范围、关系与实际时间 | `workspace/story_adoption.py`、`workspace/story_authorization.py`、`workspace/story_tools.py` | [授权与采用修复](../../dev-notes/versions/v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md) |
+| 试读输入、可见性与已公开正文 | `workspace/story_context.py` | [授权与采用修复](../../dev-notes/versions/v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md) |
+| L0 短目录、L1 有界查询与来源标签（0.8 F1） | `workspace/retrieval.py` | [F1 检索基础](../../dev-notes/versions/v0.8/notes/F1-retrieval.md) |
+| 统一模型操作、暂停、继续与恢复 | `workspace/operations.py`、`workspace/compaction_ops.py`、`server/probe_ops.py` | [操作记录](../../dev-notes/versions/v1.0.1/notes/P2-operations.md) |
+| 构思任务目标、候选确认与完成判定 | `workspace/task_intent.py` | [构思创作路由修复](../../dev-notes/versions/v1.0.1/notes/2026-10-30-story-creation-routing-fixes.md) |
+| 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/versions/v0.6/notes/V06-C1-review.md) |
+| 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/versions/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/versions/v0.6/notes/V06-B2-scope-events.md) |
+| HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/versions/v0.5/modules/README.md) |
+| 邮箱账号、会话、验证与 CSRF | `accounts/`、`server/__main__.py`、`server/file_app.py` | [P1 记录](../../dev-notes/versions/v1.4/notes/P1-email-accounts.md) |
+| 账号作品注册与服务器目录 | `accounts/workspaces.py`、`identity.py` | [P2 记录](../../dev-notes/versions/v1.4/notes/P2-isolation.md) |
+| 按账号模型、凭据与私有模块库 | `server/user_services.py`、`infrastructure/credentials.py` | [P2 记录](../../dev-notes/versions/v1.4/notes/P2-isolation.md) |
+| 订单、权益、通知与退款 | `relay/app.py`、`relay/service.py`、`relay/store.py` | [P3 记录](../../dev-notes/versions/v1.4/notes/P3-billing.md) |
+| 订阅模型代理与用量结算 | `relay/proxy.py`、`relay/metering.py`、`server/platform_channel.py` | [P4 记录](../../dev-notes/versions/v1.4/notes/P4-metering.md) |
+| 生产配置、加密凭据与部署 | `server/production.py`、`infrastructure/credentials.py`、`deploy/` | [P5 记录](../../dev-notes/versions/v1.4/notes/P5-deployment.md) |
+| 模型档案、provider 与凭据 | `server/provider_config.py`、`infrastructure/credentials.py` | [模型连接](../../dev-notes/versions/v0.4/modules/model-connections.md) |
+| 供应商预设、协议构造与实例关闭 | `server/provider_catalog.py`、`server/provider_runtime.py` | [模型连接](../../dev-notes/versions/v0.4/modules/model-connections.md) |
+| 连接增删改、凭据提交与选择 | `server/model_connections.py` | [模型连接](../../dev-notes/versions/v0.4/modules/model-connections.md) |
+| 模型发现与连接测试 | `server/model_probe.py` | [模型连接](../../dev-notes/versions/v0.4/modules/model-connections.md) |
+| 模型设置接口 | `server/model_api.py` | [模型连接](../../dev-notes/versions/v0.4/modules/model-connections.md) |
+前端壳层在 `frontend/src/components/workspace/`，构思页面在 `frontend/src/components/story/`，对话展示在 `frontend/src/components/chat/`。构思状态在 `frontend/src/state/story.ts`，会话与草稿在 `conversations.ts`，事件归并在 `chatMessages.ts`；客户端入口为 `frontend/src/api/story.ts` 与 `workspace.ts`。当前接口见[接口与页面契约](../../dev-notes/versions/v1.0.1/api-and-frontend.md)。
 
 ## 包职责
 
@@ -65,4 +65,4 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 
 ## 历史材料
 
-0.3 的行为与决策见[0.3 文档](../../dev-notes/v0.3/README.md)与[历史记录入口](../../dev-notes/README.md)；这些文档描述的实现已被删除，只用于理解过去的决策，不作为当前能力依据。
+0.3 的行为与决策见[0.3 文档](../../dev-notes/versions/v0.3/README.md)与[历史记录入口](../../dev-notes/README.md)；这些文档描述的实现已被删除，只用于理解过去的决策，不作为当前能力依据。

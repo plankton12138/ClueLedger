@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 import yaml
-from eval.harness.models import online_endpoint, read_env
+from online_env import online_endpoint, read_env
 
 from hastings.infrastructure.credentials import KeyringCredentialStore
 

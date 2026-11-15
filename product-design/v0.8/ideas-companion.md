@@ -38,4 +38,4 @@ Alt+I 呼出与收起；Esc 先收起当前菜单，再收起面板。常规成�
 位置偏好可跨刷新保存，未保存的正文草稿仍只保证当前应用会话内保留。灵感归属当前作品，
 悬浮范围是应用窗口，不新增系统桌面常驻窗口。
 
-实现与本次验证见[灵感悬浮体验](../../dev-notes/v0.8/modules/ideas-companion.md)。
+实现与本次验证见[灵感悬浮体验](../../dev-notes/versions/v0.8/modules/ideas-companion.md)。

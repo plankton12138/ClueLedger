@@ -2,18 +2,18 @@
 
 2026-10-26 更新：[作品目录与真实删除](workspace-storage.md)已实施：作品与模块默认归入 `文档/ClueLedger`；新作品不再预建设定集；作品删除在明确确认后清理本地目录与应用记录，保留共享模块。本轮不迁移旧测试作品。
 
-2026-10-25 新增：[模型自主组织与维护模块](agent-module-management.md)为设计草案，待实施。提出由模型按创作请求决定模块组织并直接生成、保存和用于当前作品；提示词、工具、前后端反馈与验收见[实施方案](../../dev-notes/v0.8/agent-module-management-plan.md)。下文当前交付状态不因本草案改变。
+2026-10-25 新增：[模型自主组织与维护模块](agent-module-management.md)为设计草案，待实施。提出由模型按创作请求决定模块组织并直接生成、保存和用于当前作品；提示词、工具、前后端反馈与验收见[实施方案](../../dev-notes/versions/v0.8/agent-module-management-plan.md)。下文当前交付状态不因本草案改变。
 
-2026-10-26 更新：[整个故事总览模块已撤除](story-overview.md)，包括导航、页面、专用接口与整理任务。正文、模块原文与历史数据保留。此前的 [O0–O6 开发计划](../../dev-notes/v0.8/story-overview-plan.md)与验证保留为历史记录。
+2026-10-26 更新：[整个故事总览模块已撤除](story-overview.md)，包括导航、页面、专用接口与整理任务。正文、模块原文与历史数据保留。此前的 [O0–O6 开发计划](../../dev-notes/versions/v0.8/story-overview-plan.md)与验证保留为历史记录。
 
 2026-10-25 更新：[灵感悬浮体验](ideas-companion.md)已实施。灵感移出主导航，使用可拖动的独立入口和短内容面板；下文的并列导航、列表详情层级以该更新为准。
 
 2026-10-25 更新：[模块体验设计](module-experience.md)已实施。模块以自由内容为主，挂载直接显示在写作侧栏，作品内保存与另存到库分开；下文的类型选择、条目表单和日常发布流程以该更新为准。
 
 日期：2026-10-24。状态：**产品方案；核心能力已接入，发布验收部分完成**。主应用与前端包版本为 `0.8.0`。
-本方案记录产品目标与交互边界；实际已实现能力及未验证范围见[模块说明](../../dev-notes/v0.8/modules/README.md)
-和[运行说明](../../dev-notes/v0.8/release.md)，不能仅据方案推断交付。
-开发入口见 [0.8 开发文档](../../dev-notes/v0.8/README.md)。后续[前端体验与结构修复](../../dev-notes/v0.8/frontend-experience-plan.md)
+本方案记录产品目标与交互边界；实际已实现能力及未验证范围见[模块说明](../../dev-notes/versions/v0.8/modules/README.md)
+和[运行说明](../../dev-notes/versions/v0.8/release.md)，不能仅据方案推断交付。
+开发入口见 [0.8 开发文档](../../dev-notes/versions/v0.8/README.md)。后续[前端体验与结构修复](../../dev-notes/versions/v0.8/frontend-experience-plan.md)
 已完成 H1–H6 实施与确定性回归；在线长篇和桌面打包未在本轮执行；本轮继续保持 0.8 / `0.8.0`。
 
 ## 1. 产品目标

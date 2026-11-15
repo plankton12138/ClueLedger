@@ -1,8 +1,8 @@
 # 模型自主组织与维护模块
 
-日期：2026-10-25。状态：**核心能力与结构化作者提问已按实施方案落地，确定性测试与在线语义评测通过；内容预览与浏览器撤销取证待完成**。本文承接[自由模块体验](module-experience.md)，提出模型根据创作任务自行决定模块组织、生成内容并保存的交互。当前实际行为以[实施方案的实施记录](../../dev-notes/v0.8/agent-module-management-plan.md#9-实施记录2026-10-25)与[模块说明](../../dev-notes/v0.8/modules/module-experience.md)为准；未列入实施记录的能力仍属设计，不修改应用版本。
+日期：2026-10-25。状态：**核心能力与结构化作者提问已按实施方案落地，确定性测试与在线语义评测通过；内容预览与浏览器撤销取证待完成**。本文承接[自由模块体验](module-experience.md)，提出模型根据创作任务自行决定模块组织、生成内容并保存的交互。当前实际行为以[实施方案的实施记录](../../dev-notes/versions/v0.8/agent-module-management-plan.md#9-实施记录2026-10-25)与[模块说明](../../dev-notes/versions/v0.8/modules/module-experience.md)为准；未列入实施记录的能力仍属设计，不修改应用版本。
 
-配套的提示词接入、工具、接口、事件与验收见[实施方案](../../dev-notes/v0.8/agent-module-management-plan.md)。
+配套的提示词接入、工具、接口、事件与验收见[实施方案](../../dev-notes/versions/v0.8/agent-module-management-plan.md)。
 
 ## 1. 目标与设计取舍
 

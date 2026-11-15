@@ -2,7 +2,7 @@
 
 uv run python scripts/model_acceptance.py --case index_recall --case index_stale
 每个样例使用独立作品和状态；报告不收录凭据或整章正文。
-此入口保留原功能验收口径。上下文能力评测统一使用 ``uv run python -m eval``，见 eval/README.md。
+此入口保留原功能验收口径。离线评测体系见 ``dev-notes/evaluation/design.md``（重建中）。
 """
 
 from __future__ import annotations
@@ -893,7 +893,7 @@ async def _run_all(cases: tuple[Case, ...], work: Path, out: Path, model: str | 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default="dev-notes/v0.6/artifacts/model-acceptance")
+    parser.add_argument("--out", default="dev-notes/versions/v0.6/artifacts/model-acceptance")
     parser.add_argument("--case", action="append", choices=[c.key for c in CASES], default=[])
     parser.add_argument("--model", default=None)
     args = parser.parse_args()

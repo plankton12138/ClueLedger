@@ -116,7 +116,9 @@ async def test_prepare_and_apply_two_new_modules(tmp_path: Path) -> None:
     assert len(library.modules()["items"]) == 2  # type: ignore[index]
     assert [kind for kind, _ in events] == [
         "task_scope_set",
+        "gate_decided",
         "module_changes_prepared",
+        "gate_decided",
         "module_content_saved",
         "module_content_saved",
         "module_changes_applied",

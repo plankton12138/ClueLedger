@@ -22,6 +22,7 @@ TRACE_TYPES = (
     "file_changed",
     "assistant_started",
     "assistant_finished",
+    "work_revision_recorded",
 )
 
 BOUNDARIES = {
@@ -66,6 +67,9 @@ def turn_summary(start: dict[str, Any], end: dict[str, Any] | None) -> dict[str,
         ),
         "status": end.get("status", "interrupted") if end else "running",
         "trace_available": start.get("trace_version") == 1,
+        # 受理时刻的作品身份：未写入的轮次也要能还原初态。
+        "work_commit": start.get("work_commit") or None,
+        "story_revision": start.get("story_revision") or "",
     }
 
 

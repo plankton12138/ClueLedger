@@ -62,7 +62,7 @@ Turn 是一次作者请求及其执行结果。Loop 是 Turn 内一次模型回�
 ### P0 盘点执行边界并冻结契约
 
 - 从 [运行循环](../../src/tau_agent/loop.py) 和 [写作服务](../../src/hastings/workspace/service.py) 核对普通对话、确认续接、主动停止和异常退出。运行循环已经发出回合开始与结束信号，写作服务目前用开始信号统计回合数。确定哪些入口经过该循环，哪些仅产生独立的模型或工具事件。
-- 对照 [模型请求记录](../../src/hastings/workspace/model_activity.py) 和 [现有活动记录](../v0.6/modules/activity-log.md)，确定可复用的请求、调用和详情标识。列出首批 Gate 及其真实决策位置，统一判定和原因的字段。
+- 对照 [模型请求记录](../../src/hastings/workspace/model_activity.py) 和 [现有活动记录](../versions/v0.6/modules/activity-log.md)，确定可复用的请求、调用和详情标识。列出首批 Gate 及其真实决策位置，统一判定和原因的字段。
 - 固定开始、结束、拦截和重试四类样例，作为前后端共用的验收输入。
 
 ### P1 采集并生成每轮追踪

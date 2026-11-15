@@ -6,7 +6,7 @@
 
 Discuss your story, read chapters, revise prose, organize lasting story material, and review revisions in one workspace. You decide the direction; ClueLedger helps with the current project and the goal of each request.
 
-Current version: **1.2.0**. This page describes the current feature set. The v1.3 chapter clue registry is deferred, with its design and implementation [preserved for future work](dev-notes/v1.3/README.md).
+Current version: **1.2.0**. This page describes the current feature set. The v1.3 chapter clue registry is deferred, with its design and implementation [preserved for future work](dev-notes/versions/v1.3/README.md).
 
 ![ClueLedger: structure and chapters on the left, manuscript in the center, and conversation on the right](docs/screenshots/readme/writing-v1.2.png)
 

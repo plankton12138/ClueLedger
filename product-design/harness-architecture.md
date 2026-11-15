@@ -1,7 +1,7 @@
 # 线簿架构：作品文件、写作 Agent 与资料任务
 
 > 核对日期：2026-10-24。当前运行实现为 **0.7**（包版本 `0.7.0`），0.8 方案待实施。
-> 本文说明当前代码的实际分层与链路；模块细节见 [0.7 模块导航](../dev-notes/v0.7/modules/README.md)，运行与验收见 [0.7 运行说明](../dev-notes/v0.7/release.md)，代码入口见 [后端导航](../src/hastings/README.md)。
+> 本文说明当前代码的实际分层与链路；模块细节见 [0.7 模块导航](../dev-notes/versions/v0.7/modules/README.md)，运行与验收见 [0.7 运行说明](../dev-notes/versions/v0.7/release.md)，代码入口见 [后端导航](../src/hastings/README.md)。
 > 不描述已删除的 0.2/0.3 编排（候选采用、故事账本、Job 队列）；那些决定的历史背景见 [0.3 产品方案](v0.3/README.md)与 [dev-notes](../dev-notes/README.md)。
 
 ## 1. 定位

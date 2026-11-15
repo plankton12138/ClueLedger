@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -38,11 +37,14 @@ from hastings.relay.store import (
 logger = logging.getLogger("hastings.relay.proxy")
 
 
-@dataclass(frozen=True, slots=True)
 class ProxyError(Exception):
-    status_code: int
-    code: str
-    message: str
+    """代理侧业务错误；不可用 frozen/slots，否则框架无法写入 __traceback__。"""
+
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
 
 
 def _openai_error(status_code: int, code: str, message: str) -> JSONResponse:

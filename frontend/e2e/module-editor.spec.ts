@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 async function shot(page: Page, name: string) {
-  const path = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/frontend-experience/screenshots"); mkdirSync(path, { recursive: true });
+  const path = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/versions/v0.8/artifacts/frontend-experience/screenshots"); mkdirSync(path, { recursive: true });
   await page.screenshot({ path: `${path}/H3-${name}.png` });
 }
 test("七种预设字段按真实契约往返，数字0与布尔false保留", async ({ page, request }) => {

@@ -3,7 +3,7 @@
 日期：2026-10-26；版本安排更新：2026-10-27、2026-11-03。状态：**已归档**。
 
 > 2026-11-03 归档：本项前提「作者直接编辑正文」随 v1.1 合并裁决作废，契约与示例移至
-> [dev-notes/v1.1/archive-revision-learning](../../dev-notes/v1.1/archive-revision-learning/README.md)。
+> [dev-notes/versions/v1.1/archive-revision-learning](../../dev-notes/versions/v1.1/archive-revision-learning/README.md)。
 > 本文保留最初推导，仅作追溯。
 
 作者优先将悬疑线索确定为1.0；本项原顺延为 1.2 预留，现归档。

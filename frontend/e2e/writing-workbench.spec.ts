@@ -5,7 +5,7 @@ import { resolve, join } from "node:path";
 import { seedChapter } from "./fixtures/chapter";
 
 const screenshotDir = resolve(
-  process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.2/artifacts/writing",
+  process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/versions/v1.2/artifacts/writing",
 );
 
 async function shot(page: Page, name: string) {

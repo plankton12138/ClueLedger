@@ -1,7 +1,7 @@
 # 作品目录与真实删除
 
 日期：2026-10-26。状态：已实施。保持版本 `0.8.0`。
-开发记录见[作品目录与删除](../../dev-notes/v0.8/notes/workspace-storage-and-deletion.md)。
+开发记录见[作品目录与删除](../../dev-notes/versions/v0.8/notes/workspace-storage-and-deletion.md)。
 
 ## 内容统一存放
 

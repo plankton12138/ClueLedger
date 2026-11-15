@@ -64,6 +64,8 @@ export interface TraceTurn {
   duration_ms: number | null;
   status: string;
   trace_available: boolean;
+  work_commit?: string | null;
+  story_revision?: string;
 }
 
 export interface TraceEvent {

@@ -1,6 +1,6 @@
 # 开发文档导航
 
-当前主包与前端版本为 **1.2.0**；v1.2 已完成：P0—P4 实施并过离线质量门，P5 的在线评测（O01—O10）与 D11 重放经作者裁决（2026-11-05）豁免收尾。以下各版本记录保留其当时的验证范围。
+当前主包与前端版本为 **1.2.0**。带版本号的历史开发文档已归入 [versions/](versions/README.md)。
 
 ## 运行追踪（首版已实施，发布版本待定）
 
@@ -8,235 +8,44 @@
 
 ## 评测体系重建
 
-- [设计](evaluation/design.md)：开发阶段 0—5；端到端评测集（先做对话改稿）、候选核对过程集、回测门禁、失败转案例；工作台方案 C（本地独立页：报告 + 复核）。
+- [设计](evaluation/design.md)：开发阶段 0—5；端到端评测集（先做对话改稿）、候选核对过程集、回测门禁、失败转案例；工作台重设计见 [workbench-design.md](evaluation/workbench-design.md)（W1–W6 已落地）。
 - [阶段 0 · 最小可归因](evaluation/observation-development-plan.md)：确定性与浏览器 e2e 已通过；在线单例待手测。
-- [阶段 1 · 拆除旧评测](evaluation/stage1-retire-old-eval.md)：已删除旧 `eval/` 与 `tests/evaluation/`。
+- [阶段 1 · 拆除旧评测](evaluation/stage1-retire-old-eval.md)：已删除旧 `eval/` 与旧评测测试。
 - [阶段 2 · 改稿评测集与工作台](evaluation/stage2-revise-suite.md)：T0–T6 完成；运行说明见 [evaluation/README.md](../evaluation/README.md)。
-
-## 1.4 在线账号、作品隔离与订阅（计划已更新，待实施验收）
-
-- [开发计划](v1.4/development-plan.md)：邮箱注册与密码登录、账号下的作品/模型/任务隔离、订单与权益归属、用量结算，以及单服务器、域名与 HTTPS 部署；包含六个模块、P0—P6 顺序、接口契约、代码示例与验收条件。
-- [P0 盘点与契约](v1.4/p0-inventory.md)：实施前路由与全局状态清单、运行模式、账号/会话/数据库/认证接口冻结字段、邮件与配置项，以及 P1 范围。
-- [P1 邮箱账号实施记录](v1.4/notes/P1-email-accounts.md)：账号存储、会话与 CSRF、认证接口、前端登录门，以及离线与本地浏览器验证结果。
-- [P2 用户隔离实施记录](v1.4/notes/P2-isolation.md)：服务器分配作品目录、操作归属、按账号模型配置/凭据/授权与私有模块库；两账号接口与浏览器验证结果，以及未完成的线上模型验收。
-- [P3 账号订单与订阅](v1.4/notes/P3-billing.md)：统一账号数据库与 Cookie 鉴权的支付服务、幂等下单、通知/查单/权益事务、退款申请与订阅页面；本地假网关浏览器流程，真实支付宝与部署待验。
-- [P4 用量与订阅模型](v1.4/notes/P4-metering.md)：微点预留、流式结算、异常恢复、内部模型代理、写作侧「线簿订阅」来源与额度页面；假上游测试，真实模型用量待验。
-- [P5 生产配置与部署](v1.4/notes/P5-deployment.md)：生产校验、加密凭据、nginx/systemd、JSON 日志、健康检查、备份恢复脚本；真实域名、证书、SMTP 与支付宝联调待执行。
-- [订阅方案](v1.4/subscription-plan.md)：保留自带模型通道，采用 AI 网页应用收款和按天购买权益；点数、价格与成本暂为测算假设。已有独立支付服务代码，尚未完成线上账号与隔离的完整验收。分支 `feat/v1.4-subscription`。
-
-## 1.3 章节线索结构（保留，暂不上线）
-
-- [保留记录](v1.3/README.md)：2026-11-05 作者决定暂缓整个功能；当前运行代码恢复到 v1.2，P0—P5 实现与测试保存在 `codex/reserved-v1.3-clue-registry`，供以后恢复。
-- [设计提案与历史实施记录](v1.3/clue-registry-proposal.md)：章级登记、锚定、对账、注入、投影及模型登记通道；保留分支曾实施 P0—P5，不属于当前上线能力。
-- [线索工作台交互提案](../product-design/v1.3/clue-workbench-preview.md)：本章核对、全书清单与采用反馈的讨论稿；保留，暂不上线，尚未实施。
-
-## 1.2 单入口写作与上下文指引（当前版本，已实施）
-
-- [开发入口](v1.2/README.md)、[产品方案](../product-design/v1.2/README.md)：删除作品意图与直接编辑入口，以 `STRUCTURE.md` 为唯一全局语义提示；空作品同轮建立结构；模型可建议装入现有模块，也可在库为空或无匹配时建议创建，作者选择后自动继续原请求。
-- [详细开发计划](v1.2/development-plan.md)、[数据与接口](v1.2/data-and-api.md)、[验收计划](v1.2/acceptance.md)：格式 5、六个模块、P0—P5、分模块代码示例、浏览器与在线模型门槛；版本 1.2.0。
-
-## 1.1 对话创作与结构装配（已实施，在线验收待执行）
-
-- [开发入口](v1.1/README.md)、[产品方案](../product-design/v1.1/README.md)：结构装配、正文台账、确定性对账、直接落盘和写后自查已接入，运行版本 1.1.0；作品意图与起步确认将在 v1.2 删除，稿纸退位和入口收敛由 v1.2 承接。
-- [详细开发计划](v1.1/development-plan.md)、[验收计划](v1.1/acceptance.md)、[STYLE.md 契约](v1.1/style-document.md)（顺延）：六个模块、Q0—Q4 阶段、UC-D/UC-S 用例与发布门槛；v1.0.9 的 P7 在线验收并入本版 Q4，版本直接统一为 1.1.0。
-
-## 1.0.9 先构思、连续稿纸与实时信息索引（P0—P6 已实施）
-
-- [开发入口](v1.0.9/README.md)、[产品方案](../product-design/v1.0.9/README.md)：构思前置、单一写作工作区、连续稿纸、章节信息索引与所有创作文本的模型候选；当前运行版本仍为 1.0.8。P0—P6 已实施；P7 验收并入 v1.1，不再单独交付 1.0.9 版本号。
-- [详细开发计划](v1.0.9/development-plan.md)、[数据与接口](v1.0.9/data-and-api.md)、[分模块实现示例](v1.0.9/implementation-examples.md)：八个模块、当前格式、服务端写入门槛、增量同步和前后端契约。
-- [Aqua 视觉实施规范](v1.0.9/style-document.md)、[验收计划](v1.0.9/acceptance.md)：经典 Aqua 的材质与控件状态、连续稿纸响应式规则，以及从空作品到第一章完成的发布门槛。
-
-## 1.0.8 双布局阅读与对话调整（已实施并完成验收）
-
-- [开发入口](v1.0.8/README.md)、[产品方案](../product-design/v1.0.8/README.md)：全书只读总览与正文随章查看同时存在，全部构思和线索调整统一进入对话。
-- [详细开发计划](v1.0.8/development-plan.md)、[数据与接口](v1.0.8/data-and-api.md)、[分模块实现示例](v1.0.8/implementation-examples.md)、[验收计划](v1.0.8/acceptance.md)：六个模块、P0—P5 阶段、共享来源与上下文、真实对话操作和发布门槛。
-- [实施记录](v1.0.8/notes/)：P0 基线、随章聚合与焦点、对话回执、只读总览、正文随章查看、P5 验收与清理。
-
-## 1.0 计划入口
-
-- [前端 Aqua 改造](v1.0/notes/aqua-ui.md)：经典 OS X 布局、较大字号、操作位置与复古对话气泡；含实际页面截图及验证记录，包版本保持 `0.9.0`。
-
-- [1.0 开发入口](v1.0/README.md)：交互整改中，新增要求待实施；原在线语义 47/48 通过并保留 1 次误报，独立人工签收未执行。桌面端暂不纳入本轮范围，旧数据不迁移。
-- [交互整改方案](../product-design/v1.0/interaction-redesign.md)：取消故事资料、简化线索和统一模型操作；区分确认要求、拟议操作与新增验收。
-- [详细开发计划](v1.0/development-plan.md)：S0—S8阶段、真实代码基线、体验节点、文件职责与发布。
-- [数据与恢复](v1.0/data-and-recovery.md)、[接口与前端](v1.0/api-and-frontend.md)：稳定身份、当前格式、按章贡献、引用、章界与前后端对齐。
-- [分模块实现示例](v1.0/implementation-examples.md)、[验收与在线评测](v1.0/acceptance.md)：可审查代码和待执行门槛。
-- [1.0 产品方案](../product-design/v1.0/README.md)：作者流程、悬疑设计深度、范围与界面；方案不代表已实现能力。
-
-## 1.0.1 开发计划（修复复验中）
-
-- [1.0.1 开发入口](v1.0.1/README.md)、[产品方案](../product-design/v1.0.1/README.md)：可分支、汇合与收束的悬疑结构，区分故事内分支与创作备选，再由结构展开正文。
-- [线索结构与 Agent 全流程讨论](../product-design/v1.0.1/structure-and-agent-lifecycle.md)：数据关系、长期连续性、模型输入、对话修改和取消故事资料的完整范围；尚未冻结实现规格。
-- [阶段计划](v1.0.1/development-plan.md)、[数据与恢复](v1.0.1/data-and-runtime.md)、[接口与页面](v1.0.1/api-and-frontend.md)、[代码示例](v1.0.1/implementation-examples.md)、[验收](v1.0.1/acceptance.md)：范围、契约与门槛；运行版本为 1.0.1。
-- 阶段记录：[P0 基线、格式与调用清单](v1.0.1/notes/P0-baseline.md)、[全部模型入口](v1.0.1/notes/P0-model-entries.md)、[故事资料移除映射](v1.0.1/notes/P0-materials-removal-map.md)、[P1 结构层](v1.0.1/notes/P1-structure.md)。P0—P5 已实施，P6 在线受影响场景待执行，P7 文档已同步。
-- 质量复查与修复：[阶段质量检查](v1.0.1/notes/2026-10-30-quality-audit.md)记录修复前的六项缺口；[授权与采用修复](v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md)记录 F1—F6 的统一规则、逐项修复与复现结果；[构思创作路由修复](v1.0.1/notes/2026-10-30-story-creation-routing-fixes.md)记录任务目标、候选确认、空白方案输入与收据判定。
-
-## 1.0.2 上下文容量与输入预算（已接入，待验收）
-
-- [开发入口](v1.0.2/README.md)、[产品方案](../product-design/v1.0.2/README.md)：补齐 DeepSeek 官方容量，区分模型窗口和项目输入上限；目标版本 1.0.2，运行版本仍为 1.0.1。
-- [开发计划](v1.0.2/development-plan.md)、[分模块示例](v1.0.2/implementation-examples.md)、[验收计划](v1.0.2/acceptance.md)：容量与预算已接入；空闲容量刷新和相关页面回归通过，完整在线预算链路与作者体验仍待验收。
-
-## 1.0.3 全书构思总览与线索联动（定向改造完成，完整验收待执行）
-
-- [开发入口](v1.0.3/README.md)、[产品方案](../product-design/v1.0.3/README.md)：运行版本 1.0.3，阶段、故事线与线索联动已有实现；普通入口与紧凑布局已修正，同规模在线资料在确认后继续完成结构提交。
-- [故事线冻结表头](v1.0.3/notes/2026-10-31-story-frozen-headings.md)：向下浏览时保留列标题，横向与缩放同步；仅前端修改，专项验证通过。
-- [创建构思的必需约定确认修复](v1.0.3/notes/2026-10-31-story-required-review-fix.md)：补齐无模块来源约定的明确采用入口，87 项真实草稿隔离重放成功；实际作品未确认或提交。
-- [卡片固定与工具反馈实施](v1.0.3/notes/2026-10-31-story-drag-and-feedback-implementation.md)：锁定单卡、保留导航与点击，分离预算和作者摘要，补齐错误定位；专项通过。[原调查](v1.0.3/notes/2026-10-31-story-drag-and-tool-call-investigation.md)保留。
-- [构思入口、紧凑布局与预算恢复实施](v1.0.3/notes/2026-10-31-story-followup-implementation.md)：70 项后端、52 项前端与 13 项浏览器专项通过，记录在线中断、确认及恢复提交的边界。
-- [构思入口、画布密度与回合上限调查](v1.0.3/notes/2026-10-31-story-entry-layout-turn-budget-investigation.md)：13:04 普通对话误生三份模块，13:07 创建流程耗尽 24 回合；包含 S1—S5 改进顺序与预览版式验收。
-- [2026-10-31 改造记录与验证](v1.0.3/notes/2026-10-31-story-remediation-implementation.md)：固定列、真实折叠、草稿联合提交、知识生效时点、模块约定确认与针对性复验。
-- [2026-10-31 调查及改造方案](v1.0.3/notes/2026-10-31-story-investigation-and-remediation.md)：真实运行的单链、遮挡、七次失败、知情时点与约定强度变化；包含 R0—R4 实施顺序和验收要求。
-- [原验收记录及补充说明](v1.0.3/notes/P6-验收.md)：保留原批次结果，区分最小创建链路与多线语义验收。
-
-## 1.0.4 悬疑视图与构思诊断（定向实现完成，完整在线验收待执行）
-
-- [开发入口](v1.0.4/README.md)、[产品方案](../product-design/v1.0.4/README.md)：把实际时间轴、侦探/助手/读者三层与线索生命周期放进构思页；不重写故事模型，不迁移旧数据。
-- [开发计划](v1.0.4/development-plan.md)、[接口与前端契约](v1.0.4/api-and-frontend.md)、[验收](v1.0.4/acceptance.md)、[实施记录](v1.0.4/notes/2026-10-31-v104-implementation.md)：只读悬疑投影、结构诊断、悬疑视图、创建 brief、验证结果与未完成项。
-- 本版先验证“视图 + 诊断 + brief”是否足够；分阶段生成工具、自动读者模拟器与 `Event / Reveal / Clue / Hypothesis` 重构留待后续。
-
-## 1.0.5 三模式工作区与构思/正文双向联动（定向实现完成，完整在线验收待执行）
-
-- [开发入口](v1.0.5/README.md)、[产品方案](../product-design/v1.0.5/README.md)：正文/构思/模块库三模式、左栏目录与线索、右栏仅对话、候选正文线索观察、正文反向整理入口。
-- 本版删除底部线索区与右栏线索标签；三模式写入 URL，模块库返回进入前模式；完整在线端到端验收待执行。
-
-## 1.0.6 构思总览与正文一致性（定向实现完成，完整在线语义验收待执行）
-
-- [开发入口](v1.0.6/README.md)、[产品方案](../product-design/v1.0.6/README.md)：构思总览、正文线索内联、同步状态与冲突确认；运行版本 1.0.6。
-- [详细开发计划](v1.0.6/development-plan.md)：P1—P5 已实施；保留阶段范围、接口与验收口径，实际交付以开发入口为准。
-- 2026-11-01 修复用途判定：明确写作请求不再被「构思页可见」或「根据构思」误判为设计任务；问题回答也会重新判定。
-
-## 1.0.7 构思与线索简化（已实施）
-
-- [开发入口](v1.0.7/README.md)、[产品方案](../product-design/v1.0.7/README.md)：正文 / 构思 / 线索三个入口、两类线索、三种构思状态、只读时间轴、关系图和主动核对讨论。
-- [详细开发计划](v1.0.7/development-plan.md)：基线、八个模块、P0—P8 阶段、代码落点、撤除范围与版本交付。
-- [数据与接口契约](v1.0.7/data-and-api.md)、[分模块实现示例](v1.0.7/implementation-examples.md)：直接正文关联、精确来源、非阻断提醒、统一变更与前后端对齐。
-- [验收与在线评测](v1.0.7/acceptance.md)：确定性矩阵、真实浏览器流程、在线模型和发布门槛；在线部分未执行，见 P7 记录。
 
 ## 修订学习与作品同步（首批实施，版本待定）
 
-- [开发计划](revision-learning/development-plan.md)：作者直接改稿和按作者要求的模型改稿统一记录为修订。在对话中查看差异、发起分析和查看运行日志，审阅写作约定、全书结构及已装入模块的更新建议。
-- [实施记录](revision-learning/notes.md)：入口映射、已落地的修订记录与差异判定、分析接口与 `STYLE.md` 注入，以及待实施的对话回执、稿纸修订与结构／模块应用。
-- 2026-11-03 归档的 [旧修订学习方案](v1.1/archive-revision-learning/README.md) 和当时的 [`STYLE.md` 契约](v1.1/style-document.md) 保留用于追溯。
+- [开发计划](revision-learning/development-plan.md)：作者直接改稿和按作者要求的模型改稿统一记录为修订。
+- [实施记录](revision-learning/notes.md)：入口映射、修订记录与差异、分析接口与待实施项。
+- 旧方案归档见 [v1.1/archive-revision-learning](versions/v1.1/archive-revision-learning/README.md)。
 
-## 0.9 当前入口
+## 当前与近版（按版本）
 
-- [0.9 开发入口](v0.9/README.md)：运行版本 `0.9.0`；U0–U3、C1、C2 已实现；在线对照与浏览器回归通过，独立人工签收和部分专项验收待完成。
-- [详细开发计划](v0.9/development-plan.md)：统计口径、模型容量、请求投影、压缩记录、前后端接口及 U0–R1 阶段任务。
-- [分模块实现示例](v0.9/implementation-examples.md)、[验收与在线评测](v0.9/acceptance.md)：设计示例与验收矩阵；已执行项与结论以运行说明为准。
-- [0.9 运行与验证](v0.9/release.md)：启动方式、本次实际验证与未覆盖项。
-- [0.9 产品方案](../product-design/v0.9/README.md)：两个轻量用量入口、整理交互、未知数据和任务边界。
+| 版本 | 入口 | 状态 |
+| --- | --- | --- |
+| 1.4 | [开发计划](versions/v1.4/development-plan.md) · [订阅方案](versions/v1.4/subscription-plan.md) | 账号 / 隔离 / 订阅；待实施验收 |
+| 1.3 | [保留记录](versions/v1.3/README.md) | 章节线索暂缓上线 |
+| 1.2 | [开发入口](versions/v1.2/README.md) · [产品方案](../product-design/v1.2/README.md) | **当前版本**，已实施并收尾 |
+| 1.1 | [开发入口](versions/v1.1/README.md) | 结构装配等已实施 |
 
-## 0.8 当前入口
+1.4 分阶段记录：[P0](versions/v1.4/p0-inventory.md)、[P1](versions/v1.4/notes/P1-email-accounts.md)、[P2](versions/v1.4/notes/P2-isolation.md)、[P3](versions/v1.4/notes/P3-billing.md)、[P4](versions/v1.4/notes/P4-metering.md)、[P5](versions/v1.4/notes/P5-deployment.md)。
 
-- [0.8 开发入口](v0.8/README.md)：本版方案、阶段记录与交付状态。
-- [0.8 前端体验与结构修复计划](v0.8/frontend-experience-plan.md)：H1–H6 已实施并完成确定性回归，在线长篇与桌面打包另列未执行；页面与操作层级、视觉规则、编辑可靠性、阶段任务与验收，版本保持 0.8.0。
-- [0.8 灵感全流程改造计划](v0.8/ideas-experience-plan.md)：I0–I4 已实施（[基线](v0.8/notes/I0-baseline.md)、[正文优先](v0.8/notes/I1-body-first.md)、[悬浮面板](v0.8/notes/I2-surface.md)、[固定版本引用](v0.8/notes/I3-references.md)、[只读展开](v0.8/notes/I4-expand.md)），I5–I6 待实施；记录、面板、修改删除、引用与选段、一次点击只读展开已完成，实际使用关联仍待做；附[分模块实现示例](v0.8/ideas-experience-examples.md)，版本保持 0.8.0。
-- [0.8 模块导航](v0.8/modules/README.md)：当前职责、真实行为与未实现项。
-- [全局模块库与作品装配](v0.8/modules/library-and-assembly.md)：七种类型、不可变版本、精确绑定、装卸与派生。
-- [统一章节与事件索引](v0.8/modules/story-index.md)：双视图、事件观察、按章贡献与旧记录兼容。
-- [检索与上下文](v0.8/modules/retrieval-and-context.md)：L0／L1／L2、装配预算、排除记录与任务卡。
-- [0.8 运行与验证](v0.8/release.md)：启动方式、行为变化、本次验证与未覆盖项。
-- [详细实施计划](v0.8/development-plan.md)：阶段依赖、任务清单与交付门槛。
-- [验收与评测](v0.8/acceptance.md)：确定性、浏览器、在线语义及成本对照；整份矩阵尚未执行。
-- [数据与存储](v0.8/data-and-storage.md)、[索引与上下文设计](v0.8/context-and-index.md)、[接口与前端](v0.8/api-and-frontend.md)：实施前的契约与代码示例。
-- [0.8 产品方案](../product-design/v0.8/README.md)：作者旅程、模块范围、时间线双视图与操作边界。
+## 更早版本
 
-## 0.7 沿用入口
+完整索引见 [versions/README.md](versions/README.md)（v1.0.9 → v0.1）。解释现状时优先读专题文档与当前模块说明，历史版本文档只在追查对应问题时使用。
 
-- [0.7 开发入口](v0.7/README.md)：本版方案与阶段记录导航。
-- [故事资料](v0.7/modules/story-materials.md)：五页、六域、作者视图、覆盖与失效、任务与工具权限。
-- [0.7 模块导航](v0.7/modules/README.md)：本版职责与沿用的旧版契约。
-- [0.7 运行与验证](v0.7/release.md)：启动方式、行为变化、本次验证与未验证项。
-- [故事资料开发计划](v0.7/story-materials-plan.md)：原计划与验收口径；实际交付以模块说明为准。
+常用沿用契约（实现仍以源码为准）：
 
-## 0.7 阶段记录
+- [0.7 模块导航](versions/v0.7/modules/README.md)、[0.6 活动记录](versions/v0.6/modules/activity-log.md)
+- [0.5 文件工作区](versions/v0.5/modules/file-workspace.md)、[0.4 模型连接](versions/v0.4/modules/model-connections.md)
 
-- [A 页面结构](v0.7/notes/A-pages.md)：主导航、hash 位置、资料容器与旧抽屉撤销。
-- [B 时间线完整流程](v0.7/notes/B-timeline.md)：作者视图、覆盖、任务受理、域权限与完成度。
-- [C 章节概览与人物](v0.7/notes/C-chapters-characters.md)：索引任务接入、身份与状态两个域。
-- [D 线索与名词表](v0.7/notes/D-clues-glossary.md)：跨章线索、稳定 ID、冲突与空结果。
-- [E 迁移与交付](v0.7/notes/E-delivery.md)：入口清理、版本升级、回归与文档。
-
-## 0.6 模块入口（沿用）
-
-- [活动记录](v0.6/modules/activity-log.md)：事件流、跨会话筛选、模型与操作详情、输入快照、导出和文件版本关联；开发与验证见 [V06-F](v0.6/notes/V06-F-activity-log.md)。
-- [0.6 开发入口](v0.6/README.md)：本版方案与阶段记录导航。
-- [状态层与装配分层计划](v0.6/state-and-assembly-plan.md)：V06-E 的设计与分阶段记录；当前行为与验收边界见模块说明和运行说明，作者侧状态编辑与真实作品验收未实施。
-- [V06-E 审查修复](v0.6/notes/V06-E-review-fixes.md)：状态依据、任务时点、检查接线与回归证据。
-- [0.6 模块导航](v0.6/modules/README.md)：材料与参考、修改范围、章节索引、只读检查与状态层的当前实现。
-- [0.6 运行与验证](v0.6/release.md)：启动方式、行为变化与本次验证范围（含未验证项）。
-
-## 0.5 历史入口
-
-- [0.5 开发入口](v0.5/README.md)：上一版模块、运行说明与阶段记录。
-- [文件工作区与角色小传](v0.5/modules/file-workspace.md)：受管路径、接口、模型材料、Git 与角色列表。
-- [对话展示与流式回复](v0.5/modules/chat-display.md)：事件、合批保存、追尾推送、折叠过程、Markdown、复制与展开、停止与中断的当前实现。
-- [V05-3 上下文管理阶段记录](v0.5/notes/v05-3-context-management.md)：章序、显示名与人物标签的改动、取舍与验证。
-- [模型对话框开发计划](v0.5/chat-experience-plan.md)：已交付范围与消息契约；预选项与专用可视化组件仍不在范围内。
-- [0.5 上下文与作品信息计划](v0.5/context-management-plan.md)：章序与人物标签的原计划；未实施部分已由下一版本计划承接。
-
-## 0.6 阶段记录
-
-- [0.6 开发入口](v0.6/README.md)：下一版本方案与阶段记录导航。
-- [上下文与文件操作开发计划](v0.6/context-and-file-operations-plan.md)：可选文件参考与自然语言定位、材料来源和版本、本轮修改范围、有原文依据的写后检查；包含模块示例、前后端契约与验收。
-- [V06-A1 读取与材料基础](v0.6/notes/V06-A1-materials.md)：材料来源、读取区间、有界工具与写前来源检查（已实施）。
-- [V06-A2 可选参考闭环](v0.6/notes/V06-A2-references.md)：受理快照、显式参考、自然语言登记、材料事件与界面入口（已实施）。
-- [V06-A3 章节索引](v0.6/notes/V06-A3-chapter-index.md)：索引生成、发布校验、状态与面板（已实施）。
-- [V06-B1 任务范围基础](v0.6/notes/V06-B1-task-scope.md)：本轮修改范围、授权引文与操作检查（已实施）。
-- [V06-B2 范围与自然语言闭环](v0.6/notes/V06-B2-scope-events.md)：范围事件、界面详情与承接规则（已实施）。
-- [V06-C1 只读检查](v0.6/notes/V06-C1-review.md)：检查报告、只读工具集、显式检查与改完检查（已实施）。
-- [V06-C2 整体交付](v0.6/notes/V06-C2-delivery.md)：版本升级、模块与运行说明、全量验证与未完成项（已实施）。
-- [V06-D1 约束加固与界面收口](v0.6/notes/V06-D1-constraints.md)：重复登记只收窄、必读不降级、证据必须落在已读区间、检查回合预算（已实施）。
-- [V06-D2 在线模型验收](v0.6/notes/V06-D2-acceptance.md)：在线任务驱动器、浏览器可见结果、失败修正与验收证据。
-
-## 0.4 历史开发入口
+## 当前实现入口
 
 | 需要了解 | 入口 |
-|---|---|
-| Markdown 工作目录、两块内容与直接修改流程 | [0.4 产品方案](../product-design/v0.4/README.md) |
-| 新版本文档分工 | [0.4 开发入口](v0.4/README.md) |
-| 已实现的目录规则、读写、搜索、导入与接口 | [0.4 模块导航](v0.4/modules/README.md) |
-| 写作 Agent、对话与事件 | [写作 Agent 与对话](v0.4/modules/agent-and-chat.md) |
-| 会话边界、草稿、任务归属与恢复 | [会话与草稿](v0.4/modules/conversations.md) |
-| Agent 与对话的改动与验证 | [V04-3 阶段记录](v0.4/notes/v04-3-agent-and-chat.md) |
-| 会话管理的改动与验证 | [V04-10 阶段记录](v0.4/notes/v04-10-conversation-management.md) |
-| Git 版本闭环的改动与验证 | [V04-2 阶段记录](v0.4/notes/v04-2-git-history.md) |
-| 前端接线的改动与验证 | [V04-4 阶段记录](v0.4/notes/v04-4-frontend.md) |
-| 旧代码清理与运行验收说明 | [V04-5 阶段记录](v0.4/notes/v04-5-cleanup.md) |
-| 默认切换与旧数据库删除 | [默认启动切换记录](v0.4/notes/v04-5-default-switch.md) |
-| 模块调整、示例、实施顺序与验收 | [0.4 修改计划](v0.4/development-plan.md) |
-| 供应商连接、模型设置与选择的当前行为 | [模型连接](v0.4/modules/model-connections.md) |
-| 供应商连接的交付范围与验收口径 | [供应商连接开发计划](v0.4/model-connections-plan.md) |
-| 已实施的会话管理计划 | [会话管理开发计划](v0.4/conversation-management-plan.md) |
-
-`uv run python -m hastings.server` 默认启动文件工作区应用，可用 `--workspace <目录>` 预先打开作品，`--config` / `--model` 指定模型配置与启动模型。旧参数（`--v2-db`、`--stories-root` 等）已退出，传入按参数错误处理。
-
-## 当前实现
-
-| 需要了解 | 入口 |
-|---|---|
-| 0.5 模块职责、接口与限制 | [0.5 模块导航](v0.5/modules/README.md) |
+| --- | --- |
 | 后端代码位置 | [后端导航](../src/hastings/README.md) |
-| 前端运行与界面入口 | [前端说明](../frontend/README.md) |
-| 0.3 历史实现与验收材料 | [0.3 文档](v0.3/README.md) |
-| 评测体系（重建中） | [evaluation/design.md](evaluation/design.md) |
+| 前端运行与界面 | [前端说明](../frontend/README.md) |
+| 评测运行 | [evaluation/README.md](../evaluation/README.md) |
+| 产品设计 | [product-design](../product-design/README.md) |
 
-解释现状或修改代码时，先读相关模块说明，再核对源码。前端可用、仅有后端接口、尚未实现和未验证分别记录，不以计划或历史测试结果推断交付。v0.1—v1.1 等历史文档中指向旧 `eval/` 的链接已随阶段 1 拆除失效，以当时记录理解即可，不逐份改写。
-
-## 产品范围与实施方案
-
-- [产品设计](../product-design/README.md)：当前需求与交互约束，未来方案有独立入口。
-- [0.4 修改计划](v0.4/development-plan.md)：历史文件工作区改造目标。
-- [0.3 开发计划](v0.3/development-plan.md)：旧版目标，不作为当前契约。
-- [0.3 阶段执行指导](v0.3/stage-execution-guide.md)：旧版实施顺序与取证方法。
-- [灵感池](../mynotes/ideas.md)：未排期想法，不作为当前需求。
-
-## 历史记录
-
-| 文档集 | 内容 |
-|---|---|
-| [0.3 阶段交付记录](v0.3/stage-delivery-record.md) | 阶段改动、当时的检查结果及构建笔记索引 |
-| [0.2 文档](v0.2/README.md) | 旧架构目标与交付材料；复用契约按当前模块导航的具体链接读取 |
-| [0.1 文档](v0.1/README.md) | 早期实现、阶段计划与验收材料 |
-
-历史资料只在追查对应问题时读取，不能覆盖当前模块说明。
+`uv run python -m hastings.server` 默认启动文件工作区应用。v0.1—v1.1 等历史文档中指向旧 `eval/` 的链接已随阶段 1 拆除失效，以当时记录理解即可，不逐份改写。

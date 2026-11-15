@@ -8,5 +8,5 @@
 原功能的任务范围、过程状态与操作限制不清楚，模型解释直接进入总览，作者审阅与采纳边界需要重新设计。
 后续是否恢复相关能力另行决定。
 
-当前范围与验证见[撤除记录](../../dev-notes/v0.8/notes/story-overview-retirement.md)。
-[原开发计划](../../dev-notes/v0.8/story-overview-plan.md)、[实现示例](../../dev-notes/v0.8/story-overview-examples.md)与 [O0–O6 验证](../../dev-notes/v0.8/notes/O6-story-overview.md)保留为历史资料，不代表当前能力。
+当前范围与验证见[撤除记录](../../dev-notes/versions/v0.8/notes/story-overview-retirement.md)。
+[原开发计划](../../dev-notes/versions/v0.8/story-overview-plan.md)、[实现示例](../../dev-notes/versions/v0.8/story-overview-examples.md)与 [O0–O6 验证](../../dev-notes/versions/v0.8/notes/O6-story-overview.md)保留为历史资料，不代表当前能力。

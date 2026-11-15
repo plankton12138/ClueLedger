@@ -1,6 +1,6 @@
 # 线簿 / ClueLedger 前端
 
-当前版本为 **1.2.0**，面向浏览器前端与本地服务。v1.3 章节线索登记及前端提案已标记为保留、暂不上线；实现位于 `codex/reserved-v1.3-clue-registry`，见[保留记录](../dev-notes/v1.3/README.md)。
+当前版本为 **1.2.0**，面向浏览器前端与本地服务。v1.3 章节线索登记及前端提案已标记为保留、暂不上线；实现位于 `codex/reserved-v1.3-clue-registry`，见[保留记录](../dev-notes/versions/v1.3/README.md)。
 
 当前视觉为[经典 OS X Aqua](../product-design/visual-language.md)：银灰工具栏、暖白稿纸，绿色作者气泡与银灰模型回复气泡。页面随窗口宽度切换分栏，保留阅读字号。
 
@@ -15,8 +15,8 @@
 - **会话与记录**：逐轮流式回复，思考与工具过程按需展开；支持任务暂停、按服务端能力继续及插话，活动记录用于回看操作与文件变化。
 - **模型设置**：在设置中管理连接与默认模型，在对话区切换当前选择；草稿不因尚未连接模型而清除。
 - **无模型使用**：本地阅读、灵感记录、手动正文修订与模块库整理可用；生成与分析需要模型连接。
-- **账号与登录（v1.4 P1/P2）**：server 模式先登录再进入工作区，支持注册、邮箱验证、找回与重置密码；local 模式不显示登录页。作品由服务器分配目录，模型设置、凭据与私有模块库按账号隔离；见 [P1 记录](../dev-notes/v1.4/notes/P1-email-accounts.md) 与 [P2 记录](../dev-notes/v1.4/notes/P2-isolation.md)。
-- **订阅与额度（v1.4 P3/P4）**：server 模式顶栏显示「订阅」，可查看套餐、当前权益、用量进度、最近订单状态并申请退款；额度接近用完或耗尽时给出等待恢复或切换自带连接的下一步。支付结果以支付宝通知或服务端查单为准。见 [P3 记录](../dev-notes/v1.4/notes/P3-billing.md) 与 [P4 记录](../dev-notes/v1.4/notes/P4-metering.md)。
+- **账号与登录（v1.4 P1/P2）**：server 模式先登录再进入工作区，支持注册、邮箱验证、找回与重置密码；local 模式不显示登录页。作品由服务器分配目录，模型设置、凭据与私有模块库按账号隔离；见 [P1 记录](../dev-notes/versions/v1.4/notes/P1-email-accounts.md) 与 [P2 记录](../dev-notes/versions/v1.4/notes/P2-isolation.md)。
+- **订阅与额度（v1.4 P3/P4）**：server 模式顶栏显示「订阅」，可查看套餐、当前权益、用量进度、最近订单状态并申请退款；额度接近用完或耗尽时给出等待恢复或切换自带连接的下一步。支付结果以支付宝通知或服务端查单为准。见 [P3 记录](../dev-notes/versions/v1.4/notes/P3-billing.md) 与 [P4 记录](../dev-notes/versions/v1.4/notes/P4-metering.md)。
 
 写作台不再提供历史构思时间轴或全书线索页面。历史文档中的入口与截图不能作为当前功能说明。
 
@@ -77,4 +77,4 @@ npm run test:e2e:local -- writing-workbench.spec.ts
 
 浏览器测试使用隔离作品与真实本地服务；`writing-workbench.spec.ts` 不调用模型，其中分析结果展示采用受控夹具。真实模型验收使用在线模型，不能把这些确定性用例视为在线验收。
 
-最新的 v1.2 验证与历史豁免见[开发入口](../dev-notes/v1.2/README.md)；本次功能暂缓后的定向回归见[v1.3 保留记录](../dev-notes/v1.3/README.md)。
+最新的 v1.2 验证与历史豁免见[开发入口](../dev-notes/versions/v1.2/README.md)；本次功能暂缓后的定向回归见[v1.3 保留记录](../dev-notes/versions/v1.3/README.md)。

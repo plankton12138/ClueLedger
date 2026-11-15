@@ -36,7 +36,7 @@ class FakeGateway:
         self.refund_result: dict[str, Any] = {
             "code": "10000",
             "fund_change": "Y",
-            "refund_fee": "9.00",
+            "refund_fee": "3.00",
         }
         self.refund_query_result: dict[str, Any] = {
             "code": "10000",
@@ -175,7 +175,7 @@ def _notify(
     order_no: str,
     *,
     notify_id: str = "notify-1",
-    total_amount: str = "9.00",
+    total_amount: str = "3.00",
     sign: str = "test-signature",
 ) -> Any:
     return client.post(
@@ -316,7 +316,7 @@ def test_query_and_background_reconcile_confirm_without_browser(tmp_path: Path) 
     gateway.query_result = {
         "code": "10000",
         "trade_status": "TRADE_SUCCESS",
-        "total_amount": "9.00",
+        "total_amount": "3.00",
         "trade_no": "2026110622000000002",
         "buyer_user_id": "2088000000000002",
     }
@@ -374,10 +374,11 @@ def test_refund_request_is_user_side_only_and_admin_refund_revokes(tmp_path: Pat
 
 
 def test_return_page_is_status_only_and_has_no_session_cookie(tmp_path: Path) -> None:
-    client, gateway, _, _, _ = _build(tmp_path)
+    client, _, _, billing, _ = _build(tmp_path)
     order_no = _paid(client)
-    parsed = urlsplit(gateway.last_return_url)
-    path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    # 短链收银台改版后，下单不再立刻调 pay_url；回跳签名仍与 /pay 跳转同源。
+    token = billing.return_token(order_no)
+    path = f"/return/alipay?out_trade_no={order_no}&order_token={token}"
 
     returned = client.get(path)
     assert returned.status_code == 200

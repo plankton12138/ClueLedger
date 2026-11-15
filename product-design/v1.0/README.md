@@ -17,7 +17,7 @@
 | 核对与讨论 | 依据指定目标核对，引用线索进入对话，按要求修改和复查 |
 | 恢复 | 浏览器阅读位置、当前格式作品状态与备份恢复 |
 
-实现和验证证据见[开发入口](../../dev-notes/v1.0/README.md)与[S8 记录](../../dev-notes/v1.0/notes/S8-web-delivery.md)。这些记录说明原实现，不代表后续产品想法已经交付。
+实现和验证证据见[开发入口](../../dev-notes/versions/v1.0/README.md)与[S8 记录](../../dev-notes/versions/v1.0/notes/S8-web-delivery.md)。这些记录说明原实现，不代表后续产品想法已经交付。
 
 ## 已发现的体验问题
 
