@@ -35,12 +35,15 @@ uv.lock
 config.example.yaml
 deploy/
 packaging/
-desktop/package-lock.json
+
+# 桌面壳与交互原型仅本地保留，不再推远端
+desktop/
+prototypes/
 
 # Playwright E2E 运行产物（trace/报告属本地调试物，不入库）
 frontend/test-results/
 frontend/playwright-report/
 
-# data/ 全部是本地运行产物（工作台数据库、服务日志），不入库；备份走 /backup 导出
+# data/ 全部是本地运行产物（工作台数据库、服务日志、评测 runs），不入库；备份走 /backup 导出
 data/
 /.alipay-sandbox.json

@@ -28,12 +28,13 @@
 * 开发过程中不用考虑旧数据迁移的问题，直接放弃旧数据
 * 当你需要了解开发者的想法时，可以查看 ./mynotes/目录，但绝不允许修改其中的任何内容
 * 如果只是再改文档或版本号，就不需要再跑后端全量了，不要如此频繁的跑全量测试，真的必要时在做。
+* 推送或修 CI 前按 [ci-preflight](.cursor/rules/ci-preflight.mdc)：测试 → ruff check → ruff format --check → mypy → 前端 build；本机 Windows、CI Linux，勿对仅 Windows 的 API 做无条件 mock/import。
 
 <br />
 
 ## 索引
 
 - 产品设计 C:\Projects\Agent\myagent\product-design
-- 原型图 C:\Projects\Agent\myagent\prototypes
+- 原型图 C:\Projects\Agent\myagent\prototypes（仅本地；`data/`、`desktop/`、`prototypes/` 不入库）
 - 开发文档 C:\Projects\Agent\myagent\dev-notes
 
