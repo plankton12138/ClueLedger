@@ -153,9 +153,7 @@ class XAIGrokAuthProvider:
                 "查询授权结果",
             )
         except XAIAuthError as exc:
-            attempt.outcome = AuthOutcome(
-                status="failed", code=exc.code, message=_with_fix(exc)
-            )
+            attempt.outcome = AuthOutcome(status="failed", code=exc.code, message=_with_fix(exc))
             return attempt.outcome
         now = self._clock()
         if status == 200:

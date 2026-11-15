@@ -51,7 +51,13 @@ function viewportBounds(): FloatingBounds {
   return { left, top, right, bottom };
 }
 
-export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean, workspaceId: string | null) {
+export function useIdeasPosition(
+  element: RefObject<HTMLElement>,
+  open: boolean,
+  workspaceId: string | null,
+  /** 展开宽度随字号变化；变更后须重新量测，否则会沿用旧 left 把面板挤出视口。 */
+  layoutKey = 0,
+) {
   const saved = useIdeasSurfaceStore(state => state.position);
   const [moving, setMoving] = useState<IdeaPosition | null>(null);
   const [geometry, setGeometry] = useState(() => ({ bounds: viewportBounds(), size: { width: 82, height: 44 }, headerBottom: 0 }));
@@ -91,7 +97,7 @@ export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean,
       window.visualViewport?.removeEventListener("resize", measure);
       window.visualViewport?.removeEventListener("scroll", measure);
     };
-  }, [element, open, workspaceId, defaultPlacement]);
+  }, [element, open, workspaceId, defaultPlacement, layoutKey]);
 
   function finish(event: PointerEvent<HTMLElement>, cancelled = false) {
     if (drag.current?.id !== event.pointerId) return;

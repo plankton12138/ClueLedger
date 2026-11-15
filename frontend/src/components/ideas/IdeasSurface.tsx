@@ -29,7 +29,7 @@ export default function IdeasSurface() {
   const frame = useRef<HTMLDivElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const capture = useRef<IdeaCaptureHandle>(null);
-  const floating = useIdeasPosition(frame, open, workspaceId);
+  const floating = useIdeasPosition(frame, open, workspaceId, fontScale);
   const writingTarget = (id: string): WorkspacePage => {
     const last = usePagePositions.getState().pages[id]?.writing;
     return last?.kind === "writing" ? last : { kind: "writing", workspaceId: id };
