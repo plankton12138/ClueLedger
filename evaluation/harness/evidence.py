@@ -55,9 +55,7 @@ def extract_commit_receipts(events: list[dict[str, Any]]) -> list[dict[str, Any]
             paths = event.get("changed_paths") or []
             if recording == "committed" and isinstance(paths, list):
                 for path in paths:
-                    receipts.append(
-                        {"path": path, "via": "candidate", "raw_type": kind}
-                    )
+                    receipts.append({"path": path, "via": "candidate", "raw_type": kind})
     return receipts
 
 

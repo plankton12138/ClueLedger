@@ -97,9 +97,7 @@ def _validate_expect(work_dir: Path, expect: Expect) -> None:
         from_at = text.find(expect.region.from_anchor)
         to_at = text.find(expect.region.to_anchor)
         if to_at < from_at:
-            raise CaseLoadError(
-                f"锚点顺序无效：to 出现在 from 之前（{expect.region.path}）"
-            )
+            raise CaseLoadError(f"锚点顺序无效：to 出现在 from 之前（{expect.region.path}）")
     for fragment in expect.preserve:
         if _count_occurrences(text, fragment) == 0:
             raise CaseLoadError(
