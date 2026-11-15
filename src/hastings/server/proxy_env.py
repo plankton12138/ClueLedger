@@ -36,8 +36,12 @@ def apply_system_proxy_env() -> None:
         return
     if any(os.environ.get(key) for key in _PROXY_KEYS):
         return
-    from urllib.request import getproxies_registry
+    import urllib.request as urllib_request
 
+    # getproxies_registry 仅存在于 Windows；类型存根在其他平台没有该属性。
+    getproxies_registry = getattr(urllib_request, "getproxies_registry", None)
+    if not callable(getproxies_registry):
+        return
     proxies = getproxies_registry()
     http = proxies.get("http")
     https = proxies.get("https") or http
