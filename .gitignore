@@ -36,10 +36,11 @@ config.example.yaml
 deploy/
 packaging/
 
-# 桌面壳、交互原型、投稿材料仅本地保留，不再推远端
+# 桌面壳、交互原型、投稿材料、本地产出仅本地保留，不再推远端
 desktop/
 prototypes/
 submission/
+output/
 
 # Playwright E2E 运行产物（trace/报告属本地调试物，不入库）
 frontend/test-results/
