@@ -105,3 +105,11 @@ Turn 是一次作者请求及其执行结果。Loop 是 Turn 内一次模型回�
 - Gate 已接入写入资格和模型输入预算。供应商拒绝上下文后，现有的收紧重试记录为两次模型尝试。工具调用在来源显式提供关联时显示为重试；普通重复调用分别展示。
 - 浏览器用真实接口读取确定性日志，覆盖会话切换、Loop 键盘展开、失败参数详情、重试恢复、Gate 拦截和窄屏。两账号测试覆盖追踪列表、快照、订阅和附件的作品归属校验。
 - 在线只读单例完成两个 Loop、两次模型请求和一次 `read_file`，输入 4,497 Tokens、输出 87 Tokens。模型请求和工具调用归属均与各自 Loop 一致。
+
+## 6. 最小可归因补齐（2026-11-14）
+
+评测重建前置阶段，计划见 [observation-development-plan.md](../evaluation/observation-development-plan.md)。
+
+- 受理时在 `turn_started` 记录 `work_commit` / `story_revision`，并追加 `work_revision_recorded`；Trace 顶栏展示作品短哈希。
+- 详情区改为事件、输入、输出、属性；模型步在未开启 `capture_inputs` 时明确提示。
+- 失败与拦截在时间线与详情边框上可区分。

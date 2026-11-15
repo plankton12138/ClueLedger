@@ -35,10 +35,10 @@
 
 - 依赖与缓存：`.git/`、`.venv/`、`**/node_modules/`、`**/__pycache__/`、`.pytest_cache/`、`.mypy_cache/`、`.ruff_cache/`、`.uv-cache/`、`.uv-audit-cache/`。
 - 构建与运行产物：`build/`、`dist/`、`frontend/dist/`、`desktop/dist/`、`build-resources/`、`data/`、`stories/`。
-- 验收原始产物：`frontend/test-results*/`、`frontend/playwright-report/`、`.screenshots/`、`eval/runs/**/evidence/`、`eval/runs/**/*.log`、`dev-notes/**/artifacts/`。
+- 验收原始产物：`frontend/test-results*/`、`frontend/playwright-report/`、`.screenshots/`、`dev-notes/**/artifacts/`、`data/evaluation/runs/`（本机评测运行目录）。
 - `mynotes/`：仅在需要理解开发者意图时只读参考，不作为待修复对象，绝不修改。
 
-`tests/`、`frontend/e2e/`、`eval/` 中的评测代码、依赖清单与锁文件、构建脚本、当前文档和配置示例不在默认忽略范围内。
+`tests/`、`frontend/e2e/`、`evaluation/`（评测代码与案例，见 [dev-notes/evaluation/design.md](dev-notes/evaluation/design.md)）、依赖清单与锁文件、构建脚本、当前文档和配置示例不在默认忽略范围内。
 
 ## 证据与验证
 

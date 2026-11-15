@@ -6,6 +6,13 @@
 
 - [开发计划](runtime-trace/development-plan.md)涵盖会话与 Turn 导航、可展开的 Loop、事件甘特时间线，以及记录契约、接口和验收条件。
 
+## 评测体系重建
+
+- [设计](evaluation/design.md)：开发阶段 0—5；端到端评测集（先做对话改稿）、候选核对过程集、回测门禁、失败转案例；工作台方案 C（本地独立页：报告 + 复核）。
+- [阶段 0 · 最小可归因](evaluation/observation-development-plan.md)：确定性与浏览器 e2e 已通过；在线单例待手测。
+- [阶段 1 · 拆除旧评测](evaluation/stage1-retire-old-eval.md)：已删除旧 `eval/` 与 `tests/evaluation/`。
+- [阶段 2 · 改稿评测集与工作台](evaluation/stage2-revise-suite.md)：T0–T6 完成；运行说明见 [evaluation/README.md](../evaluation/README.md)。
+
 ## 1.4 在线账号、作品隔离与订阅（计划已更新，待实施验收）
 
 - [开发计划](v1.4/development-plan.md)：邮箱注册与密码登录、账号下的作品/模型/任务隔离、订单与权益归属、用量结算，以及单服务器、域名与 HTTPS 部署；包含六个模块、P0—P6 顺序、接口契约、代码示例与验收条件。
@@ -212,9 +219,9 @@
 | 后端代码位置 | [后端导航](../src/hastings/README.md) |
 | 前端运行与界面入口 | [前端说明](../frontend/README.md) |
 | 0.3 历史实现与验收材料 | [0.3 文档](v0.3/README.md) |
-| 上下文评测的运行、判定与对照报告 | [评测导航](../eval/README.md) |
+| 评测体系（重建中） | [evaluation/design.md](evaluation/design.md) |
 
-解释现状或修改代码时，先读相关模块说明，再核对源码。前端可用、仅有后端接口、尚未实现和未验证分别记录，不以计划或历史测试结果推断交付。
+解释现状或修改代码时，先读相关模块说明，再核对源码。前端可用、仅有后端接口、尚未实现和未验证分别记录，不以计划或历史测试结果推断交付。v0.1—v1.1 等历史文档中指向旧 `eval/` 的链接已随阶段 1 拆除失效，以当时记录理解即可，不逐份改写。
 
 ## 产品范围与实施方案
 

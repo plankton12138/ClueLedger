@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import uvicorn
-from eval.harness.models import online_endpoint, read_env
+
+_REPO = Path(__file__).resolve().parents[3]
+if str(_REPO / "scripts") not in sys.path:
+    sys.path.insert(0, str(_REPO / "scripts"))
+from online_env import online_endpoint, read_env  # noqa: E402
 
 from hastings.infrastructure.credentials import InMemoryCredentialStore
 from hastings.library.modules import ModuleLibrary
