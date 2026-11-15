@@ -52,10 +52,12 @@ def test_windows_system_proxy_is_merged_when_no_proxy_env_exists(monkeypatch) ->
 
 def test_explicit_proxy_env_is_not_overwritten(monkeypatch) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "http://explicit.example:8888")
-    monkeypatch.setattr(
-        "urllib.request.getproxies_registry",
-        lambda: pytest.fail("已有显式代理时不应读取系统代理"),
-    )
+    # getproxies_registry 只在 Windows 存在；有显式代理时应直接返回，不读注册表。
+    if os.name == "nt":
+        monkeypatch.setattr(
+            "urllib.request.getproxies_registry",
+            lambda: pytest.fail("已有显式代理时不应读取系统代理"),
+        )
 
     apply_system_proxy_env()
 
