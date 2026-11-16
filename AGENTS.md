@@ -28,7 +28,7 @@
 * 开发过程中不用考虑旧数据迁移的问题，直接放弃旧数据
 * 当你需要了解开发者的想法时，可以查看 ./mynotes/目录，但绝不允许修改其中的任何内容
 * 如果只是再改文档或版本号，就不需要再跑后端全量了，不要如此频繁的跑全量测试，真的必要时在做。
-* 推送或修 CI 前按 [ci-preflight](.cursor/rules/ci-preflight.mdc)：测试 → ruff check → ruff format --check → mypy → 前端 build；本机 Windows、CI Linux，勿对仅 Windows 的 API 做无条件 mock/import。
+* 推送或修 CI 前按 [ci-preflight](.cursor/rules/ci-preflight.mdc)：测试 → ruff check → ruff format --check → mypy → 前端 build；本机 Windows、CI Linux，勿对仅 Windows 的 API 做无条件 mock/import。推送后必须 `gh run watch` 等到 GitHub CI 结论明确，失败则修再推，不以「已 push」收工。
 
 <br />
 

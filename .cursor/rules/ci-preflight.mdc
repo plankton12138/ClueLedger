@@ -1,0 +1,45 @@
+---
+description: 推送前本地预检，推送后确认 GitHub CI 通过
+alwaysApply: true
+---
+
+# CI 推送前预检与推送后核验
+
+推 `main` / 修 CI 前，在本地按 **与 CI 相同顺序** 跑完再推，不要只跑「刚才改过的那一层」。
+
+推送完成后 **必须** 核验 GitHub Actions，直到本次 run 结论明确（success / failure）；未确认通过前，不把「已推送」当成完成。
+
+## 必跑顺序（与 `.github/workflows/ci.yml` 对齐）
+
+1. **测试**：改动相关的 pytest；涉及计费/代理/跨平台时至少覆盖 `tests/relay`、`tests/workspace/test_proxy_env.py` 等
+2. **Ruff lint**：`uv run ruff check .`
+3. **Ruff format**：`uv run ruff format --check .`（改完后先 `ruff format` 再 check；漏 format 会过 lint 仍挂）
+4. **mypy**：`uv run mypy`
+5. **前端**：`frontend` 下 `npm run build`（含 tsc）；布局/字号相关再跑对应 e2e
+
+只改文档/版本号时仍遵守 AGENTS.md：不必后端全量。
+
+## 跨平台（本机 Windows，CI Linux）
+
+- 不要对 **仅 Windows 存在** 的 API（如 `urllib.request.getproxies_registry`）做无条件 `monkeypatch.setattr`；用 `os.name == "nt"` 分支，或 `getattr(..., None)` 后再调用
+- mypy 在非 Windows 存根上也会报缺属性：运行时用 `getattr` / 可调用检查，不要裸 `from … import getproxies_registry`
+- 平台专用行为：测试里 `pytest.skip`，实现里早退；两边一致
+
+## 合入时易漏的配套
+
+- 前端新字段与后端/Trace 载荷同批提交（例如 `work_commit` / `story_revision`）
+- 测试里的金额、枚举、事件序列跟产品现状对齐（套餐调价后通知/查单金额要改）
+- 异常类型若会被框架写 `__traceback__` 等属性，不要用 `frozen`/`slots` dataclass
+- UI 尺寸依赖字号/视口时，量测 effect 的依赖要包含这些布局键，避免旧坐标 + 新宽度挤出视口
+
+## 推送后核验（每次 push 都做）
+
+1. 用 `gh run list --branch <branch> --limit 3`（或当前 PR 的 checks）定位刚触发的 run
+2. `gh run watch <run-id> --exit-status` 等到结束；失败则 `gh run view <run-id> --log-failed` 取根因
+3. 失败：按本规则本地修好 → 再推 → 再次 watch，直到通过
+4. 向用户回报时写明 run 结论与链接；不要只报「已 push」
+
+## 修 CI 时
+
+- 一次只推「当前失败层」不够：本地按上面全链路扫一遍，再推
+- 推送遇连接重置就重试，不要当成代码问题改无关内容

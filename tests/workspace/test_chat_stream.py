@@ -269,6 +269,8 @@ def test_deltas_are_readable_before_the_response_ends(
     ]
     assert [event["type"] for event in events] == [
         "turn_started",
+        # 受理时先记下作品代次：Trace 顶栏与观测在模型输出前就能对齐。
+        "work_revision_recorded",
         # 代次开始先落盘：这一代属于哪个操作，在模型输出之前就确定了。
         "attempt_started",
         # 装配记录先落盘：配置与分区在模型开始输出之前就已经确定。
