@@ -356,6 +356,92 @@ def test_trace_preserves_recovery_and_unknown_duration(tmp_path: Path) -> None:
     assert snapshot["turn"]["duration_ms"] is None
 
 
+def test_trace_turn_exposes_work_revision_from_accept(tmp_path: Path) -> None:
+    write_log(
+        tmp_path,
+        "rev",
+        [
+            event(
+                1,
+                type="turn_started",
+                trace_version=1,
+                text="只读检查",
+                work_commit="abc1234deadbeef",
+                story_revision="r9",
+            ),
+            event(
+                2,
+                type="work_revision_recorded",
+                work_commit="abc1234deadbeef",
+                story_revision="r9",
+            ),
+            event(3, type="run_finished", status="completed"),
+        ],
+    )
+    snapshot = ActivityStore(tmp_path).turn_trace("rev", "t1")
+    assert snapshot["turn"]["work_commit"] == "abc1234deadbeef"
+    assert snapshot["turn"]["story_revision"] == "r9"
+    classified = classify(
+        event(2, type="work_revision_recorded", work_commit="abc1234deadbeef", story_revision="r9"),
+        "rev:2",
+    )
+    assert classified.action == "version"
+    assert "abc1234" in classified.subject
+
+
+def test_accept_records_work_revision_even_without_writes(tmp_path: Path) -> None:
+    async def run() -> None:
+        workspace = Workspace.create(tmp_path / "book")
+        GitRepo(workspace.root).init()
+        workspace.write("正文/0001 雨夜.md", "# 雨夜\n", expected_digest=None)
+        commit = GitRepo(workspace.root).record("seed")
+        store = ConversationStore(tmp_path / "state")
+
+        class QuietProvider:
+            requests: list[Any] = []
+
+            def stream_response(self, **kwargs: Any) -> Any:
+                self.requests.append(kwargs)
+
+                async def generator() -> Any:
+                    yield AssistantStartEvent(partial=AssistantMessage())
+                    yield AssistantDoneEvent(
+                        reason="stop",
+                        message=AssistantMessage(
+                            content=[TextContent(text="已读")], stop_reason="stop"
+                        ),
+                    )
+
+                return generator()
+
+        provider = QuietProvider()
+        service = TurnService(
+            workspace,
+            store,
+            lambda: ModelSnapshot(
+                connection_id="test", display_name="测试", model="test-model", provider=provider
+            ),
+        )
+        accepted = await service.accept("你好", "rev-k1")
+        await service.wait(accepted.turn_id)
+        events = store.events(accepted.conversation_id)
+        started = next(e for e in events if e["type"] == "turn_started")
+        recorded = [e for e in events if e["type"] == "work_revision_recorded"]
+        assert started.get("work_commit") == commit
+        assert started.get("story_revision") == ""
+        assert len(recorded) == 1
+        assert recorded[0]["work_commit"] == commit
+        again = await service.accept("你好", "rev-k1")
+        assert again.turn_id == accepted.turn_id
+        events_again = store.events(accepted.conversation_id)
+        assert len([e for e in events_again if e["type"] == "work_revision_recorded"]) == 1
+        trace = service.activity.turn_trace(accepted.conversation_id, accepted.turn_id)
+        assert trace["turn"]["work_commit"] == commit
+        assert trace["turn"]["story_revision"] == ""
+
+    asyncio.run(run())
+
+
 def test_queued_tool_and_reply_events_keep_the_request_that_produced_them(tmp_path: Path) -> None:
     class FastProvider(Provider):
         async def stream_response(self, **kwargs: Any) -> Any:

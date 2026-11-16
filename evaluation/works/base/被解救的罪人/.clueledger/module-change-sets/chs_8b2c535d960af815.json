@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "change_set_id": "chs_8b2c535d960af815",
+  "workspace": "C:\\Users\\plankton\\Documents\\ClueLedger\\作品\\被解救的罪人",
+  "turn_id": "t_ce9a802b",
+  "request_key": "",
+  "request_digest": "9ace8a8f24a2b3a3571ad3bcda3014b4aedb403323cad60105723201b4aee747",
+  "status": "applied",
+  "base_assembly_digest": "81afdb51fddb1b73146694dcc788e56da94debcb6f507bc16c0b29316e30420c",
+  "base_assembly": {
+    "schema_version": 1,
+    "library_id": "lib_3542de9fbb2fb9ad",
+    "bindings": [
+      {
+        "id": "bnd_d279c84d4c57ad76",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_cc0f1f819b11aeb4",
+          "revision_id": "rev_1477e738161875eb"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_009c95ccf5aa050c",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_a53bcffa6cf69049",
+          "revision_id": "rev_78c5f084d0e6583e"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_eb4c0ab3e7211cde",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_de68226a2933d788"
+        },
+        "label": "《夜牙》人物小传"
+      }
+    ],
+    "links": []
+  },
+  "operations": [
+    {
+      "operation_id": "delete_free_papers_characters",
+      "action": "update",
+      "summary": "删去姜戈台面、桑蒂台面与外形里的自由文书内容",
+      "binding_id": "bnd_eb4c0ab3e7211cde",
+      "module_id": "mod_bd195731dcf4b996",
+      "base_revision": "rev_de68226a2933d788",
+      "edits": [
+        {
+          "entry_id": "characters",
+          "base_digest": "9eac61d7e2b88d589ba85f3ea57cbd575fe526f5864f40faec1da8e34af8045d",
+          "find": "自由黑人，舒尔茨的同伴兼学徒。文书在他身上，随时可能被说成假的。",
+          "replace": "自由黑人，舒尔茨的同伴兼学徒。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "9eac61d7e2b88d589ba85f3ea57cbd575fe526f5864f40faec1da8e34af8045d",
+          "find": "黑人铁匠。有自由文书，但文书上的印章模糊，谁都可能说它是假的。1859 年",
+          "replace": "黑人铁匠。1859 年"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "9eac61d7e2b88d589ba85f3ea57cbd575fe526f5864f40faec1da8e34af8045d",
+          "find": "剪得齐——文书上写着他的相貌，他不敢全刮。",
+          "replace": "剪得齐。"
+        }
+      ],
+      "saved": {
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_ebd229f8866d255e",
+        "name": "《夜牙》人物小传",
+        "created": false,
+        "binding_id": "bnd_eb4c0ab3e7211cde"
+      }
+    },
+    {
+      "operation_id": "delete_free_papers_glossary",
+      "action": "update",
+      "summary": "删去专名表物件表里的「自由文书」一行",
+      "binding_id": "bnd_009c95ccf5aa050c",
+      "module_id": "mod_a53bcffa6cf69049",
+      "base_revision": "rev_78c5f084d0e6583e",
+      "edits": [
+        {
+          "entry_id": "glossary",
+          "base_digest": "ee639aa6dfc8374fb7f113a1cf91c87c36d49b567ed6e61ef2131138ff41c52a",
+          "find": "| 验尸单 | 克林格写三份，全部签他的名。 |\n| 自由文书 | 桑蒂、姜戈各有一份。姜戈的比桑蒂的新。 |",
+          "replace": "| 验尸单 | 克林格写三份，全部签他的名。 |"
+        }
+      ],
+      "saved": {
+        "module_id": "mod_a53bcffa6cf69049",
+        "revision_id": "rev_d6d8290b5230d943",
+        "name": "《夜牙》专名表与用词",
+        "created": false,
+        "binding_id": "bnd_009c95ccf5aa050c"
+      }
+    }
+  ],
+  "result": {
+    "applied": true,
+    "change_set_id": "chs_8b2c535d960af815",
+    "stage": "applied",
+    "assembly": {
+      "schema_version": 1,
+      "library_id": "lib_3542de9fbb2fb9ad",
+      "digest": "d9e050a9dbeb5f24236dcf356343b70cdf091bcbb3c384f4eef444db7d217ae5",
+      "bindings": [
+        {
+          "id": "bnd_d279c84d4c57ad76",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_cc0f1f819b11aeb4",
+            "revision_id": "rev_1477e738161875eb"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》世界与时代背景",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_009c95ccf5aa050c",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_a53bcffa6cf69049",
+            "revision_id": "rev_d6d8290b5230d943"
+          },
+          "label": "《夜牙》专名表与用词",
+          "kind": "reference",
+          "name": "《夜牙》专名表与用词",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_eb4c0ab3e7211cde",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_bd195731dcf4b996",
+            "revision_id": "rev_ebd229f8866d255e"
+          },
+          "label": "《夜牙》人物小传",
+          "kind": "reference",
+          "name": "《夜牙》人物小传",
+          "deleted": false,
+          "problems": []
+        }
+      ],
+      "links": []
+    },
+    "operations": [
+      {
+        "operation_id": "delete_free_papers_characters",
+        "action": "update",
+        "status": "saved",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "module_id": "mod_bd195731dcf4b996",
+        "base_revision": "rev_de68226a2933d788",
+        "edits": 3,
+        "saved": {
+          "operation_id": "delete_free_papers_characters",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_ebd229f8866d255e",
+          "binding_id": "bnd_eb4c0ab3e7211cde",
+          "name": "《夜牙》人物小传",
+          "created": false
+        }
+      },
+      {
+        "operation_id": "delete_free_papers_glossary",
+        "action": "update",
+        "status": "saved",
+        "binding_id": "bnd_009c95ccf5aa050c",
+        "module_id": "mod_a53bcffa6cf69049",
+        "base_revision": "rev_78c5f084d0e6583e",
+        "edits": 1,
+        "saved": {
+          "operation_id": "delete_free_papers_glossary",
+          "module_id": "mod_a53bcffa6cf69049",
+          "revision_id": "rev_d6d8290b5230d943",
+          "binding_id": "bnd_009c95ccf5aa050c",
+          "name": "《夜牙》专名表与用词",
+          "created": false
+        }
+      }
+    ],
+    "saved": [
+      {
+        "operation_id": "delete_free_papers_characters",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_ebd229f8866d255e",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "name": "《夜牙》人物小传",
+        "created": false
+      },
+      {
+        "operation_id": "delete_free_papers_glossary",
+        "module_id": "mod_a53bcffa6cf69049",
+        "revision_id": "rev_d6d8290b5230d943",
+        "binding_id": "bnd_009c95ccf5aa050c",
+        "name": "《夜牙》专名表与用词",
+        "created": false
+      }
+    ],
+    "saved_events": [
+      {
+        "operation_id": "delete_free_papers_characters",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_ebd229f8866d255e",
+        "name": "《夜牙》人物小传",
+        "created": false
+      },
+      {
+        "operation_id": "delete_free_papers_glossary",
+        "module_id": "mod_a53bcffa6cf69049",
+        "revision_id": "rev_d6d8290b5230d943",
+        "name": "《夜牙》专名表与用词",
+        "created": false
+      }
+    ],
+    "undo": {
+      "available": true,
+      "change_set_id": "chs_8b2c535d960af815"
+    },
+    "discarded": [],
+    "discard_failed": []
+  }
+}

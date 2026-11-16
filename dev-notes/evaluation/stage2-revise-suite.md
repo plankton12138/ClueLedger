@@ -99,4 +99,5 @@
 | 2026-11-15 | T3 | `report.py`：汇总、基线对比、门禁、`score` 合并复核；写出 `report.json`/`report.md`；24 passed |
 | 2026-11-15 | T4 | `evaluation workbench`：本机报告页 + 复核写回 + 合并评分；25 passed |
 | 2026-11-15 | T5 | 基础作品 `works/base/inn`（手写 v1）+ 案例 `revise_ch3_ending_snow`；`evaluation list` 可见 |
+| 2026-11-16 | 夹具 | 删除 `inn`；改用本机真实作品快照 `works/base/被解救的罪人` + 案例 `revise_ch1_ending_farm_tonight`；元数据在 `被解救的罪人.meta/` |
 | 2026-11-15 | T6 | `evaluation/README.md`；设计/导航状态同步 |

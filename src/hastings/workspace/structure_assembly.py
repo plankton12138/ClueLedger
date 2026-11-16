@@ -1,6 +1,6 @@
 """结构层注入装配（v1.1 M3，纯函数先行）。
 
-装配顺序契约（冻结，见 ``dev-notes/v1.1/notes/q0-contracts.md`` 第 4 节）：
+装配顺序契约（冻结，见 ``dev-notes/versions/v1.1/notes/q0-contracts.md`` 第 4 节）：
 
 1. ``STRUCTURE.md`` 全文（铁律在前；标记丢失时降级全文注入并如实标注）；
 2. 当次涉及的已装模块；

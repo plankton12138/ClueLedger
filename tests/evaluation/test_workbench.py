@@ -17,7 +17,7 @@ from evaluation.workbench.server import make_handler
 def _seed_report(run_dir: Path) -> None:
     results = [
         AttemptResult(
-            case_id="revise_ch3_ending_snow",
+            case_id="revise_ch1_ending_farm_tonight",
             attempt=1,
             status="completed",
             grade=AttemptGrade(
@@ -33,7 +33,7 @@ def _seed_report(run_dir: Path) -> None:
                             {"type": "span", "turn_id": "t_1", "span_id": "tool:1"},
                         ],
                     ),
-                    CheckResult("snow", "human", "pending_review", "是否雪夜？"),
+                    CheckResult("farm_tonight", "human", "pending_review", "是否当晚去农场？"),
                 ),
             ),
             evidence=None,
@@ -53,24 +53,24 @@ def _seed_report(run_dir: Path) -> None:
 
 
 def _seed_evidence(run_dir: Path) -> None:
-    attempt = run_dir / "attempts" / "revise_ch3_ending_snow--1"
+    attempt = run_dir / "attempts" / "revise_ch1_ending_farm_tonight--1"
     evidence = attempt / "evidence"
     work = attempt / "work" / "正文"
     work.mkdir(parents=True)
     evidence.mkdir(parents=True)
     (evidence / "traces").mkdir()
     (evidence / "inputs").mkdir()
-    text = "前文\n\n林岚推开客栈的门，雨还在下。\n\n「你昨晚去了哪里？」\n"
-    (work / "0003 客栈夜询.md").write_text(text, encoding="utf-8")
+    text = "前文\n\n天黑得比钟点早。\n\n霍布斯说他今年挖了五个坑，账上只有三个名。\n"
+    (work / "0001 拔牙人进镇.md").write_text(text, encoding="utf-8")
     (evidence / "before.json").write_text(
-        json.dumps({"正文/0003 客栈夜询.md": text}, ensure_ascii=False),
+        json.dumps({"正文/0001 拔牙人进镇.md": text}, ensure_ascii=False),
         encoding="utf-8",
     )
     (evidence / "diff.json").write_text(
         json.dumps(
             {
                 "changed": [],
-                "unchanged": ["正文/0003 客栈夜询.md"],
+                "unchanged": ["正文/0001 拔牙人进镇.md"],
                 "added": [],
                 "removed": [],
             }
@@ -80,13 +80,13 @@ def _seed_evidence(run_dir: Path) -> None:
     (attempt / "meta.json").write_text(
         json.dumps(
             {
-                "case_id": "revise_ch3_ending_snow",
+                "case_id": "revise_ch1_ending_farm_tonight",
                 "attempt": 1,
                 "turns": [
                     {
                         "turn_id": "t_1",
-                        "author": "改成雪夜",
-                        "focus": "正文/0003 客栈夜询.md",
+                        "author": "改成当晚去农场",
+                        "focus": "正文/0001 拔牙人进镇.md",
                     }
                 ],
             },
@@ -113,7 +113,7 @@ def _seed_evidence(run_dir: Path) -> None:
                 "turn": {
                     "turn_id": "t_1",
                     "seq": 1,
-                    "text": "改成雪夜",
+                    "text": "改成当晚去农场",
                     "started_at": "2026-11-15T00:00:00+08:00",
                     "finished_at": "2026-11-15T00:00:10+08:00",
                     "duration_ms": 10000,
@@ -193,9 +193,9 @@ def test_workbench_review_and_score(tmp_path: Path) -> None:
                 json={
                     "reviews": [
                         {
-                            "case_id": "revise_ch3_ending_snow",
+                            "case_id": "revise_ch1_ending_farm_tonight",
                             "attempt": 1,
-                            "check_id": "snow",
+                            "check_id": "farm_tonight",
                             "verdict": "pass",
                             "evidence_ref": "",
                         }
@@ -208,16 +208,16 @@ def test_workbench_review_and_score(tmp_path: Path) -> None:
                 json={
                     "reviews": [
                         {
-                            "case_id": "revise_ch3_ending_snow",
+                            "case_id": "revise_ch1_ending_farm_tonight",
                             "attempt": 1,
-                            "check_id": "snow",
+                            "check_id": "farm_tonight",
                             "verdict": "pass",
                             "evidence_ref": "after:正文/0003.md#雪",
                         }
                     ],
                     "attributions": [
                         {
-                            "case_id": "revise_ch3_ending_snow",
+                            "case_id": "revise_ch1_ending_farm_tonight",
                             "attempt": 1,
                             "category": "tool",
                             "note": "转而 ask_author",
@@ -242,13 +242,169 @@ def test_workbench_attempt_evidence_apis(tmp_path: Path) -> None:
     server, base = _serve(runs_root)
     try:
         with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
-            attempt = client.get("/api/runs/demo/attempts/revise_ch3_ending_snow/1").json()
+            attempt = client.get("/api/runs/demo/attempts/revise_ch1_ending_farm_tonight/1").json()
             assert attempt["default_attribution"] == "tool"
             assert attempt["turns"][0]["turn_id"] == "t_1"
-            trace = client.get("/api/runs/demo/attempts/revise_ch3_ending_snow/1/traces/t_1").json()
+            trace = client.get(
+                "/api/runs/demo/attempts/revise_ch1_ending_farm_tonight/1/traces/t_1"
+            ).json()
             assert trace["events"][0]["span_id"] == "tool:1"
-            diff = client.get("/api/runs/demo/attempts/revise_ch3_ending_snow/1/diff").json()
+            diff = client.get(
+                "/api/runs/demo/attempts/revise_ch1_ending_farm_tonight/1/diff"
+            ).json()
             assert diff["unchanged"] is True
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_workbench_cases_and_related_runs(tmp_path: Path) -> None:
+    from evaluation.workbench import jobs as jobmod
+
+    jobmod.reset_jobs_for_tests()
+    runs_root = tmp_path / "runs"
+    run_dir = runs_root / "smoke-related"
+    _seed_report(run_dir)
+    server, base = _serve(runs_root)
+    try:
+        with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
+            listed = client.get("/api/cases").json()
+            ids = {item["id"] for item in listed["cases"]}
+            assert "revise_ch1_ending_farm_tonight" in ids
+            detail = client.get("/api/cases/revise_ch1_ending_farm_tonight").json()
+            assert detail["expect"]["region"]["path"].endswith(".md")
+            assert detail["checks"]
+            related = client.get("/api/cases/revise_ch1_ending_farm_tonight/runs").json()
+            assert {item["id"] for item in related["runs"]} == {"smoke-related"}
+    finally:
+        server.shutdown()
+        server.server_close()
+        jobmod.reset_jobs_for_tests()
+
+
+def test_workbench_jobs_validation_and_conflict(tmp_path: Path, monkeypatch) -> None:
+    from evaluation.harness import runner_api
+    from evaluation.harness.runner_api import BatchResult
+    from evaluation.workbench import jobs as jobmod
+
+    jobmod.reset_jobs_for_tests()
+    runs_root = tmp_path / "runs"
+    runs_root.mkdir()
+    server, base = _serve(runs_root)
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_run_batch(**kwargs):  # type: ignore[no-untyped-def]
+        out_dir = kwargs["out_dir"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.json").write_text("{}", encoding="utf-8")
+        started.set()
+        # 等取消或超时
+        for _ in range(50):
+            if kwargs.get("cancel_event") is not None and kwargs["cancel_event"].is_set():
+                return BatchResult(status="cancelled", report={}, cancelled=True, error="已取消")
+            if release.wait(0.05):
+                break
+        return BatchResult(status="completed", report={"gate": {"passed": True}}, results=[])
+
+    monkeypatch.setattr(jobmod, "run_batch", fake_run_batch)
+    monkeypatch.setattr(runner_api, "resolve_cases", lambda *_a, **_k: [])
+    # resolve_cases is imported into jobs — patch jobs.resolve_cases
+    monkeypatch.setattr(jobmod, "resolve_cases", lambda *_a, **_k: ["ok"])
+
+    try:
+        with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
+            empty = client.post(
+                "/api/jobs",
+                json={
+                    "case_ids": [],
+                    "mode": "smoke",
+                    "repeat": 1,
+                    "base_url": "http://127.0.0.1:9",
+                },
+            )
+            assert empty.status_code == 400
+
+            gate_bad = client.post(
+                "/api/jobs",
+                json={
+                    "case_ids": ["revise_ch1_ending_farm_tonight"],
+                    "mode": "gate",
+                    "repeat": 1,
+                    "base_url": "http://127.0.0.1:9",
+                },
+            )
+            assert gate_bad.status_code == 400
+
+            first = client.post(
+                "/api/jobs",
+                json={
+                    "case_ids": ["revise_ch1_ending_farm_tonight"],
+                    "mode": "smoke",
+                    "repeat": 1,
+                    "base_url": "http://127.0.0.1:9",
+                    "out_name": "job-one",
+                },
+            )
+            assert first.status_code == 201, first.text
+            job_id = first.json()["id"]
+            assert started.wait(2.0)
+
+            second = client.post(
+                "/api/jobs",
+                json={
+                    "case_ids": ["revise_ch1_ending_farm_tonight"],
+                    "mode": "smoke",
+                    "repeat": 1,
+                    "base_url": "http://127.0.0.1:9",
+                    "out_name": "job-two",
+                },
+            )
+            assert second.status_code == 409
+
+            cancelled = client.post(f"/api/jobs/{job_id}/cancel")
+            assert cancelled.status_code == 200
+            # 等线程收尾
+            for _ in range(40):
+                payload = client.get(f"/api/jobs/{job_id}").json()
+                if payload["status"] in {"cancelled", "completed", "failed"}:
+                    break
+                threading.Event().wait(0.05)
+            else:
+                release.set()
+            final = client.get(f"/api/jobs/{job_id}").json()
+            assert final["status"] in {"cancelled", "completed", "failed"}
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        jobmod.reset_jobs_for_tests()
+
+
+def test_workbench_jobs_rejects_existing_out(tmp_path: Path, monkeypatch) -> None:
+    from evaluation.workbench import jobs as jobmod
+
+    jobmod.reset_jobs_for_tests()
+    runs_root = tmp_path / "runs"
+    (runs_root / "exists").mkdir(parents=True)
+    server, base = _serve(runs_root)
+    monkeypatch.setattr(jobmod, "resolve_cases", lambda *_a, **_k: ["ok"])
+    try:
+        with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
+            resp = client.post(
+                "/api/jobs",
+                json={
+                    "case_ids": ["revise_ch1_ending_farm_tonight"],
+                    "mode": "smoke",
+                    "repeat": 1,
+                    "base_url": "http://127.0.0.1:9",
+                    "out_name": "exists",
+                },
+            )
+            assert resp.status_code == 400
+            assert "EVAL_OUT" in resp.text
+    finally:
+        server.shutdown()
+        server.server_close()
+        jobmod.reset_jobs_for_tests()

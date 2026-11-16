@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { TraceDetailView, TraceTimelineView } from "../components/trace";
 import type { TraceEvent, TurnTrace } from "../components/trace";
@@ -19,20 +19,89 @@ import {
   mergeScore,
   saveReviews,
 } from "./api";
+import { CasesPage } from "./CasesPage";
 import { evidenceTraceLoader } from "./evidenceLoader";
+import { LaunchPage } from "./LaunchPage";
 import { checkLens, firstSpanRef, hasFileRef, marksFromChecks, missingFromChecks } from "./marks";
+import { resolveTheme, toggleTheme, type WbTheme } from "./theme";
 
-function readHashRun(): string | null {
-  const match = location.hash.match(/^#\/?runs\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+function ShellHeader({
+  nav,
+  theme,
+  onToggleTheme,
+  children,
+}: {
+  nav: ReactNode;
+  theme: WbTheme;
+  onToggleTheme: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="wb-header">
+      <h1>评测工作台</h1>
+      {nav}
+      {children}
+      <span className="wb-header-spacer" />
+      <button
+        type="button"
+        className="wb-chip ghost wb-theme-toggle"
+        onClick={onToggleTheme}
+        aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+        title={theme === "dark" ? "浅色" : "深色"}
+      >
+        {theme === "dark" ? "浅色" : "深色"}
+      </button>
+    </header>
+  );
 }
 
-function writeHashRun(runId: string | null) {
-  const next = runId ? `#/runs/${encodeURIComponent(runId)}` : "";
-  const current = location.hash.replace(/^#/, "") ? location.hash : "";
-  if (current === next) return;
-  if (next) location.hash = next;
-  else history.pushState(null, "", `${location.pathname}${location.search}`);
+type Route =
+  | { page: "cases"; caseId: string | null }
+  | { page: "runs"; runId: string | null; preferCaseId?: string | null }
+  | { page: "launch"; presetCaseIds: string[] };
+
+function parseHash(): Route {
+  const raw = location.hash.replace(/^#/, "");
+  const [pathPart, queryPart = ""] = raw.split("?");
+  const path = pathPart.replace(/^\//, "");
+  const params = new URLSearchParams(queryPart);
+  if (path.startsWith("cases/") || path === "cases") {
+    const id = path === "cases" ? null : decodeURIComponent(path.slice("cases/".length).split("/")[0] || "");
+    return { page: "cases", caseId: id || null };
+  }
+  if (path.startsWith("launch")) {
+    const cases = (params.get("cases") || "")
+      .split(",")
+      .map(item => item.trim())
+      .filter(Boolean);
+    return { page: "launch", presetCaseIds: cases };
+  }
+  if (path.startsWith("runs/") || path === "runs" || path === "") {
+    if (path === "runs" || path === "") return { page: "runs", runId: null };
+    const id = decodeURIComponent(path.slice("runs/".length).split("/")[0] || "");
+    return { page: "runs", runId: id || null, preferCaseId: params.get("case") };
+  }
+  // 兼容旧链接：#/runs/foo 以外的纯运行名
+  const legacy = location.hash.match(/^#\/?runs\/([^/?#]+)/);
+  if (legacy) return { page: "runs", runId: decodeURIComponent(legacy[1]) };
+  return { page: "runs", runId: null };
+}
+
+function writeHash(route: Route) {
+  let next = "#/runs";
+  if (route.page === "cases") {
+    next = route.caseId ? `#/cases/${encodeURIComponent(route.caseId)}` : "#/cases";
+  } else if (route.page === "launch") {
+    const q = route.presetCaseIds.length
+      ? `?cases=${route.presetCaseIds.map(encodeURIComponent).join(",")}`
+      : "";
+    next = `#/launch${q}`;
+  } else if (route.runId) {
+    const q = route.preferCaseId ? `?case=${encodeURIComponent(route.preferCaseId)}` : "";
+    next = `#/runs/${encodeURIComponent(route.runId)}${q}`;
+  }
+  if (location.hash === next) return;
+  location.hash = next;
 }
 
 const VERDICT: Record<string, string> = {
@@ -79,9 +148,10 @@ function highlightRegion(text: string, from?: string, to?: string, preserve: str
 }
 
 export function WorkbenchApp() {
+  const [route, setRoute] = useState<Route>(() => parseHash());
+  const [theme, setTheme] = useState<WbTheme>(() => resolveTheme());
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runsRoot, setRunsRoot] = useState("");
-  const [runId, setRunId] = useState<string | null>(() => readHashRun());
   const [report, setReport] = useState<Report | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [attributions, setAttributions] = useState<Attribution[]>([]);
@@ -90,6 +160,12 @@ export function WorkbenchApp() {
   const [filter, setFilter] = useState<Filter>("all");
   const [selection, setSelection] = useState<Selection>(null);
   const [view, setView] = useState<"overview" | "attempt">("overview");
+
+  const onToggleTheme = useCallback(() => {
+    setTheme(current => toggleTheme(current));
+  }, []);
+
+  const runId = route.page === "runs" ? route.runId : null;
 
   const loadRuns = useCallback(async () => {
     setError("");
@@ -102,18 +178,25 @@ export function WorkbenchApp() {
     }
   }, []);
 
-  const openRun = useCallback((id: string | null) => {
-    setError("");
-    setReport(null);
-    setReviews([]);
-    setAttributions([]);
-    setSelection(null);
-    setView("overview");
-    setStatus("");
-    setRunId(id);
-    writeHashRun(id);
-    if (!id) void loadRuns();
-  }, [loadRuns]);
+  const navigate = useCallback((next: Route) => {
+    setRoute(next);
+    writeHash(next);
+  }, []);
+
+  const openRun = useCallback(
+    (id: string | null, preferCaseId?: string) => {
+      setError("");
+      setReport(null);
+      setReviews([]);
+      setAttributions([]);
+      setSelection(null);
+      setView("overview");
+      setStatus("");
+      navigate({ page: "runs", runId: id, preferCaseId: preferCaseId || null });
+      if (!id) void loadRuns();
+    },
+    [loadRuns, navigate],
+  );
 
   const reload = useCallback(async () => {
     if (!runId) return;
@@ -131,12 +214,10 @@ export function WorkbenchApp() {
 
   useEffect(() => {
     void loadRuns();
-    const syncHash = () => {
-      const next = readHashRun();
-      setRunId(current => (current === next ? current : next));
-    };
+    const syncHash = () => setRoute(parseHash());
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
+    if (!location.hash) writeHash({ page: "runs", runId: null });
     return () => {
       window.removeEventListener("hashchange", syncHash);
       window.removeEventListener("popstate", syncHash);
@@ -152,6 +233,7 @@ export function WorkbenchApp() {
     }
     let cancelled = false;
     setError("");
+    const preferCaseId = route.page === "runs" ? route.preferCaseId : null;
     void (async () => {
       try {
         const nextReport = await fetchReport(runId);
@@ -160,18 +242,27 @@ export function WorkbenchApp() {
         setReport(nextReport);
         setReviews(payload.reviews || []);
         setAttributions(payload.attributions || []);
-        // 仅首次进入该运行时，单案例直接进试验；之后「总览 / 返回」不再被拽回去
-        if ((nextReport.cases || []).length === 1) {
-          const only = nextReport.cases![0];
+        const cases = nextReport.cases || [];
+        if (preferCaseId) {
+          const matched = cases.find(item => item.case_id === preferCaseId);
+          const first = matched?.attempts?.[0];
+          if (first) {
+            setSelection({ caseId: preferCaseId, attempt: first.attempt });
+            setView("attempt");
+            return;
+          }
+        }
+        if (cases.length === 1) {
+          const only = cases[0];
           const first = only.attempts?.[0];
           if (first) {
             setSelection({ caseId: only.case_id, attempt: first.attempt });
             setView("attempt");
+            return;
           }
-        } else {
-          setSelection(null);
-          setView("overview");
         }
+        setSelection(null);
+        setView("overview");
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
       }
@@ -179,7 +270,7 @@ export function WorkbenchApp() {
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runId, route]);
 
   async function persistAndScore(nextReviews: Review[], nextAttrs: Attribution[]) {
     if (!runId) return;
@@ -197,45 +288,124 @@ export function WorkbenchApp() {
     }
   }
 
-  if (error && !runId) {
-    return <div className="wb-root"><p className="wb-error" role="alert">{error}</p></div>;
+  const nav = (
+    <nav className="wb-nav">
+      <button
+        type="button"
+        className={`wb-chip ${route.page === "cases" ? "btn" : "ghost"}`}
+        onClick={() => navigate({ page: "cases", caseId: null })}
+      >
+        Case 库
+      </button>
+      <button
+        type="button"
+        className={`wb-chip ${route.page === "runs" ? "btn" : "ghost"}`}
+        onClick={() => openRun(null)}
+      >
+        结果
+      </button>
+      <button
+        type="button"
+        className={`wb-chip ${route.page === "launch" ? "btn" : "ghost"}`}
+        onClick={() => navigate({ page: "launch", presetCaseIds: [] })}
+      >
+        跑测
+      </button>
+    </nav>
+  );
+
+  if (route.page === "cases") {
+    return (
+      <div className="wb-root">
+        <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme} />
+        <CasesPage
+          caseId={route.caseId}
+          onOpenCase={id => navigate({ page: "cases", caseId: id })}
+          onOpenRun={(id, prefer) => openRun(id, prefer)}
+          onLaunchCase={id => navigate({ page: "launch", presetCaseIds: [id] })}
+        />
+      </div>
+    );
+  }
+
+  if (route.page === "launch") {
+    return (
+      <div className="wb-root">
+        <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme} />
+        <LaunchPage presetCaseIds={route.presetCaseIds} onOpenRun={id => openRun(id)} />
+      </div>
+    );
   }
 
   if (!runId) {
     return (
       <div className="wb-root">
-        <header className="wb-header">
-          <h1>评测工作台</h1>
+        <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme}>
           <span className="wb-chip">本机已落盘运行</span>
-          <span className="wb-chip btn" onClick={() => void loadRuns()} role="button">刷新列表</span>
-        </header>
-        <RunPicker runs={runs} runsRoot={runsRoot} onOpen={openRun} />
+          <button type="button" className="wb-chip ghost" onClick={() => void loadRuns()}>
+            刷新列表
+          </button>
+        </ShellHeader>
+        {error && <p className="wb-error" role="alert">{error}</p>}
+        <RunPicker runs={runs} runsRoot={runsRoot} onOpen={id => openRun(id)} />
       </div>
     );
   }
 
-  if (error) return <div className="wb-root"><p className="wb-error" role="alert">{error}</p></div>;
-  if (!report) return <div className="wb-root"><p className="wb-muted" style={{ padding: "1rem" }}>正在读取报告…</p></div>;
+  if (error) {
+    return (
+      <div className="wb-root">
+        <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme}>
+          <button type="button" className="wb-chip ghost" onClick={() => openRun(null)}>
+            ← 结果列表
+          </button>
+        </ShellHeader>
+        <p className="wb-error" role="alert">{error}</p>
+      </div>
+    );
+  }
+  if (!report) {
+    return (
+      <div className="wb-root">
+        <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme} />
+        <p className="wb-muted" style={{ padding: "1rem" }}>
+          正在读取报告…
+        </p>
+      </div>
+    );
+  }
 
   const identity = report.identity || {};
   const gate = report.gate || {};
 
   return (
     <div className="wb-root">
-      <header className="wb-header">
-        <h1>评测工作台</h1>
+      <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme}>
         <span className="wb-chip mono">{runId}</span>
         <span className="wb-chip">{report.mode === "gate" ? "门禁 · 每案 3 次" : "冒烟 · 每案 1 次"}</span>
-        {identity.git_commit != null && <span className="wb-chip mono">{String(identity.git_commit).slice(0, 8)}</span>}
+        {identity.git_commit != null && (
+          <span className="wb-chip mono">{String(identity.git_commit).slice(0, 8)}</span>
+        )}
         {identity.model != null && <span className="wb-chip">{String(identity.model)}</span>}
         {identity.budget_used != null && (
-          <span className="wb-chip">预算 {String(identity.budget_used)}{identity.budget_max != null ? ` / ${String(identity.budget_max)}` : ""}</span>
+          <span className="wb-chip">
+            预算 {String(identity.budget_used)}
+            {identity.budget_max != null ? ` / ${String(identity.budget_max)}` : ""}
+          </span>
         )}
-        <span className={`wb-chip ${gate.passed ? "ok" : "bad"}`}>{gate.passed ? "门禁通过" : "门禁不通过"}</span>
+        <span className={`wb-chip ${gate.passed ? "ok" : "bad"}`}>
+          {gate.passed ? "门禁通过" : "门禁不通过"}
+        </span>
         {report.baseline_compare && (
-          <span className="wb-chip">对比基线 {String((report.baseline_compare.baseline_identity || {}).git_commit || "").slice(0, 8) || "已绑定"}</span>
+          <span className="wb-chip">
+            对比基线{" "}
+            {String((report.baseline_compare.baseline_identity || {}).git_commit || "").slice(0, 8) ||
+              "已绑定"}
+          </span>
         )}
-        <button type="button" className="wb-chip btn" onClick={() => openRun(null)}>← 运行列表</button>
+        <button type="button" className="wb-chip ghost" onClick={() => openRun(null)}>
+          ← 结果列表
+        </button>
         {view === "attempt" && (
           <button
             type="button"
@@ -248,8 +418,10 @@ export function WorkbenchApp() {
             本案总览
           </button>
         )}
-        <button type="button" className="wb-chip ghost" onClick={() => void reload()}>刷新</button>
-      </header>
+        <button type="button" className="wb-chip ghost" onClick={() => void reload()}>
+          刷新
+        </button>
+      </ShellHeader>
 
       {view === "overview" || !selection ? (
         <Overview

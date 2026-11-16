@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from evaluation.harness.evidence import attempt_paths
-from evaluation.harness.schema import CaseLoadError, load_cases
+from evaluation.harness.schema import Case, CaseLoadError, load_cases
 
 CASES_ROOT = Path(__file__).resolve().parents[1] / "cases"
 WORKS_ROOT = Path(__file__).resolve().parents[1] / "works"
@@ -255,3 +255,102 @@ def list_runs(runs_root: Path) -> list[dict[str, Any]]:
         )
     items.sort(key=lambda item: float(item.get("mtime") or 0), reverse=True)
     return items
+
+
+def _check_counts(case: Case) -> dict[str, int]:
+    counts = {"must": 0, "quality": 0, "human": 0}
+    for check in case.checks:
+        level = str(check.level)
+        if level in counts:
+            counts[level] += 1
+    return counts
+
+
+def list_cases(
+    cases_root: Path | None = None,
+    works_root: Path | None = None,
+) -> list[dict[str, Any]]:
+    root = cases_root or CASES_ROOT
+    works = works_root or WORKS_ROOT
+    cases = load_cases(root, works_root=works)
+    items: list[dict[str, Any]] = []
+    for case in cases:
+        items.append(
+            {
+                "id": case.id,
+                "version": case.version,
+                "work": case.work,
+                "history": case.history,
+                "step_count": len(case.steps),
+                "check_counts": _check_counts(case),
+                "source": str(case.source),
+            }
+        )
+    return items
+
+
+def get_case_detail(
+    case_id: str,
+    *,
+    cases_root: Path | None = None,
+    works_root: Path | None = None,
+) -> dict[str, Any] | None:
+    root = cases_root or CASES_ROOT
+    works = works_root or WORKS_ROOT
+    try:
+        cases = {item.id: item for item in load_cases(root, works_root=works)}
+    except CaseLoadError:
+        return None
+    case = cases.get(case_id)
+    if case is None:
+        return None
+    return {
+        "id": case.id,
+        "version": case.version,
+        "work": case.work,
+        "work_dir": str(case.work_dir),
+        "history": case.history,
+        "source": str(case.source),
+        "steps": [{"author": step.author, "focus": step.focus} for step in case.steps],
+        "expect": {
+            "region": {
+                "path": case.expect.region.path,
+                "from": case.expect.region.from_anchor,
+                "to": case.expect.region.to_anchor,
+            },
+            "preserve": list(case.expect.preserve),
+        },
+        "checks": [
+            {"id": check.id, "level": check.level, "question": check.question}
+            for check in case.checks
+        ],
+        "check_counts": _check_counts(case),
+    }
+
+
+def list_runs_for_case(runs_root: Path, case_id: str) -> list[dict[str, Any]]:
+    """扫描含该 case_id 的历史运行摘要。"""
+    related: list[dict[str, Any]] = []
+    for item in list_runs(runs_root):
+        run_dir = resolve_run_dir(runs_root, str(item["id"]))
+        if run_dir is None:
+            continue
+        report = read_json(run_dir / "report.json", {})
+        attempts = report.get("attempts") if isinstance(report, dict) else None
+        if not isinstance(attempts, list):
+            continue
+        matched = [
+            row for row in attempts if isinstance(row, dict) and row.get("case_id") == case_id
+        ]
+        if not matched:
+            continue
+        outcomes = [str(row.get("outcome") or row.get("status") or "") for row in matched]
+        related.append(
+            {
+                **item,
+                "case_id": case_id,
+                "attempt_count": len(matched),
+                "outcomes": outcomes,
+            }
+        )
+    return related

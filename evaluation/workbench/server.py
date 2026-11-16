@@ -1,4 +1,4 @@
-"""本机轻量服务：浏览已落盘运行、读证据包、写复核与归因；托管工作台前端。"""
+"""本机轻量服务：Case 库、已落盘运行、跑测 Job；托管工作台前端。"""
 
 from __future__ import annotations
 
@@ -11,20 +11,51 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from evaluation.harness.report import apply_reviews, gate_decision, write_report
+from evaluation.harness.runner_api import RunBatchError
+from evaluation.harness.schema import CaseLoadError
 from evaluation.workbench import data as wb
+from evaluation.workbench import jobs as jobmod
 
 STATIC = Path(__file__).resolve().parent / "static"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
 DEFAULT_RUNS_ROOT = REPO_ROOT / "data" / "evaluation" / "runs"
+DEFAULT_CASES_ROOT = Path(__file__).resolve().parents[1] / "cases"
+DEFAULT_WORKS_ROOT = Path(__file__).resolve().parents[1] / "works"
 
 
 def _error(code: str, where: str, why: str, fix: str) -> dict[str, Any]:
     return {"error": {"code": code, "where": where, "why": why, "fix": fix}}
 
 
-def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
+def _parse_error_message(message: str) -> tuple[str, str, str, str]:
+    """从 `[CODE] where：why。建议：fix` 拆字段；失败则整段进 why。"""
+    code = "EVAL_ERROR"
+    where = "workbench"
+    why = message
+    fix = "检查请求后重试"
+    text = message.strip()
+    if text.startswith("[") and "]" in text:
+        code = text[1 : text.index("]")]
+        rest = text[text.index("]") + 1 :].strip()
+        if "：" in rest:
+            where, rest = rest.split("：", 1)
+        if "。建议：" in rest:
+            why, fix = rest.split("。建议：", 1)
+        else:
+            why = rest
+    return code, where, why, fix
+
+
+def make_handler(
+    runs_root: Path,
+    *,
+    cases_root: Path | None = None,
+    works_root: Path | None = None,
+) -> type[BaseHTTPRequestHandler]:
     runs_root = runs_root.resolve()
+    cases_root = (cases_root or DEFAULT_CASES_ROOT).resolve()
+    works_root = (works_root or DEFAULT_WORKS_ROOT).resolve()
     dist = FRONTEND_DIST if (FRONTEND_DIST / "eval-workbench.html").is_file() else None
 
     class Handler(BaseHTTPRequestHandler):
@@ -280,6 +311,154 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
 
             return False
 
+        def _cases_api(self, rest: list[str], method: str) -> bool:
+            if method != "GET":
+                return False
+            if not rest:
+                try:
+                    cases = wb.list_cases(cases_root, works_root)
+                except CaseLoadError as exc:
+                    self._send_json(
+                        400,
+                        _error("EVAL_CASE", "workbench.cases", str(exc), "修正案例或作品初态"),
+                    )
+                    return True
+                self._send_json(
+                    200,
+                    {
+                        "cases": cases,
+                        "cases_root": str(cases_root),
+                        "works_root": str(works_root),
+                    },
+                )
+                return True
+            case_id = unquote(rest[0])
+            if len(rest) == 1:
+                detail = wb.get_case_detail(case_id, cases_root=cases_root, works_root=works_root)
+                if detail is None:
+                    self._send_json(
+                        404,
+                        _error(
+                            "CASE_MISSING",
+                            "workbench.cases",
+                            f"找不到案例 {case_id}",
+                            "用 Case 列表核对 id",
+                        ),
+                    )
+                    return True
+                self._send_json(200, detail)
+                return True
+            if len(rest) == 2 and rest[1] == "runs":
+                self._send_json(
+                    200,
+                    {
+                        "case_id": case_id,
+                        "runs": wb.list_runs_for_case(runs_root, case_id),
+                    },
+                )
+                return True
+            return False
+
+        def _jobs_api(self, rest: list[str], method: str) -> bool:
+            if method == "GET" and not rest:
+                self._send_json(
+                    200, {"jobs": jobmod.list_jobs(), "active_id": jobmod.active_job_id()}
+                )
+                return True
+            if method == "GET" and len(rest) == 1:
+                payload = jobmod.get_job(unquote(rest[0]))
+                if payload is None:
+                    self._send_json(
+                        404,
+                        _error("JOB_MISSING", "workbench.jobs", "找不到任务", "从任务列表重选"),
+                    )
+                    return True
+                self._send_json(200, payload)
+                return True
+            if method == "POST" and not rest:
+                body = self._read_body()
+                if not isinstance(body, dict):
+                    self._send_json(
+                        400,
+                        _error("JOB_INVALID", "workbench.jobs", "请求体须为对象", "提交跑测参数"),
+                    )
+                    return True
+                case_ids = body.get("case_ids") or []
+                if not isinstance(case_ids, list):
+                    self._send_json(
+                        400,
+                        _error("JOB_INVALID", "workbench.jobs", "case_ids 须为数组", "勾选案例"),
+                    )
+                    return True
+                mode = str(body.get("mode") or "smoke")
+                try:
+                    repeat = int(body.get("repeat") or (3 if mode == "gate" else 1))
+                    max_requests = int(body.get("max_requests") or 30)
+                    timeout_s = float(body.get("timeout") or 300.0)
+                except (TypeError, ValueError):
+                    self._send_json(
+                        400,
+                        _error(
+                            "JOB_INVALID",
+                            "workbench.jobs",
+                            "repeat / max_requests / timeout 无效",
+                            "改为数字",
+                        ),
+                    )
+                    return True
+                out_name = body.get("out_name")
+                baseline_name = body.get("baseline")
+                baseline_path: Path | None = None
+                if baseline_name:
+                    baseline_dir = wb.resolve_run_dir(runs_root, str(baseline_name))
+                    if baseline_dir is None:
+                        self._send_json(
+                            400,
+                            _error(
+                                "BASELINE_MISSING",
+                                "workbench.jobs",
+                                f"找不到基线运行 {baseline_name}",
+                                "从结果列表选已有运行",
+                            ),
+                        )
+                        return True
+                    baseline_path = baseline_dir / "report.json"
+                try:
+                    job = jobmod.create_job(
+                        runs_root=runs_root,
+                        cases_root=cases_root,
+                        works_root=works_root,
+                        case_ids=[str(item) for item in case_ids],
+                        mode=mode,
+                        repeat=repeat,
+                        base_url=str(body.get("base_url") or ""),
+                        max_requests=max_requests,
+                        out_name=str(out_name) if out_name else None,
+                        baseline=baseline_path,
+                        timeout_s=timeout_s,
+                    )
+                except jobmod.JobConflictError as exc:
+                    code, where, why, fix = _parse_error_message(str(exc))
+                    self._send_json(409, _error(code, where, why, fix))
+                    return True
+                except RunBatchError as exc:
+                    code, where, why, fix = _parse_error_message(str(exc))
+                    self._send_json(400, _error(code, where, why, fix))
+                    return True
+                self._send_json(201, job.to_dict())
+                return True
+            if method == "POST" and len(rest) == 2 and rest[1] == "cancel":
+                payload = jobmod.cancel_job(unquote(rest[0]))
+                if payload is None:
+                    self._send_json(
+                        404,
+                        _error("JOB_MISSING", "workbench.jobs", "找不到任务", "从任务列表重选"),
+                    )
+                    return True
+                self._send_json(200, payload)
+                return True
+            return False
+
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             parts = [part for part in path.split("/") if part]
@@ -301,6 +480,12 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                 )
                 return
 
+            if parts[:2] == ["api", "cases"] and self._cases_api(parts[2:], "GET"):
+                return
+
+            if parts[:2] == ["api", "jobs"] and self._jobs_api(parts[2:], "GET"):
+                return
+
             if (
                 len(parts) >= 3
                 and parts[0] == "api"
@@ -318,7 +503,7 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     "NOT_FOUND",
                     "workbench",
                     f"未知路径 {path}",
-                    "打开 / 从运行列表进入",
+                    "打开 / 从 Case 库、结果或跑测进入",
                 ),
             )
 
@@ -345,6 +530,8 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             parts = [part for part in path.split("/") if part]
+            if parts[:2] == ["api", "jobs"] and self._jobs_api(parts[2:], "POST"):
+                return
             if (
                 len(parts) >= 3
                 and parts[0] == "api"
@@ -358,7 +545,7 @@ def make_handler(runs_root: Path) -> type[BaseHTTPRequestHandler]:
                     "NOT_FOUND",
                     "workbench",
                     f"未知路径 {path}",
-                    "使用 POST /api/runs/<id>/score",
+                    "使用 POST /api/jobs 或 /api/runs/<id>/score",
                 ),
             )
 
@@ -372,16 +559,23 @@ def serve(
     port: int = 8765,
     open_browser: bool = True,
     initial_run: str | None = None,
+    cases_root: Path | None = None,
+    works_root: Path | None = None,
 ) -> None:
     root = (runs_root or DEFAULT_RUNS_ROOT).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    handler = make_handler(root)
+    handler = make_handler(
+        root,
+        cases_root=cases_root or DEFAULT_CASES_ROOT,
+        works_root=works_root or DEFAULT_WORKS_ROOT,
+    )
     server = ThreadingHTTPServer((host, port), handler)
     url = f"http://{host}:{port}/"
     if initial_run:
         url = f"{url}#/runs/{initial_run}"
     print(f"评测工作台：{url}")
     print(f"运行根目录：{root}")
+    print(f"案例目录：{(cases_root or DEFAULT_CASES_ROOT).resolve()}")
     if (FRONTEND_DIST / "eval-workbench.html").is_file():
         print(f"前端：{FRONTEND_DIST / 'eval-workbench.html'}")
     else:

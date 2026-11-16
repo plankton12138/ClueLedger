@@ -983,12 +983,19 @@ class TurnService:
             except Exception as exc:  # 未配置模型等情况在受理时就已经知道
                 snapshot, failure = None, exc
             model_facts = snapshot.describe() if snapshot is not None else {}
+            # 受理时刻的作品身份：与写前 version_baseline 不同，未写入的轮次也要能还原。
+            work_commit = GitRepo(self.workspace.root).head()
+            story_revision = (frozen.story.revision if frozen.story is not None else "") or ""
+            work_facts = {
+                "work_commit": work_commit or "",
+                "story_revision": story_revision,
+            }
             if conversation_id is None:
                 accepted = self.store.create_with_first_turn(
                     text=prompt,
                     request_key=request_key,
                     turn_id=turn_id,
-                    facts=model_facts,
+                    facts={**model_facts, **work_facts},
                     context=frozen.to_dict(),
                     purpose=purpose,
                     review_paths=review_targets,
@@ -1000,7 +1007,7 @@ class TurnService:
                     text=prompt,
                     request_key=request_key,
                     turn_id=turn_id,
-                    facts=model_facts,
+                    facts={**model_facts, **work_facts},
                     context=frozen.to_dict(),
                     purpose=purpose,
                     review_paths=review_targets,
@@ -1011,6 +1018,17 @@ class TurnService:
                     QuestionStore(self.store.root).answer(
                         question.question_id, answer=text.strip(), turn_id=turn_id
                     )
+            # 同键复用已受理轮次时上面会提前返回，不会走到这里；新受理才记一条。
+            _append_event(
+                self.store,
+                accepted.conversation_id,
+                turn_id,
+                "work_revision_recorded",
+                {
+                    "work_commit": work_commit or "",
+                    "story_revision": story_revision,
+                },
+            )
             # 旧记录的占位标题在首次受理时补上；作者改过的标题不动。
             if accepted.title == "新的对话":
                 with suppress(WorkspaceError):

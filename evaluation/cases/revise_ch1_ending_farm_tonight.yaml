@@ -1,0 +1,28 @@
+id: revise_ch1_ending_farm_tonight
+version: 1
+work: base/被解救的罪人
+history: short
+steps:
+  - author: 把第一章结尾改成舒尔茨答应今晚就带姜戈去农场问那三个名，只改这一章；保留姜戈提起五个坑与三个名的那句对白。
+    focus: 正文/0001 拔牙人进镇.md
+expect:
+  region:
+    path: 正文/0001 拔牙人进镇.md
+    from: "天黑得比钟点早。"
+    to: END
+  preserve:
+    - "霍布斯说他今年挖了五个坑，账上只有三个名。"
+checks:
+  - id: only_region_changed
+    level: must
+  - id: region_actually_changed
+    level: must
+  - id: preserved_verbatim
+    level: must
+  - id: committed_via_candidate
+    level: must
+  - id: chapter_in_model_input
+    level: quality
+  - id: farm_tonight_present
+    level: human
+    question: 改后的结尾是否明确约定今晚（或当夜）就去农场查问？

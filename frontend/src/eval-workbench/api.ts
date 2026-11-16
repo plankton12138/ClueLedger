@@ -114,6 +114,60 @@ export type RunSummary = {
   mtime?: number;
 };
 
+export type CaseSummary = {
+  id: string;
+  version: number;
+  work: string;
+  history: string;
+  step_count: number;
+  check_counts: { must: number; quality: number; human: number };
+  source: string;
+};
+
+export type CaseDetail = {
+  id: string;
+  version: number;
+  work: string;
+  work_dir: string;
+  history: string;
+  source: string;
+  steps: { author: string; focus?: string | null }[];
+  expect: {
+    region: { path: string; from: string; to: string };
+    preserve: string[];
+  };
+  checks: { id: string; level: string; question?: string | null }[];
+  check_counts: { must: number; quality: number; human: number };
+};
+
+export type CaseRunLink = RunSummary & {
+  case_id: string;
+  attempt_count: number;
+  outcomes: string[];
+};
+
+export type JobPayload = {
+  id: string;
+  status: string;
+  case_ids: string[];
+  mode: string;
+  repeat: number;
+  base_url: string;
+  max_requests: number;
+  out_name: string;
+  run_id: string;
+  created_at: string;
+  finished_at?: string | null;
+  completed_attempts: number;
+  total_attempts: number;
+  current_case?: string | null;
+  current_attempt?: number | null;
+  error?: string | null;
+  gate_passed?: boolean | null;
+  log: string[];
+  baseline?: string | null;
+};
+
 function runBase(runId: string) {
   return `/api/runs/${encodeURIComponent(runId)}`;
 }
@@ -164,3 +218,35 @@ export const fetchCapture = (runId: string, caseId: string, attempt: number) =>
   api<{ capture_inputs: boolean }>(
     `${runBase(runId)}/attempts/${encodeURIComponent(caseId)}/${attempt}/capture`,
   );
+
+export const fetchCases = () =>
+  api<{ cases: CaseSummary[]; cases_root: string; works_root: string }>("/api/cases");
+export const fetchCase = (caseId: string) =>
+  api<CaseDetail>(`/api/cases/${encodeURIComponent(caseId)}`);
+export const fetchCaseRuns = (caseId: string) =>
+  api<{ case_id: string; runs: CaseRunLink[] }>(
+    `/api/cases/${encodeURIComponent(caseId)}/runs`,
+  );
+
+export const fetchJobs = () =>
+  api<{ jobs: JobPayload[]; active_id: string | null }>("/api/jobs");
+export const fetchJob = (jobId: string) => api<JobPayload>(`/api/jobs/${encodeURIComponent(jobId)}`);
+export const createJob = (body: {
+  case_ids: string[];
+  mode: "smoke" | "gate";
+  repeat: number;
+  base_url: string;
+  max_requests: number;
+  out_name?: string;
+  baseline?: string;
+  timeout?: number;
+}) =>
+  api<JobPayload>("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const cancelJob = (jobId: string) =>
+  api<JobPayload>(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+    body: "{}",
+  });

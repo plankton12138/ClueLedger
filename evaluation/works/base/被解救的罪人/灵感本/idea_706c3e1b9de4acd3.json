@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_706c3e1b9de4acd3",
+  "head_revision_id": "irev_9e07081280c37a44",
+  "created_at": "2026-11-04T15:23:18.347940+00:00",
+  "updated_at": "2026-11-04T15:23:18.347940+00:00",
+  "revisions": [
+    {
+      "id": "irev_9e07081280c37a44",
+      "parent": null,
+      "created_at": "2026-11-04T15:23:18.347940+00:00",
+      "operation": "create",
+      "restored_from": null,
+      "title": "",
+      "body": "镇上人牙疼也许可以和吸血鬼的尖牙联系起来，它的鬼气影响了镇子的气氛",
+      "tags": [],
+      "deleted": false
+    }
+  ],
+  "origin": null,
+  "uses": [],
+  "requests": {
+    "idea-1793805798342-cfc17cde": {
+      "request": "437fe4818197c79bdf0c52b186296ece55b9ac4b8c38dc501fc4f235b2f749a0",
+      "revision_id": "irev_9e07081280c37a44"
+    }
+  }
+}

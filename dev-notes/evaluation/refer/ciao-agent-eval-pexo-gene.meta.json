@@ -1,0 +1,117 @@
+{
+  "title": "看了那么多 Agent 评测文章，为什么依然搭不出自己的评测体系？",
+  "author": "Gene化论",
+  "published": "Nov 14, 2026, 12:08 AM",
+  "source_url": "https://mp.weixin.qq.com/s?__biz=MzY4ODQ5MTgxNg==&mid=2247483697&sn=bff0defbd34bf4798ce255700156bebc&idx=1",
+  "fetched_at": "2026-11-15",
+  "local_file": "ciao-agent-eval-pexo-gene.md",
+  "image_count": 21,
+  "images": [
+    {
+      "index": 1,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNpLVOb59LhcsmvmRm6He16NTYibAGLVea6w4pxDCPQLRhzW4kjf1oRcC8Z5JnMczksdjUdiaaa4UOTgxTWXV9VLHd1UXkLJnJnfw/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=0",
+      "alt": "Image"
+    },
+    {
+      "index": 2,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNpPNlaXYyXrzMxSL9qPgmAODhLILsaG1vfyP0jvianPUWOiaK3au2CT4Dk6LhnmPhx75iaZe1W96iahicTyrbKXgGdD2XFVVXsBAXsw/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=1",
+      "alt": "Image"
+    },
+    {
+      "index": 3,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNqKHGLPhzlnNyBE0NGqf5ibLK4HezePoibQ53xcGQSBib4ia4icITnMcOMqodqHN2ND76RxHKF8PowytZgPG7Id5vyIJdlU5ynxumP8/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=2",
+      "alt": "Image"
+    },
+    {
+      "index": 4,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNo8xFRbuN7VWicHzAHZzwdA1YmxUv348PXP58j1RUXqHqOicUibukw1gBnwMlzw1bhsImstvGiadCmGkaRVLLw7HFmD0DDmThloPsQ/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=3",
+      "alt": "Image"
+    },
+    {
+      "index": 5,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNrX3mibaynX7BPduyicWuPJvJyOlWiaPaUqLuicSXwzJ7ibW0ic5Nrn3m2rJTjthvTvIjCts2WvSicIFUBu2Rx7WO7JmO0gszd7gZzmR0/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=4",
+      "alt": "Image"
+    },
+    {
+      "index": 6,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNoeW45ibl6tt3JCMx7pgx5FawCibO6Q3dGGjjPXpyic0JQX02KIb9OicXGIlqxia8NiajibjLBlNoIJATiax3TIUItlZqLTwAMIZZ3Wu1E/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=5",
+      "alt": "Image"
+    },
+    {
+      "index": 7,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNpcLDAPGbCuRcaV46hA8BvMmNrkdyvkEw03Dia59SjdG4IibUW6ye6giaamCvyUebUVaiaDwibKpZzXL2icXZBpQ7RiccOLAOhEfmy8qQ/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=6",
+      "alt": "Image"
+    },
+    {
+      "index": 8,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNpVwGQxbkSHOO78pBcu5OQuaXfDsSt1kEdpRiaNDT8AMpWkibpiajy7qZF1N5psCecG6kW8pfGRhnOhHo208DV53V4Fa9CPYm20rA/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=7",
+      "alt": "Image"
+    },
+    {
+      "index": 9,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNpISTfPZHia5FiaJx6ChHc0tKlmZuDlQ6VLrF2rSc2mH7eeBbhsavqlryqtY3dO49HLicGon5zZslrkPPUXibTykGib7HibqO5SOd3tI/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=8",
+      "alt": "Image"
+    },
+    {
+      "index": 10,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNrv0ZtMc6zo6scNZ62VibXDxIKIXRgu2rbuE0jM9sq9Zyc6ONUrlQo5DQj4w2K0lBqqn6ib8frgc6fiaf80H1M9wUbJQTgTP1rfDU/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=9",
+      "alt": "Image"
+    },
+    {
+      "index": 11,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNqqtJkafQxJ0KEHkPq8DAWrAaFZjs4EN6FIczkpSyE2aM291FFtZT3DEZOoUkSKG81pkf7UyXw5dzwIaBiasaPyTqyHacGxticsw/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=10",
+      "alt": "Image"
+    },
+    {
+      "index": 12,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNptrcXPNckibRUgyc4eIgRFMIMJYbaiaX9x2ib796S01iblTR1cpmELrywspxqgpOjdicCibk2QTQj2FlrhENhAmsA8eN42cJg4UjqHY/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=11",
+      "alt": "Image"
+    },
+    {
+      "index": 13,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNptOpXVf3hNR99aT9ib4Wvbb4uCu99byjiaBZRG0JMl9U2IJ3o3C4AuicAGySFibibkx6J82wAnOeNk2Jbic4cYdc0icOibZnfwUWq6Ccw/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=12",
+      "alt": "Image"
+    },
+    {
+      "index": 14,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNp7bZibVZP3Yn87vUvf1TxQ5eNVBwibK65iaSncpfsOWZ7YFhZYu5jHVAwpxxRnd6bJfu0ZGhDGvibUzyxDmxHkmKBDqArKiaCiaicpP4/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=13",
+      "alt": "Image"
+    },
+    {
+      "index": 15,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNrSWEo4xhgILC8raxUjNLof7V5vkPqcfUc0icmVrxOic1ZUUuBNVVB6Hr8AnS37K9BUnfsRgkzCklUkEkn6krdFOz4WiaedJW1kuE/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=14",
+      "alt": "Image"
+    },
+    {
+      "index": 16,
+      "src": "",
+      "alt": "图16"
+    },
+    {
+      "index": 17,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNouZ4XBLp4oY4RmOxkc8WFBzcubRiaYnuYW7G03lp8yaM1zdUK4QMC7kdYcCrYzouibV4kOtz4brXKIxoBLpw2N3353GficAUwIDM/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=15",
+      "alt": "Image"
+    },
+    {
+      "index": 18,
+      "src": "https://mmbiz.qpic.cn/mmbiz_png/22ickpP4zRNr8HbEbRib9J1x796oUQjI8rBbqvzz5mf0T93MicDzCd1bRDm3WppiasWBLYDMibMR915SqnaeK1oQlHRwuNUZyIDIzI6icr1dangfU/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=16",
+      "alt": "Image"
+    },
+    {
+      "index": 19,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNrTPjTmUJZOWDawmCgIN1A2xauKibBQLt2CY46k0Rhh1KjKIZnRUB3CaCYoVN5jdylpxr4okgDqJFNmbRCsaLYePIctLRxx5eEs/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=17",
+      "alt": "Image"
+    },
+    {
+      "index": 20,
+      "src": "",
+      "alt": "图20"
+    },
+    {
+      "index": 21,
+      "src": "https://mmbiz.qpic.cn/sz_mmbiz_png/22ickpP4zRNqdTXyASibdbFPpAnfEqhxlogicLNIR5ibtkFve0CPIIyICOwtsHVzpVrxNT7ApA7iaVZhjY9z87HMXG9cGJlUN433hH1VAYLhkz9s/640?wx_fmt=png&from=appmsg&watermark=1#imgIndex=18",
+      "alt": "Image"
+    }
+  ],
+  "note": "本地参考存档；图片仍为微信 CDN 外链，未下载。"
+}

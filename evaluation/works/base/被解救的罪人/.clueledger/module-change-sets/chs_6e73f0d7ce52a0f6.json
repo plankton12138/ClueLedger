@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "change_set_id": "chs_6e73f0d7ce52a0f6",
+  "workspace": "C:\\Users\\plankton\\Documents\\ClueLedger\\作品\\被解救的罪人",
+  "turn_id": "t_a193b831",
+  "request_key": "",
+  "request_digest": "f5c686b134f481ca4291f32bb3d9e77683b0ce59405dc63d4b394b584af135cb",
+  "status": "applied",
+  "base_assembly_digest": "b99979d2ade7ab37942bc13001d4d9d7da5fcea55c3dad9ec71e22f6794f8485",
+  "base_assembly": {
+    "schema_version": 1,
+    "library_id": "lib_3542de9fbb2fb9ad",
+    "bindings": [
+      {
+        "id": "bnd_d279c84d4c57ad76",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_cc0f1f819b11aeb4",
+          "revision_id": "rev_1477e738161875eb"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_009c95ccf5aa050c",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_a53bcffa6cf69049",
+          "revision_id": "rev_78c5f084d0e6583e"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_eb4c0ab3e7211cde",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_dcdcc720c5973bf2"
+        },
+        "label": ""
+      }
+    ],
+    "links": []
+  },
+  "operations": [
+    {
+      "operation_id": "chars_appearance",
+      "action": "update",
+      "summary": "十个人物各加一栏「外形」：只写旁人眼睛看得到的可见特征，并与第一章已写的细节（同岁、肥脸、灰外套、厚呢外套等）保持一致。",
+      "binding_id": "bnd_eb4c0ab3e7211cde",
+      "module_id": "mod_bd195731dcf4b996",
+      "base_revision": "rev_dcdcc720c5973bf2",
+      "edits": [
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "「物证标签」是这个人身上随时可以被写进正文的可核对细节——写到他时随手取一件，不要另编。",
+          "replace": "「物证标签」是这个人身上随时可以被写进正文的可核对细节——写到他时随手取一件，不要另编。\n「外形」一栏只写别人的眼睛能看到的东西：身量、脸、手、衣服磨旧的地方。同化者的体征（眼白泛黄、皮肤干裂、指甲抠破掌心）也算可见，但必须由旁人给出一个别的理由，或者干脆不给理由。镇上人不照镜子，也不自述相貌，所以这些细节应当从别人看他的那一眼里出来——多数时候是姜戈的眼睛。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "相信一切都能解释。他的自信不是傲慢，是训练——牙医看片子上的一道阴影，从来不肯说「不知道」。",
+          "replace": "相信一切都能解释。他的自信不是傲慢，是训练——牙医看片子上的一道阴影，从来不肯说「不知道」。\n\n**外形**\n- 四十上下，中等身量，肩不宽，但背挺得很直；站的时候两脚微微分开，像随时要俯身去看一个人的嘴。\n- 淡褐色头发往后梳，鬓角一年比一年退得深；胡子每天刮，下巴左侧留着一道剃刀划过的旧疤。\n- 眼睛浅灰蓝，笑的时候先皱鼻子再出声。\n- 手上没有粗茧，右手无名指第二节却弯不到底（早年钳子打过滑）。指甲剪得极短，指腹有两层握工具磨出来的硬皮。\n- 深灰呢子大衣，扣子一颗不缺；衬衫领口扣到最上一颗，热天也不常松——他嫌松了不像个医生。\n- 一顶窄檐毡帽，不戴在头上时压在桌角，用来压住价目单和风。\n- 靴子是德国式的尖头，镇上人看了要笑。他知道，没换。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "学枪极快，因为他学的不是开枪，是看别人的手——奴隶生涯里，主人的手决定他今晚挨不挨打。",
+          "replace": "学枪极快，因为他学的不是开枪，是看别人的手——奴隶生涯里，主人的手决定他今晚挨不挨打。\n\n**外形**\n- 比舒尔茨高小半个头，肩窄，腰收得紧，站着不动的时候像一根拉直的绳。\n- 宽檐牛仔帽，灰褐色，帽檐被雨泡出过一道浅圈。他习惯用拇指顶帽檐，很少抬手去摘。\n- 脸窄，颧骨高，下颌收得紧；胡子刮得不勤，下巴上总有一层青。\n- 眼睛深，看人先看手，再看脸——所以他的目光总在人腰下停一会儿，旁人以为他不敢抬头。\n- 前臂内侧有两道横着的旧鞭痕，颜色比周围的皮浅。指甲是他自己剪的，剪得极短极齐。\n- 粗布衬衫，短外套，扣子换过两颗，颜色不一样。\n- 落脚先落跟的外侧，落得轻，木栈道上几乎不响。这是从前在屋里走路的习惯，改不掉。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "然后被人问价钱，后半句没说完）。",
+          "replace": "然后被人问价钱，后半句没说完）。\n\n**外形**\n- 五十上下，身量偏高，肩背往前塌一点——十五年在棺材和工作台前弯出来的。\n- 脸色灰，不是病色的灰，是常年不见太阳的灰；嘴唇干，说话前先舔一下。\n- 头发深色，两鬓白透，梳得整齐，抹过油；胡子刮得不勤，下巴上一片青。\n- 眼睛浅灰褐，眼白常带一点黄，渴过三天更明显。镇上说他肝火旺。\n- 手大而薄，指节粗，指甲剪得很短，指甲缝里总有黑红的东西——他每天洗，洗不干净。\n- 灰外套，肩上永远落着一层白灰；袖口、裤脚沾着石灰。背心口袋里塞软尺、铅笔头和一个卷起来的纸卷。\n- 一顶旧黑呢帽，帽檐压得低，进屋也不摘。镇上人只当他古怪。\n- 身上三样味道：石灰、松脂、湿木头。站久了就靠墙，眼皮沉，说话时眼睛看着人的胸口而不是脸。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "他这辈子最相信自己的手。他的骄傲是「我摸过的东西不会骗我」。",
+          "replace": "他这辈子最相信自己的手。他的骄傲是「我摸过的东西不会骗我」。\n\n**外形**\n- 跟舒尔茨同岁，看着却老十岁：矮壮，胸和肚子都厚，走起来像在推着前面的空气。\n- 圆脸，脸红，鼻头大而红；胡子花白，围脸一圈剪得齐，像用尺子量过。\n- 秃得早，只在两侧留一圈花白头发。\n- 圆片眼镜，黄铜框，右腿用线缠过两回，他一天擦十几次。\n- 手短而厚，掌心有一道旧刀疤（解剖刀，他解释过一次，讲得很长）。\n- 普鲁士式的背心，四个口袋各有各的用处，不许别人碰。手上有石炭酸和碘仿的味道。\n- 说话先动手：讲一处伤，就在自己身上比出位置。上楼要停一下，喘得有声。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "喝茶，饭几乎不动。她说自己胃不好。",
+          "replace": "喝茶，饭几乎不动。她说自己胃不好。\n\n**外形**\n- 三十六七，偏高，极瘦，站得笔直；衣服是东部寄来的黑呢，束腰，肩线一点也不塌。\n- 脸白到透青，嘴唇颜色淡，脸颊微凹；出门必戴帽，帽檐底下那张脸像被灯照过。\n- 头发黑，中分，梳得一丝不乱，后面挽得紧，风里也不散。\n- 眼睛黑而大，眨得太少——镇上人说她高傲，其实是她不太需要眨。\n- 手白、细，指甲修得极好，指甲床泛青；她端杯子很轻，像怕碰出响。\n- 冬天也开窗。走近了才闻得出她身上是雨后石头的那种气息。\n- 只有一件饰物：领口正中一枚石榴石胸针，从不换。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "「山上不好走」这句话他一天说三遍。",
+          "replace": "「山上不好走」这句话他一天说三遍。\n\n**外形**\n- 四十上下，粗壮，脖子粗，肚子把背带裤撑得鼓起来；走路带响，钥匙先到，人后到。\n- 左半边脖子到耳后是一片烧伤的疤，皮收得发亮发紧；左耳只剩半个，那一侧的眉毛也稀。\n- 缺一颗门牙，笑起来那个黑洞倒让他的笑看着格外诚恳。\n- 头发稀，往后梳，抹油；脸常年是酒后的红，鼻子上有一圈细血管。\n- 左手戴一只厚皮手套，夏天也不摘，里头有两只手指伸不直。\n- 围裙上永远一圈酒渍、一圈烟灰；腰上一串钥匙，说话时手在钥匙上拨。\n- 嗓子哑，声音大得让屋子跟着响。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "镇上最顺手的凶手：黑人、动过刀、有前科、不说话。",
+          "replace": "镇上最顺手的凶手：黑人、动过刀、有前科、不说话。\n\n**外形**\n- 三十上下，个子不高，结实得过分；打铁时只穿一件单衫，胳膊上的筋一条条挂着。\n- 脸宽，鼻梁断过，接得不好，往一边歪；左边眉毛断成两截。\n- 头发是自己剪的，贴着头皮，短得像刚剃过。\n- 手背和前臂烫疤点点，最重的一处在左手腕上，像一枚盖坏的印；左手小指伸不直。\n- 走路时右脚略拖，不快。这一点只有姜戈看出来过。\n- 围裙上永远是黑铁屑和灰，指甲缝黑，指关节上有裂口，抹过油。\n- 衣领里贴着一只油布包，谁也没见过里面是什么——那是他的自由文书。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "口袋里有一本记酒桶数目的账，字迹工整得不像他的。",
+          "replace": "口袋里有一本记酒桶数目的账，字迹工整得不像他的。\n\n**外形**\n- 四十出头，不高，整个人横着长；脖子短，下巴叠成两层，腰带勒在肚子底下。\n- 脸常红，鼻子上有一圈细血管，冬天更红。他说是风刮的。\n- 镇上人不修胡子，只有他把两撇胡子修得整整齐齐，自己很得意。\n- 眼睛小，颜色浅；笑起来眼睛不动，只动嘴。\n- 手白、软，一个茧也没有。他嫌马缰脏，所以戴皮手套，手套洗得干干净净。\n- 大衣扣得正，扣子是自己钉的，线头露着；靴子擦得亮，是马厩伙计擦的。\n- 要动手或者心里发虚的时候，先用拇指去摸下巴——那里什么都没有，他还是摸。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "知道山里有洞。也知道镇上谁夜里不睡。",
+          "replace": "知道山里有洞。也知道镇上谁夜里不睡。\n\n**外形**\n- 七十上下，比人想的矮，背驼，走路外八字，脚落地几乎没有声——软底鹿皮鞋。\n- 脸像一张干了的皮子，皱纹深，颧骨高，眼窝陷；右眼下眼皮垂着一点，像总在眯。\n- 头发全白，编成两条辫子，末梢缠着红布条，布条洗得发白了。\n- 手小、干，指关节像核桃；小指戴一枚铜环，他解释过一次。\n- 鹿皮衣是拼的，补过很多次，针脚是他自己缝的，细得出人意料。\n- 腰上挂着鹿皮袋，鼓鼓的；冬天鼻尖和耳廓总是红的。\n- 身上有烟熏味和皮子的腥味，镇上人一闻就知道他在街上。说话时眼睛看着远处，句子中间的停顿比英语需要的长。"
+        },
+        {
+          "entry_id": "characters",
+          "base_digest": "5806338053b63bd1e57d7f7aa42afe9b67dbef22aa3bc84444ca6e03d19d80ff",
+          "find": "脾气坏，喝酒，打人，没人会为他哭。",
+          "replace": "脾气坏，喝酒，打人，没人会为他哭。\n\n**外形**\n- 三十五上下，个子高，肩膀宽，穿一件枯骨农场的厚呢外套，袖口沾着干了的泥。\n- 方脸，颧骨高，鼻梁早年断过；下巴上三天没刮的胡茬，眼睛底下一片青（三夜没睡）。\n- 右边牙疼的那几天头往左侧偏着，像有什么一直在往下拽他。\n- 手粗，指节上有冻裂的口子，指甲缝里是黑的。\n- 靴子是农场的公靴，靴底钉过铁片，走一步响一步；鞋跟磨偏在外侧。\n- 说话咬着后槽牙，开口气息不好，他自己知道，所以话说得短。"
+        }
+      ],
+      "saved": {
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_3abfa6c088e01cf2",
+        "name": "《夜牙》人物小传",
+        "created": false,
+        "binding_id": "bnd_eb4c0ab3e7211cde"
+      }
+    }
+  ],
+  "result": {
+    "applied": true,
+    "change_set_id": "chs_6e73f0d7ce52a0f6",
+    "stage": "applied",
+    "assembly": {
+      "schema_version": 1,
+      "library_id": "lib_3542de9fbb2fb9ad",
+      "digest": "b3417e460f6030b5b6d663f0e0032e3734ae194859d9e16fef759e8cce234efc",
+      "bindings": [
+        {
+          "id": "bnd_d279c84d4c57ad76",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_cc0f1f819b11aeb4",
+            "revision_id": "rev_1477e738161875eb"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》世界与时代背景",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_009c95ccf5aa050c",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_a53bcffa6cf69049",
+            "revision_id": "rev_78c5f084d0e6583e"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》专名表与用词",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_eb4c0ab3e7211cde",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_bd195731dcf4b996",
+            "revision_id": "rev_3abfa6c088e01cf2"
+          },
+          "label": "《夜牙》人物小传",
+          "kind": "reference",
+          "name": "《夜牙》人物小传",
+          "deleted": false,
+          "problems": []
+        }
+      ],
+      "links": []
+    },
+    "operations": [
+      {
+        "operation_id": "chars_appearance",
+        "action": "update",
+        "status": "saved",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "module_id": "mod_bd195731dcf4b996",
+        "base_revision": "rev_dcdcc720c5973bf2",
+        "edits": 11,
+        "saved": {
+          "operation_id": "chars_appearance",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_3abfa6c088e01cf2",
+          "binding_id": "bnd_eb4c0ab3e7211cde",
+          "name": "《夜牙》人物小传",
+          "created": false
+        }
+      }
+    ],
+    "saved": [
+      {
+        "operation_id": "chars_appearance",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_3abfa6c088e01cf2",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "name": "《夜牙》人物小传",
+        "created": false
+      }
+    ],
+    "saved_events": [
+      {
+        "operation_id": "chars_appearance",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_3abfa6c088e01cf2",
+        "name": "《夜牙》人物小传",
+        "created": false
+      }
+    ],
+    "undo": {
+      "available": true,
+      "change_set_id": "chs_6e73f0d7ce52a0f6"
+    },
+    "discarded": [],
+    "discard_failed": []
+  }
+}

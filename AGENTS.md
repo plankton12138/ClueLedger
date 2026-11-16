@@ -34,6 +34,7 @@
 
 ## 索引
 
+- 从源码运行 [SETUP.md](SETUP.md)
 - 产品设计 C:\Projects\Agent\myagent\product-design
 - 原型图 C:\Projects\Agent\myagent\prototypes（仅本地；`data/`、`desktop/`、`prototypes/` 不入库）
 - 开发文档 C:\Projects\Agent\myagent\dev-notes

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>评测系统结构图解</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f4f6f8;
+    --surface: #ffffff;
+    --surface-muted: #f0f3f6;
+    --text: #17202a;
+    --text-muted: #5c6b7a;
+    --border: #dde3e9;
+    --brand: #2f5d8a;
+    --brand-soft: #e8f0f7;
+    --brand-text: #1d3f60;
+    --accent: #3d6b4f;
+    --accent-soft: #e8f2ec;
+    --warn: #8a6a2f;
+    --warn-soft: #f7f0e0;
+    --danger: #8b3d3d;
+    --danger-soft: #f6eaea;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(23, 32, 42, 0.05), 0 8px 24px rgba(23, 32, 42, 0.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 20px 72px; }
+  header { margin-bottom: 28px; }
+  .eyebrow {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand-text);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  h1 { margin: 10px 0 8px; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+  .lede { margin: 0; color: var(--text-muted); max-width: 42em; }
+  .hint { margin-top: 10px; font-size: 13px; color: var(--text-muted); }
+
+  .flow {
+    display: grid;
+    gap: 10px;
+    margin: 28px 0 20px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+  .node {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 14px 14px 12px;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    color: inherit;
+    font: inherit;
+  }
+  .node:hover { border-color: #a8b8c8; transform: translateY(-1px); }
+  .node.active {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 2px var(--brand-soft), var(--shadow);
+  }
+  .node .kicker {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .node .title { font-weight: 700; font-size: 0.98rem; color: var(--brand-text); }
+  .node .sub { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+
+  .arrow {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 0;
+  }
+
+  .lane {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  @media (min-width: 820px) {
+    .lane.split { grid-template-columns: 1fr 1fr; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px 22px;
+    min-height: 220px;
+  }
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: 1.15rem;
+    color: var(--brand-text);
+  }
+  .panel .path {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .panel p { margin: 0 0 10px; }
+  .panel ul { margin: 0; padding-left: 1.15em; }
+  .panel li { margin: 4px 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .tag {
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+  }
+  .tag.o { background: var(--brand-soft); color: var(--brand-text); }
+  .tag.i { background: var(--accent-soft); color: var(--accent); }
+  .tag.c { background: var(--warn-soft); color: var(--warn); }
+  .tag.a { background: var(--danger-soft); color: var(--danger); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px 16px;
+    margin-top: 18px; font-size: 13px; color: var(--text-muted);
+  }
+  .legend span::before {
+    content: "";
+    display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 6px; vertical-align: 1px;
+  }
+  .legend .o::before { background: var(--brand); }
+  .legend .i::before { background: var(--accent); }
+  .legend .c::before { background: var(--warn); }
+  .legend .a::before { background: var(--danger); }
+
+  footer {
+    margin-top: 28px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  footer a { color: var(--brand); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="eyebrow">evaluation · 结构图解</span>
+    <h1>线簿离线评测怎么拼起来</h1>
+    <p class="lede">点下面任一模块，看它在一次跑测里负责什么、对应哪些源码。评测进程不导入产品业务模块，只通过 HTTP 打本地模式服务。</p>
+    <p class="hint">讲解正文见 <code>structure-walkthrough.md</code></p>
+  </header>
+
+  <section class="flow" aria-label="数据流">
+    <div class="row">
+      <button class="node" data-id="cases" type="button">
+        <div class="kicker">输入</div>
+        <div class="title">cases / works</div>
+        <div class="sub">案例 YAML · 基础作品</div>
+      </button>
+      <button class="node" data-id="schema" type="button">
+        <div class="kicker">加载</div>
+        <div class="title">schema</div>
+        <div class="sub">锚点校验 · Case 对象</div>
+      </button>
+      <button class="node" data-id="cli" type="button">
+        <div class="kicker">入口</div>
+        <div class="title">CLI</div>
+        <div class="sub">list · run · score · workbench</div>
+      </button>
+    </div>
+    <div class="arrow" aria-hidden="true">↓</div>
+    <div class="row">
+      <button class="node" data-id="runtime" type="button">
+        <div class="kicker">编排</div>
+        <div class="title">runtime</div>
+        <div class="sub">复制作品 · 跑步骤 · 采证</div>
+      </button>
+      <button class="node" data-id="client" type="button">
+        <div class="kicker">边界</div>
+        <div class="title">HTTP client</div>
+        <div class="sub">受理 · 事件 · Trace</div>
+      </button>
+      <button class="node" data-id="product" type="button">
+        <div class="kicker">被测系统</div>
+        <div class="title">本地模式服务</div>
+        <div class="sub">产品 Agent（外部进程）</div>
+      </button>
+    </div>
+    <div class="arrow" aria-hidden="true">↓</div>
+    <div class="lane split">
+      <button class="node" data-id="evidence" type="button">
+        <div class="kicker">证据</div>
+        <div class="title">evidence 包</div>
+        <div class="sub">before / diff / events / inputs</div>
+      </button>
+      <div class="row">
+        <button class="node" data-id="checks" type="button">
+          <div class="kicker">判分</div>
+          <div class="title">checks</div>
+          <div class="sub">must · quality · human</div>
+        </button>
+        <button class="node" data-id="stages" type="button">
+          <div class="kicker">过程</div>
+          <div class="title">stages</div>
+          <div class="sub">六环 · 最早失败点</div>
+        </button>
+      </div>
+    </div>
+    <div class="arrow" aria-hidden="true">↓</div>
+    <div class="row">
+      <button class="node" data-id="report" type="button">
+        <div class="kicker">汇总</div>
+        <div class="title">report / gate</div>
+        <div class="sub">冒烟 · 门禁 · 基线对比</div>
+      </button>
+      <button class="node" data-id="workbench" type="button">
+        <div class="kicker">人工</div>
+        <div class="title">workbench</div>
+        <div class="sub">报告 · 复核 · 归因</div>
+      </button>
+      <button class="node" data-id="runs" type="button">
+        <div class="kicker">产物</div>
+        <div class="title">data/.../runs</div>
+        <div class="sub">本机目录 · 不入库</div>
+      </button>
+    </div>
+  </section>
+
+  <section class="panel" id="detail" aria-live="polite">
+    <h2 id="detail-title">点选上方模块</h2>
+    <div class="path" id="detail-path"></div>
+    <div id="detail-body"></div>
+    <div class="tags" id="detail-tags"></div>
+  </section>
+
+  <div class="legend">
+    <span class="o">O 交付验收</span>
+    <span class="i">I 过程衔接</span>
+    <span class="c">C 组件证据</span>
+    <span class="a">A 归因入口</span>
+  </div>
+
+  <footer>
+    源码根目录 <code>evaluation/</code> ·
+    <a href="structure-walkthrough.md">文字讲解</a> ·
+    <a href="design.md">设计文档</a>
+  </footer>
+</main>
+<script>
+const NODES = {
+  cases: {
+    title: "案例与基础作品",
+    path: "evaluation/cases/ · evaluation/works/",
+    tags: ["o", "i"],
+    html: `
+      <p>案例写清：作品初态、历史种类（short/long）、作者步骤、期望区域与检查项。后两部分只给评测器，不进模型提示。</p>
+      <ul>
+        <li>现成案：<code>revise_ch1_ending_farm_tonight.yaml</code></li>
+        <li>作品：<code>works/base/被解救的罪人</code>（真实快照；meta 在外侧）</li>
+        <li>修改区域用原文锚点，不用行号；加载时锚点必须唯一</li>
+      </ul>`
+  },
+  schema: {
+    title: "案例加载",
+    path: "evaluation/harness/schema.py",
+    tags: [],
+    html: `
+      <p>把 YAML 变成 <code>Case</code> 对象，并校验锚点在初态文件中存在且唯一。失败则整案拒绝加载。</p>
+      <ul>
+        <li>检查级别：must / quality / human</li>
+        <li>CLI <code>list</code> 与 <code>run</code> 都先走这里</li>
+      </ul>`
+  },
+  cli: {
+    title: "命令行入口",
+    path: "evaluation/__main__.py",
+    tags: [],
+    html: `
+      <p>四个子命令串起全流程：</p>
+      <ul>
+        <li><code>list</code> — 列案例</li>
+        <li><code>run</code> — 对已启动服务跑试验并写报告</li>
+        <li><code>score</code> — 用已存证据重评 / 合并复核</li>
+        <li><code>workbench</code> — 打开本机工作台</li>
+      </ul>`
+  },
+  runtime: {
+    title: "试验编排",
+    path: "evaluation/harness/runtime.py",
+    tags: ["i"],
+    html: `
+      <p><code>AttemptRunner</code> 负责一次试验：复制作品 → 开 capture_inputs → 按 steps 受理 → 等到终态 → 落证据 → 调判分与过程环。</p>
+      <ul>
+        <li>预算耗尽记 <code>not_run</code></li>
+        <li>网络/服务问题记 <code>infrastructure_error</code></li>
+        <li>不导入 hastings 业务模块</li>
+      </ul>`
+  },
+  client: {
+    title: "HTTP 评测客户端",
+    path: "evaluation/harness/client.py",
+    tags: [],
+    html: `
+      <p>唯一对接产品的边界：打开 workspace、设活动选项、受理轮次、轮询事件、读 Trace 与附件。</p>
+      <ul>
+        <li>协议接口 <code>EvalClient</code>，实现 <code>HttpEvalClient</code></li>
+        <li>测试可用假客户端，不调在线模型</li>
+      </ul>`
+  },
+  product: {
+    title: "被测：本地模式服务",
+    path: "src/hastings/server/ · workspace/",
+    tags: ["c"],
+    html: `
+      <p>产品侧 Agent 在独立进程里跑。评测只把它当黑盒 HTTP 服务；CIAO 四组职责都在产品代码里，评测用证据观察它们。</p>
+      <ul>
+        <li>启动示例：<code>uv run python -m hastings.server</code></li>
+        <li>评测用 <code>--base-url</code> 指向该服务</li>
+      </ul>`
+  },
+  evidence: {
+    title: "证据包",
+    path: "evaluation/harness/evidence.py → attempts/.../evidence/",
+    tags: ["a", "o"],
+    html: `
+      <p>每次试验落盘可复现材料，供判分、工作台与离线 <code>score</code> 重评。</p>
+      <ul>
+        <li><code>before.json</code> / <code>diff.json</code> — 文件前后与差异</li>
+        <li><code>events.jsonl</code> / <code>traces/</code> — 事件与 Trace</li>
+        <li><code>inputs/</code> — 模型输入快照（capture_inputs）</li>
+      </ul>`
+  },
+  checks: {
+    title: "程序与人工检查项",
+    path: "evaluation/harness/checks.py",
+    tags: ["o", "c"],
+    html: `
+      <p>按案例声明的检查 id 判分。任一 must 失败则整案失败；human 进入待复核。</p>
+      <ul>
+        <li>O：区域变化、preserve、经候选提交</li>
+        <li>C·Context：输入含目标章（quality）</li>
+        <li>C·Action：范围登记一致（quality）</li>
+        <li>Environment：旧版本候选拒绝（must）</li>
+      </ul>`
+  },
+  stages: {
+    title: "过程六环",
+    path: "evaluation/harness/stages.py",
+    tags: ["i", "a"],
+    html: `
+      <p>同一次运行上按序计算，报告最早失败环节，供归因缩小范围。</p>
+      <ul>
+        <li>scope → read → candidate → verify → repair → commit</li>
+        <li>输出 <code>stages</code> 与 <code>first_failed_stage</code></li>
+        <li>多数过程检查挂在端到端上，不另建过程案例集</li>
+      </ul>`
+  },
+  report: {
+    title: "报告与门禁",
+    path: "evaluation/harness/report.py",
+    tags: ["o"],
+    html: `
+      <p>汇总各试验结果，可选对比基线，写出门禁结论。</p>
+      <ul>
+        <li>分类：通过 / 失败 / 待复核 / 基础设施错误 / 未运行</li>
+        <li>must 失败 → 门禁不通过；quality 相对基线退化另判</li>
+        <li><code>score</code> 可只改检查逻辑后用旧证据重评</li>
+      </ul>`
+  },
+  workbench: {
+    title: "评测工作台",
+    path: "evaluation/workbench/ · frontend/eval-workbench.html",
+    tags: ["a", "o"],
+    html: `
+      <p>本机独立页：浏览运行、点开检查项到证据与 Trace、写人工复核与归因。</p>
+      <ul>
+        <li>默认扫 <code>data/evaluation/runs</code></li>
+        <li>优先托管构建后的前端；否则回退静态简页</li>
+        <li>第一版不触发跑测；选题跑测后续再加</li>
+      </ul>`
+  },
+  runs: {
+    title: "运行产物目录",
+    path: "data/evaluation/runs/<name>/",
+    tags: [],
+    html: `
+      <p>本机产物，由根目录 <code>data/</code> 忽略，不入库。</p>
+      <ul>
+        <li><code>report.json</code> / <code>reviews.json</code></li>
+        <li><code>attempts/&lt;case&gt;--&lt;n&gt;/work</code> 与 <code>evidence</code></li>
+        <li><code>run</code> 要求输出目录尚不存在</li>
+      </ul>`
+  }
+};
+
+const detailTitle = document.getElementById("detail-title");
+const detailPath = document.getElementById("detail-path");
+const detailBody = document.getElementById("detail-body");
+const detailTags = document.getElementById("detail-tags");
+const buttons = [...document.querySelectorAll(".node")];
+
+function show(id) {
+  const item = NODES[id];
+  if (!item) return;
+  buttons.forEach((btn) => btn.classList.toggle("active", btn.dataset.id === id));
+  detailTitle.textContent = item.title;
+  detailPath.textContent = item.path;
+  detailBody.innerHTML = item.html;
+  detailTags.innerHTML = "";
+  for (const t of item.tags) {
+    const el = document.createElement("span");
+    el.className = `tag ${t}`;
+    el.textContent = ({ o: "O 交付", i: "I 过程", c: "C 组件", a: "A 归因" })[t] || t;
+    detailTags.appendChild(el);
+  }
+}
+
+buttons.forEach((btn) => btn.addEventListener("click", () => show(btn.dataset.id)));
+show("runtime");
+</script>
+</body>
+</html>

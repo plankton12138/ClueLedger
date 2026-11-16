@@ -4,19 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 
-from evaluation.harness.client import HttpEvalClient
 from evaluation.harness.report import (
     apply_reviews,
-    build_report,
     compare_to_baseline,
     gate_decision,
     regrade_report,
     write_report,
 )
-from evaluation.harness.runtime import AttemptResult, AttemptRunner, CallBudget
+from evaluation.harness.runner_api import RunBatchError, run_batch
 from evaluation.harness.schema import CaseLoadError, load_cases
 
 ROOT = Path(__file__).resolve().parent
@@ -25,21 +22,6 @@ ROOT = Path(__file__).resolve().parent
 def _add_shared_case_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cases", type=Path, default=ROOT / "cases", help="案例目录")
     parser.add_argument("--works", type=Path, default=ROOT / "works", help="基础作品目录")
-
-
-def _git_identity() -> dict[str, str]:
-    identity: dict[str, str] = {}
-    try:
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=ROOT.parent,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-        identity["git_commit"] = commit
-    except (OSError, subprocess.CalledProcessError):
-        pass
-    return identity
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,7 +85,8 @@ def main(argv: list[str] | None = None) -> int:
         help="跳过证据包重评，只合并复核",
     )
 
-    wb_parser = sub.add_parser("workbench", help="打开本地评测工作台（浏览已落盘运行）")
+    wb_parser = sub.add_parser("workbench", help="打开本地评测工作台")
+    _add_shared_case_args(wb_parser)
     wb_parser.add_argument(
         "--run",
         type=Path,
@@ -140,71 +123,44 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
-        if args.out.exists():
-            print(
-                f"[EVAL_OUT] evaluation.run：输出目录已存在 {args.out}。"
-                "建议：换一个新目录，避免覆盖旧运行。"
-            )
-            return 1
-        try:
-            cases = load_cases(args.cases, works_root=args.works)
-        except CaseLoadError as exc:
-            print(f"[EVAL_CASE] evaluation.run：{exc}。建议：修正案例或作品初态后重试。")
-            return 1
-        if args.case:
-            wanted = set(args.case)
-            cases = [case for case in cases if case.id in wanted]
-            missing = wanted - {case.id for case in cases}
-            if missing:
-                print(
-                    f"[EVAL_CASE] evaluation.run：找不到案例 {sorted(missing)}。"
-                    "建议：用 evaluation list 核对 id。"
-                )
-                return 1
-        if not cases:
-            print("[EVAL_CASE] evaluation.run：没有可跑案例。建议：先加入 evaluation/cases。")
-            return 1
         if args.mode == "gate" and args.repeat < 3:
             print(
                 "[EVAL_MODE] evaluation.run：完整门禁建议 --repeat 3。"
                 "建议：提高试验次数，或改用 --mode smoke。"
             )
-        args.out.mkdir(parents=True)
-        attempts_root = args.out / "attempts"
-        client = HttpEvalClient(args.base_url)
-        budget = CallBudget(max_requests=args.max_requests)
-        runner = AttemptRunner(
-            client=client,
-            attempts_root=attempts_root,
-            budget=budget,
-            timeout_s=args.timeout,
-        )
-        results: list[AttemptResult] = []
+
+        def _on_progress(result, _results, _report) -> None:  # type: ignore[no-untyped-def]
+            outcome = result.grade.outcome if result.grade else "-"
+            print(
+                f"{result.case_id}#{result.attempt}\t{result.status}\t"
+                f"{outcome}\t{result.error or ''}".rstrip()
+            )
+
         try:
-            for case in cases:
-                for attempt in range(1, args.repeat + 1):
-                    result = runner.run(case, attempt=attempt)
-                    results.append(result)
-                    outcome = result.grade.outcome if result.grade else "-"
-                    print(
-                        f"{result.case_id}#{result.attempt}\t{result.status}\t"
-                        f"{outcome}\t{result.error or ''}".rstrip()
-                    )
-        finally:
-            client.close()
-        report = build_report(
-            results,
-            identity={**_git_identity(), "budget_used": budget.used},
-            mode=args.mode,
-        )
-        if args.baseline:
-            baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
-            report = compare_to_baseline(report, baseline)
-        report["gate"] = gate_decision(report)
-        write_report(args.out, report)
-        gate_label = "通过" if report["gate"]["passed"] else "不通过"
+            batch = run_batch(
+                base_url=args.base_url,
+                out_dir=args.out,
+                cases_dir=args.cases,
+                works_dir=args.works,
+                case_ids=args.case or None,
+                mode=args.mode,
+                repeat=args.repeat,
+                max_requests=args.max_requests,
+                timeout_s=args.timeout,
+                baseline=args.baseline,
+                on_progress=_on_progress,
+                strict_gate_repeat=False,
+            )
+        except RunBatchError as exc:
+            print(str(exc))
+            return 1
+        gate_label = "通过" if batch.gate_passed else "不通过"
         print(f"写入 {args.out / 'report.json'}；门禁={gate_label}")
-        return 0 if report["gate"]["passed"] else 2
+        if batch.status == "failed":
+            if batch.error:
+                print(batch.error)
+            return 1
+        return 0 if batch.gate_passed else 2
 
     if args.command == "score":
         report_path = args.run_dir / "report.json"
@@ -285,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             open_browser=not args.no_browser,
             initial_run=initial_run,
+            cases_root=args.cases,
+            works_root=args.works,
         )
         return 0
 

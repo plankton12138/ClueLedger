@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "change_set_id": "chs_3ddb75a24fc28a6f",
+  "workspace": "C:\\Users\\plankton\\Documents\\ClueLedger\\作品\\被解救的罪人",
+  "turn_id": "t_bed1a535",
+  "request_key": "",
+  "request_digest": "660b1bedb0356906d7c793c7e46243fb4c71e659f204f32e84fb77556bc790ae",
+  "status": "applied",
+  "base_assembly_digest": "af0dbbebd757554c9667a69d30be6c2a6ca9ad8a05f83a2ae798937697586f85",
+  "base_assembly": {
+    "schema_version": 1,
+    "library_id": "lib_3542de9fbb2fb9ad",
+    "bindings": [
+      {
+        "id": "bnd_d279c84d4c57ad76",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_cc0f1f819b11aeb4",
+          "revision_id": "rev_1477e738161875eb"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_009c95ccf5aa050c",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_a53bcffa6cf69049",
+          "revision_id": "rev_78c5f084d0e6583e"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_eb4c0ab3e7211cde",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_34222d7d3d716d92"
+        },
+        "label": "《夜牙》人物小传"
+      }
+    ],
+    "links": []
+  },
+  "operations": [
+    {
+      "operation_id": "django-free-papers-removal",
+      "action": "update",
+      "summary": "从姜戈外形中删除自由文书缝在内衬一条，其余人物小传内容不变。",
+      "binding_id": "bnd_eb4c0ab3e7211cde",
+      "module_id": "mod_bd195731dcf4b996",
+      "base_revision": "rev_34222d7d3d716d92",
+      "edits": [
+        {
+          "entry_id": "characters",
+          "base_digest": "1e166a14a0e7c5a77f9cd2d2a6daf5f3fb6cd70d46ed3cbf413f18851fc4251a",
+          "find": "- 自由文书缝在外套内衬的夹层里，贴着左胸。\n",
+          "replace": ""
+        }
+      ],
+      "saved": {
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_de68226a2933d788",
+        "name": "《夜牙》人物小传",
+        "created": false,
+        "binding_id": "bnd_eb4c0ab3e7211cde"
+      }
+    }
+  ],
+  "result": {
+    "applied": true,
+    "change_set_id": "chs_3ddb75a24fc28a6f",
+    "stage": "applied",
+    "assembly": {
+      "schema_version": 1,
+      "library_id": "lib_3542de9fbb2fb9ad",
+      "digest": "81afdb51fddb1b73146694dcc788e56da94debcb6f507bc16c0b29316e30420c",
+      "bindings": [
+        {
+          "id": "bnd_d279c84d4c57ad76",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_cc0f1f819b11aeb4",
+            "revision_id": "rev_1477e738161875eb"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》世界与时代背景",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_009c95ccf5aa050c",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_a53bcffa6cf69049",
+            "revision_id": "rev_78c5f084d0e6583e"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》专名表与用词",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_eb4c0ab3e7211cde",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_bd195731dcf4b996",
+            "revision_id": "rev_de68226a2933d788"
+          },
+          "label": "《夜牙》人物小传",
+          "kind": "reference",
+          "name": "《夜牙》人物小传",
+          "deleted": false,
+          "problems": []
+        }
+      ],
+      "links": []
+    },
+    "operations": [
+      {
+        "operation_id": "django-free-papers-removal",
+        "action": "update",
+        "status": "saved",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "module_id": "mod_bd195731dcf4b996",
+        "base_revision": "rev_34222d7d3d716d92",
+        "edits": 1,
+        "saved": {
+          "operation_id": "django-free-papers-removal",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_de68226a2933d788",
+          "binding_id": "bnd_eb4c0ab3e7211cde",
+          "name": "《夜牙》人物小传",
+          "created": false
+        }
+      }
+    ],
+    "saved": [
+      {
+        "operation_id": "django-free-papers-removal",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_de68226a2933d788",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "name": "《夜牙》人物小传",
+        "created": false
+      }
+    ],
+    "saved_events": [
+      {
+        "operation_id": "django-free-papers-removal",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_de68226a2933d788",
+        "name": "《夜牙》人物小传",
+        "created": false
+      }
+    ],
+    "undo": {
+      "available": true,
+      "change_set_id": "chs_3ddb75a24fc28a6f"
+    },
+    "discarded": [],
+    "discard_failed": []
+  }
+}

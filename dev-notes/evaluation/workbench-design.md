@@ -1,6 +1,6 @@
 # 评测工作台重设计
 
-日期：2026-11-15。状态：**W1–W6 已落地**。上位设计：[评测体系重建设计](design.md) 第 2、6、9、10 节。参考：[Agent 评测白皮书 01：评测全览](https://tech.meituan.com/2026/09/10/Agent-Evaluation-White-Paper-01.html) 第四、五节；作者提供的 Agent Trace 示意图。原型：[eval-workbench-20261115](../../prototypes/eval-workbench-20261115/index.html)（仅供布局与视觉参考）。
+日期：2026-11-15（W7：2026-11-16）。状态：**W1–W7 已落地**。上位设计：[评测体系重建设计](design.md)。参考：[Agent 评测白皮书 01：评测全览](https://tech.meituan.com/2026/09/10/Agent-Evaluation-White-Paper-01.html) 第四、五节；作者提供的 Agent Trace 示意图。原型：[eval-workbench-20261115](../../prototypes/eval-workbench-20261115/index.html)（仅供布局与视觉参考）。
 
 ## 1. 为什么重做
 
@@ -226,14 +226,16 @@ data/evaluation/runs/<运行>/
 | W4 工作台单次试验视图 | 顶栏、左栏、环节条、时间线 + 检查项叠加、详情、检查项与差异标签页 | 用 W1 的真实证据包打开，能从失败检查项一路点到出错步骤 |
 | W5 复核与归因 | 复核卡片嵌差异、点选证据；归因页写回 | 复核和归因写回后 `score` 合并正确 |
 | W6 运行总览 | 多案例矩阵、基线对比 | 门禁模式（每案 3 次）可读 |
+| W7 Case 库 + 跑测控制 | 只读 Case 库（可跳相关运行）；工作台选题触发冒烟/门禁（进度/取消）；CLI 与工作台共用 `run_batch` | 三入口可用；Job API 校验与单任务互斥有测试 |
 
 W1 不依赖界面方案，可以先做；它也是修 `smoke-2` 那条失败的必要一步。
 
 ## 7. 不做
 
-- 在工作台里触发跑测、编辑案例、确认基线、登记豁免（design 第 10.4 节已排到后续）。
+- 编辑/新建案例 YAML、确认基线与登记豁免的专用 UI（仍可后做）。
 - 跨运行的趋势图、在线监控看板（冷启动阶段不做）。
 - 模型评委打分（design 第 9.2 节暂不启用）。
+- 多 Job 并行、跨机调度。
 
 ## 8. 已确认（2026-11-15）
 
@@ -252,3 +254,4 @@ W1 不依赖界面方案，可以先做；它也是修 `smoke-2` 那条失败的
 | 2026-11-15 | W4 | 独立入口 `frontend/eval-workbench.html`（不进产品路由）；工作台服务提供 attempt / traces / diff / events / inputs API；页面含顶栏、案例栏、环节条、共享时间线 + 检查项叠加、详情、检查项与正文差异。对 `smoke-3` 可从失败项点到 Trace。 |
 | 2026-11-15 | W5 | `reviews.json` 改为 `{reviews, attributions}`；复核卡片嵌差异点选证据；归因页默认最早失败环节对应类别；`score` 合并写回报告。工作台 API 测试覆盖。 |
 | 2026-11-15 | W6 | 进入工作台先看运行总览矩阵（案例 × 试验色块）；有 `baseline_compare` 时显示变好/变差/不变。`tests/evaluation` 37 passed；前端 `tsc` + marks 单测通过。 |
+| 2026-11-16 | W7 | 顶栏三入口：Case 库 / 结果 / 跑测。`GET /api/cases`、相关运行、`POST /api/jobs`（单 active、可取消）。`evaluation.harness.runner_api.run_batch` 供 CLI 与工作台共用。 |

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "change_set_id": "chs_6fd7c4808ac46c19",
+  "workspace": "C:\\Users\\plankton\\Documents\\ClueLedger\\作品\\被解救的罪人",
+  "turn_id": "t_c1eac982",
+  "request_key": "",
+  "request_digest": "fb2d0fce98943610fc22b586e628acab28a523794eb6e6599d2da40a79553bc6",
+  "status": "applied",
+  "base_assembly_digest": "bc895aeb12f1e64502ea5cd2cc0ca95f3047ea2934e33071b6dff1b9fd99abdd",
+  "base_assembly": {
+    "schema_version": 1,
+    "library_id": "lib_3542de9fbb2fb9ad",
+    "bindings": [
+      {
+        "id": "bnd_d279c84d4c57ad76",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_cc0f1f819b11aeb4",
+          "revision_id": "rev_1477e738161875eb"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_009c95ccf5aa050c",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_a53bcffa6cf69049",
+          "revision_id": "rev_78c5f084d0e6583e"
+        },
+        "label": ""
+      },
+      {
+        "id": "bnd_eb4c0ab3e7211cde",
+        "module": {
+          "library_id": "lib_3542de9fbb2fb9ad",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_63680d4817c024e5"
+        },
+        "label": "《夜牙》人物小传"
+      }
+    ],
+    "links": []
+  },
+  "operations": [
+    {
+      "operation_id": "del_schultz_table_line",
+      "action": "update",
+      "binding_id": "bnd_eb4c0ab3e7211cde",
+      "module_id": "mod_bd195731dcf4b996",
+      "base_revision": "rev_63680d4817c024e5",
+      "edits": [
+        {
+          "entry_id": "characters",
+          "base_digest": "1611c1ce0a417be6821d7b3d4a6124a43fa60a98f8e5484935a6e150f5164676",
+          "find": "四十上下，五尺八寸，瘦，肩窄背直。站在折叠桌后面显高，走到人群里就只是中等个。",
+          "replace": "四十上下，五尺八寸，瘦，肩窄背直。走到人群里就只是中等个。"
+        }
+      ],
+      "saved": {
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_a266507bc82d67ff",
+        "name": "《夜牙》人物小传",
+        "created": false,
+        "binding_id": "bnd_eb4c0ab3e7211cde"
+      }
+    }
+  ],
+  "result": {
+    "applied": true,
+    "change_set_id": "chs_6fd7c4808ac46c19",
+    "stage": "applied",
+    "assembly": {
+      "schema_version": 1,
+      "library_id": "lib_3542de9fbb2fb9ad",
+      "digest": "85686e3d0e5384220c220f471c1691708a62acac9de6c53e3a18697cd64ee5bc",
+      "bindings": [
+        {
+          "id": "bnd_d279c84d4c57ad76",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_cc0f1f819b11aeb4",
+            "revision_id": "rev_1477e738161875eb"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》世界与时代背景",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_009c95ccf5aa050c",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_a53bcffa6cf69049",
+            "revision_id": "rev_78c5f084d0e6583e"
+          },
+          "label": "",
+          "kind": "reference",
+          "name": "《夜牙》专名表与用词",
+          "deleted": false,
+          "problems": []
+        },
+        {
+          "id": "bnd_eb4c0ab3e7211cde",
+          "module": {
+            "library_id": "lib_3542de9fbb2fb9ad",
+            "module_id": "mod_bd195731dcf4b996",
+            "revision_id": "rev_a266507bc82d67ff"
+          },
+          "label": "《夜牙》人物小传",
+          "kind": "reference",
+          "name": "《夜牙》人物小传",
+          "deleted": false,
+          "problems": []
+        }
+      ],
+      "links": []
+    },
+    "operations": [
+      {
+        "operation_id": "del_schultz_table_line",
+        "action": "update",
+        "status": "saved",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "module_id": "mod_bd195731dcf4b996",
+        "base_revision": "rev_63680d4817c024e5",
+        "edits": 1,
+        "saved": {
+          "operation_id": "del_schultz_table_line",
+          "module_id": "mod_bd195731dcf4b996",
+          "revision_id": "rev_a266507bc82d67ff",
+          "binding_id": "bnd_eb4c0ab3e7211cde",
+          "name": "《夜牙》人物小传",
+          "created": false
+        }
+      }
+    ],
+    "saved": [
+      {
+        "operation_id": "del_schultz_table_line",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_a266507bc82d67ff",
+        "binding_id": "bnd_eb4c0ab3e7211cde",
+        "name": "《夜牙》人物小传",
+        "created": false
+      }
+    ],
+    "saved_events": [
+      {
+        "operation_id": "del_schultz_table_line",
+        "module_id": "mod_bd195731dcf4b996",
+        "revision_id": "rev_a266507bc82d67ff",
+        "name": "《夜牙》人物小传",
+        "created": false
+      }
+    ],
+    "undo": {
+      "available": true,
+      "change_set_id": "chs_6fd7c4808ac46c19"
+    },
+    "discarded": [],
+    "discard_failed": []
+  }
+}

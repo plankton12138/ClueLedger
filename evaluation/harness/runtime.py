@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,7 +23,40 @@ from evaluation.harness.evidence import (
 from evaluation.harness.schema import Case
 from evaluation.harness.stages import compute_stages
 
-_SKIP_NAMES = {".git", "__pycache__", ".DS_Store"}
+_SKIP_NAMES = {"__pycache__", ".DS_Store", ".git"}
+
+
+def ensure_work_git(work_dir: Path) -> None:
+    """试验作品需要独立 Git 根；夹具不入库嵌套 .git，复制后在此初始化。"""
+    git_dir = work_dir / ".git"
+    if git_dir.exists():
+        return
+    run_kw: dict[str, Any] = {
+        "cwd": work_dir,
+        "check": True,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    try:
+        subprocess.run(["git", "init"], **run_kw)
+        subprocess.run(["git", "add", "-A"], **run_kw)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.email=eval@local",
+                "-c",
+                "user.name=evaluation",
+                "commit",
+                "-m",
+                "evaluation fixture baseline",
+            ],
+            **run_kw,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise EvalClientError(f"无法为试验作品初始化 Git：{exc}") from exc
 
 
 @dataclass
@@ -214,6 +248,7 @@ class AttemptRunner:
         conversation_id: str | None = None
         try:
             prepare_work_copy(case.work_dir, work_dir)
+            ensure_work_git(work_dir)
             before = snapshot_files(work_dir)
             workspace_id = self.client.open_workspace(str(work_dir))
             self.client.set_capture_inputs(workspace_id, True)
