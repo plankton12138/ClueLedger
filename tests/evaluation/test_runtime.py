@@ -188,6 +188,30 @@ def test_runner_grades_after_fake_turn(tmp_path: Path) -> None:
     assert by_id["snow_present"] == "pending_review"
 
 
+def test_runner_honors_capture_inputs_false(tmp_path: Path) -> None:
+    case_path = _seed_case(tmp_path)
+    case = load_case(case_path, works_root=tmp_path / "works")
+
+    def mutate(work: Path) -> None:
+        target = work / "正文" / "0003.md"
+        target.write_text(
+            "前文保留。\n林岚推开客栈的门，雪落在石阶上。\n「你昨晚去了哪里？」\n",
+            encoding="utf-8",
+        )
+
+    client = FakeClient(work_mutator=mutate)
+    runner = AttemptRunner(
+        client=client,  # type: ignore[arg-type]
+        attempts_root=tmp_path / "attempts",
+        budget=CallBudget(max_requests=5),
+        sleep=lambda _: None,
+        capture_inputs=False,
+    )
+    result = runner.run(case, attempt=1)
+    assert result.status == "completed"
+    assert client.capture == [False]
+
+
 def test_runner_not_run_when_budget_exhausted(tmp_path: Path) -> None:
     case_path = _seed_case(tmp_path)
     case = load_case(case_path, works_root=tmp_path / "works")

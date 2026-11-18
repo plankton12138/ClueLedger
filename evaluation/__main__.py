@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from evaluation.harness.assets import AssetLoadError, load_evaluator_by_id
 from evaluation.harness.report import (
     apply_reviews,
     compare_to_baseline,
@@ -13,7 +14,12 @@ from evaluation.harness.report import (
     regrade_report,
     write_report,
 )
-from evaluation.harness.runner_api import RunBatchError, run_batch
+from evaluation.harness.runner_api import (
+    RunBatchError,
+    resolve_run_env_knobs,
+    resolve_suite_batch,
+    run_batch,
+)
 from evaluation.harness.schema import CaseLoadError, load_cases
 
 ROOT = Path(__file__).resolve().parent
@@ -40,19 +46,39 @@ def main(argv: list[str] | None = None) -> int:
     )
     run_parser.add_argument("--case", action="append", default=[], help="只跑指定案例 id，可重复")
     run_parser.add_argument(
+        "--suite",
+        default=None,
+        help="Suite id（evaluation/suites）；指定后默认带出 cases/mode/repeat/env",
+    )
+    run_parser.add_argument(
+        "--env",
+        default=None,
+        help="Env id（evaluation/envs）；覆盖 Suite 的 default_env",
+    )
+    run_parser.add_argument(
         "--repeat",
         type=int,
-        default=1,
-        help="每案试验次数（冒烟 1，完整门禁 3）",
+        default=None,
+        help="每案试验次数（冒烟 1，完整门禁 3）；默认取 Suite 或 1",
     )
-    run_parser.add_argument("--max-requests", type=int, default=30, help="本批模型请求上限")
+    run_parser.add_argument(
+        "--max-requests",
+        type=int,
+        default=None,
+        help="本批模型请求上限；默认取 Env.budget 或 30",
+    )
     run_parser.add_argument("--out", type=Path, required=True, help="尚不存在的输出目录")
-    run_parser.add_argument("--timeout", type=float, default=300.0, help="单轮等待秒数")
+    run_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="单轮等待秒数；默认取 Env.timeout_s 或 300",
+    )
     run_parser.add_argument(
         "--mode",
         choices=("smoke", "gate"),
-        default="smoke",
-        help="报告模式标签",
+        default=None,
+        help="报告模式标签；默认取 Suite 或 smoke",
     )
     run_parser.add_argument(
         "--baseline",
@@ -123,7 +149,51 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
-        if args.mode == "gate" and args.repeat < 3:
+        suite_id = args.suite
+        env_id = args.env
+        case_ids = args.case or None
+        mode = args.mode or "smoke"
+        repeat = args.repeat if args.repeat is not None else 1
+        evaluator_id = None
+        evaluator_version = None
+
+        if suite_id:
+            try:
+                suite, _env, suite_cases, suite_mode, suite_repeat, _budget, _env_timeout = (
+                    resolve_suite_batch(suite_id)
+                )
+            except RunBatchError as exc:
+                print(str(exc))
+                return 1
+            if not case_ids:
+                case_ids = suite_cases
+            if args.mode is None:
+                mode = suite_mode
+            if args.repeat is None:
+                repeat = suite_repeat
+            if env_id is None:
+                env_id = suite.default_env  # type: ignore[attr-defined]
+            evaluator_id = suite.default_evaluator  # type: ignore[attr-defined]
+
+        try:
+            env_id, max_requests, timeout_s, capture_inputs = resolve_run_env_knobs(
+                env_id,
+                max_requests=args.max_requests,
+                timeout_s=args.timeout,
+            )
+        except RunBatchError as exc:
+            print(str(exc))
+            return 1
+
+        if evaluator_id:
+            try:
+                pack = load_evaluator_by_id(evaluator_id)
+                evaluator_version = pack.version
+            except AssetLoadError as exc:
+                print(f"[EVAL_ASSET] evaluation.run：{exc}。建议：检查 evaluators 目录。")
+                return 1
+
+        if mode == "gate" and repeat < 3:
             print(
                 "[EVAL_MODE] evaluation.run：完整门禁建议 --repeat 3。"
                 "建议：提高试验次数，或改用 --mode smoke。"
@@ -142,14 +212,19 @@ def main(argv: list[str] | None = None) -> int:
                 out_dir=args.out,
                 cases_dir=args.cases,
                 works_dir=args.works,
-                case_ids=args.case or None,
-                mode=args.mode,
-                repeat=args.repeat,
-                max_requests=args.max_requests,
-                timeout_s=args.timeout,
+                case_ids=case_ids,
+                mode=mode,  # type: ignore[arg-type]
+                repeat=repeat,
+                max_requests=max_requests,
+                timeout_s=timeout_s,
                 baseline=args.baseline,
                 on_progress=_on_progress,
                 strict_gate_repeat=False,
+                suite_id=suite_id,
+                env_id=env_id,
+                evaluator_id=evaluator_id,
+                evaluator_version=evaluator_version,
+                capture_inputs=capture_inputs,
             )
         except RunBatchError as exc:
             print(str(exc))

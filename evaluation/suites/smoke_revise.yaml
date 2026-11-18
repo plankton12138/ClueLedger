@@ -1,0 +1,9 @@
+id: smoke_revise
+version: 1
+desc: 对话改稿冒烟
+cases:
+  - revise_ch1_ending_farm_tonight
+default_env: local_default
+default_evaluator: revise_v1
+mode: smoke
+repeat: 1

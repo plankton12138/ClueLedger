@@ -87,6 +87,64 @@ def test_must_fail_blocks_gate() -> None:
     assert any(item["kind"] == "must_fail" for item in gate["blockers"])
 
 
+def test_diagnostic_failures_do_not_affect_gate_stats() -> None:
+    """diagnostic 失败不计入门禁 must/quality；required 质量失败仍计入。"""
+    diag_fail = _completed(
+        "a",
+        1,
+        _grade(
+            CheckResult("only_region_changed", "must", "pass", "", role="required"),
+            CheckResult(
+                "chapter_in_model_input",
+                "quality",
+                "fail",
+                "缺章",
+                role="diagnostic",
+            ),
+            CheckResult("diag_must", "must", "fail", "诊断", role="diagnostic"),
+        ),
+    )
+    report = build_report([diag_fail, diag_fail, diag_fail])
+    case = report["cases"][0]
+    assert case["must_failed"] is False
+    assert case["quality_pass_count"] == 3
+    gate = gate_decision(report)
+    assert gate["passed"] is True
+
+    required_quality_fail = _completed(
+        "b",
+        1,
+        _grade(
+            CheckResult("only_region_changed", "must", "pass", "", role="required"),
+            CheckResult(
+                "chapter_in_model_input",
+                "quality",
+                "fail",
+                "缺章",
+                role="required",
+            ),
+        ),
+    )
+    baseline = build_report(
+        [
+            _completed(
+                "b",
+                attempt,
+                _grade(
+                    CheckResult("only_region_changed", "must", "pass", ""),
+                    CheckResult("chapter_in_model_input", "quality", "pass", ""),
+                ),
+            )
+            for attempt in (1, 2, 3)
+        ]
+    )
+    current = build_report([required_quality_fail, required_quality_fail, required_quality_fail])
+    compared = compare_to_baseline(current, baseline)
+    gate2 = gate_decision(compared)
+    assert gate2["passed"] is False
+    assert any(item["kind"] == "quality_regression" for item in gate2["blockers"])
+
+
 def test_quality_regression_vs_baseline() -> None:
     def quality_pass(case: str, attempt: int, ok: bool) -> AttemptResult:
         return _completed(

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from evaluation.harness.assets import AssetLoadError, load_env_by_id, load_suite_by_id
 from evaluation.harness.client import EvalClientError, HttpEvalClient
 from evaluation.harness.report import (
     build_report,
@@ -22,6 +23,7 @@ from evaluation.harness.schema import Case, CaseLoadError, load_cases
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVAL_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_JOBS_ROOT = REPO_ROOT / "data" / "evaluation" / "jobs"
 
 BatchStatus = Literal["completed", "cancelled", "failed"]
 ProgressCallback = Callable[[AttemptResult, list[AttemptResult], dict[str, Any]], None]
@@ -104,6 +106,21 @@ def resolve_cases(
     return cases
 
 
+def write_job_record(
+    jobs_root: Path,
+    payload: dict[str, Any],
+) -> Path:
+    """落盘 Pipeline Job 元数据；返回 job 目录。"""
+    job_id = str(payload.get("id") or "")
+    if not job_id:
+        raise RunBatchError("[EVAL_JOB] evaluation.run：Job 缺少 id。建议：检查 Job 创建逻辑。")
+    job_dir = jobs_root / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    path = job_dir / "job.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return job_dir
+
+
 def run_batch(
     *,
     base_url: str,
@@ -121,6 +138,13 @@ def run_batch(
     probe: bool = True,
     mkdir: bool = True,
     strict_gate_repeat: bool = False,
+    suite_id: str | None = None,
+    env_id: str | None = None,
+    evaluator_id: str | None = None,
+    evaluator_version: int | None = None,
+    capture_inputs: bool = True,
+    job_id: str | None = None,
+    jobs_root: Path | None = None,
 ) -> BatchResult:
     """跑一批案例并写 report.json；可在 attempt 间隙取消。"""
     if out_dir.exists():
@@ -141,6 +165,13 @@ def run_batch(
         probe_base_url(base_url)
 
     cases = resolve_cases(cases_dir, works_dir, case_ids)
+    if evaluator_id is None:
+        pack_ids = {case.evaluator_id for case in cases if case.evaluator_id}
+        if len(pack_ids) == 1:
+            evaluator_id = next(iter(pack_ids))
+            evaluator_version = next(
+                case.evaluator_version for case in cases if case.evaluator_id == evaluator_id
+            )
     if mkdir:
         out_dir.mkdir(parents=True)
     attempts_root = out_dir / "attempts"
@@ -151,6 +182,7 @@ def run_batch(
         attempts_root=attempts_root,
         budget=budget,
         timeout_s=timeout_s,
+        capture_inputs=capture_inputs,
     )
     results: list[AttemptResult] = []
     cancelled = False
@@ -161,6 +193,10 @@ def run_batch(
             results,
             identity={**git_identity(), "budget_used": budget.used, "budget_max": max_requests},
             mode=mode,
+            suite_id=suite_id,
+            env_id=env_id,
+            evaluator_id=evaluator_id,
+            evaluator_version=evaluator_version,
         )
         if baseline and baseline.is_file():
             try:
@@ -172,6 +208,23 @@ def run_batch(
         if cancelled:
             report["cancelled"] = True
         write_report(out_dir, report)
+        if job_id:
+            write_job_record(
+                jobs_root or DEFAULT_JOBS_ROOT,
+                {
+                    "id": job_id,
+                    "suite": suite_id,
+                    "env": env_id,
+                    "evaluator": evaluator_id,
+                    "evaluator_version": evaluator_version,
+                    "mode": mode,
+                    "repeat": repeat,
+                    "out": str(out_dir),
+                    "case_ids": [case.id for case in cases],
+                    "status": "running" if not cancelled else "cancelling",
+                    "base_url": base_url,
+                },
+            )
         return report
 
     try:
@@ -206,6 +259,31 @@ def run_batch(
         client.close()
 
     report = _write_partial()
+    final_status: BatchStatus
+    if run_error:
+        final_status = "failed"
+    elif cancelled:
+        final_status = "cancelled"
+    else:
+        final_status = "completed"
+    if job_id:
+        write_job_record(
+            jobs_root or DEFAULT_JOBS_ROOT,
+            {
+                "id": job_id,
+                "suite": suite_id,
+                "env": env_id,
+                "evaluator": evaluator_id,
+                "evaluator_version": evaluator_version,
+                "mode": mode,
+                "repeat": repeat,
+                "out": str(out_dir),
+                "case_ids": [case.id for case in cases],
+                "status": final_status,
+                "base_url": base_url,
+                "error": run_error or ("已取消" if cancelled else None),
+            },
+        )
     if run_error:
         return BatchResult(status="failed", report=report, results=results, error=run_error)
     if cancelled:
@@ -217,3 +295,58 @@ def run_batch(
             error="已取消",
         )
     return BatchResult(status="completed", report=report, results=results)
+
+
+def resolve_suite_batch(
+    suite_id: str,
+    *,
+    suites_dir: Path | None = None,
+    envs_dir: Path | None = None,
+) -> tuple[object, object, list[str], Literal["smoke", "gate"], int, int, float]:
+    """加载 Suite 与默认 Env，返回 (suite, env, case_ids, mode, repeat, budget, timeout_s)。"""
+    try:
+        suite = load_suite_by_id(suite_id, suites_dir=suites_dir)
+        env = load_env_by_id(suite.default_env, envs_dir=envs_dir)
+    except AssetLoadError as exc:
+        raise RunBatchError(
+            f"[EVAL_ASSET] evaluation.run：{exc}。建议：检查 suites/envs 目录。"
+        ) from exc
+    return (
+        suite,
+        env,
+        list(suite.case_ids),
+        suite.mode,
+        suite.repeat,
+        env.budget,
+        env.timeout_s,
+    )
+
+
+def resolve_run_env_knobs(
+    env_id: str | None,
+    *,
+    max_requests: int | None = None,
+    timeout_s: float | None = None,
+    envs_dir: Path | None = None,
+) -> tuple[str | None, int, float, bool]:
+    """按最终 Env 解析运行参数；显式 max_requests/timeout_s 可覆盖档案值。
+
+    返回 (env_id, max_requests, timeout_s, capture_inputs)。
+    """
+    if not env_id:
+        return (
+            None,
+            30 if max_requests is None else max_requests,
+            300.0 if timeout_s is None else timeout_s,
+            True,
+        )
+    try:
+        env = load_env_by_id(env_id, envs_dir=envs_dir)
+    except AssetLoadError as exc:
+        raise RunBatchError(f"[EVAL_ASSET] evaluation.run：{exc}。建议：检查 envs 目录。") from exc
+    return (
+        env.id,
+        env.budget if max_requests is None else max_requests,
+        env.timeout_s if timeout_s is None else timeout_s,
+        env.capture_inputs,
+    )

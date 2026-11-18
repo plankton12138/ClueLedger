@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>评测怎么运转 · 交互教学</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #f3f1ec;
+    --ink: #1c1914;
+    --muted: #5c564c;
+    --line: #d9d2c6;
+    --panel: #fffcf7;
+    --accent: #2c5f4a;
+    --accent-soft: #e4efe9;
+    --warm: #8a5a2b;
+    --warm-soft: #f3e8da;
+    --cool: #2f4d6e;
+    --cool-soft: #e4ebf3;
+    --danger: #7a3535;
+    --danger-soft: #f3e4e4;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #161410;
+      --ink: #efe8dc;
+      --muted: #a89f90;
+      --line: #3a342c;
+      --panel: #1f1b16;
+      --accent: #7dba9a;
+      --accent-soft: #24362e;
+      --warm: #d4a574;
+      --warm-soft: #3a2e22;
+      --cool: #8eb0d4;
+      --cool-soft: #243040;
+      --danger: #e0a0a0;
+      --danger-soft: #3a2424;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 18px 80px; }
+  .eyebrow {
+    font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    margin: 8px 0 10px;
+    font-size: clamp(1.55rem, 3vw, 1.95rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+  .lede { margin: 0 0 18px; color: var(--muted); max-width: 40em; }
+  .modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+    font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .mode {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: inherit;
+    border-radius: 999px;
+    padding: 9px 16px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .mode.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  @media (prefers-color-scheme: dark) {
+    .mode.active { color: #122018; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 20px 18px;
+    min-height: 360px;
+  }
+  .hidden { display: none !important; }
+  .acts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    gap: 6px;
+    margin-bottom: 12px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+  }
+  .act {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: inherit;
+    border-radius: 999px;
+    padding: 8px 8px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .act.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    margin: 0 0 12px;
+  }
+  .rail span {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--line);
+  }
+  .rail span.on { background: var(--accent); }
+  .num {
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  h2 { margin: 6px 0 12px; font-size: 1.28rem; line-height: 1.3; }
+  p { margin: 0 0 12px; }
+  .quote {
+    margin: 12px 0;
+    padding: 12px 14px;
+    border-left: 3px solid var(--warm);
+    background: var(--warm-soft);
+    font-size: 0.95rem;
+  }
+  .code-box {
+    margin-top: 14px;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+  .code-box h3 {
+    margin: 0 0 8px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .code-row {
+    display: grid;
+    gap: 8px;
+  }
+  .code-item {
+    appearance: none;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: inherit;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .code-item:hover, .code-item.open {
+    border-color: var(--cool);
+    background: var(--cool-soft);
+  }
+  .code-item .file {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    color: var(--cool);
+    overflow-wrap: anywhere;
+  }
+  .code-item .role {
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  .code-item .more {
+    display: none;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .code-item.open .more { display: block; }
+  .nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+  }
+  .nav button {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: inherit;
+    border-radius: 999px;
+    padding: 8px 16px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .nav button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .nav button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    .nav button.primary { color: #122018; }
+  }
+  .map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+  }
+  .map-node {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: inherit;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+  .map-node .k {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .map-node .t { font-weight: 600; margin-top: 4px; font-size: 14px; }
+  .map-node.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .detail-title { margin: 0 0 8px; font-size: 1.15rem; }
+  .files {
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+  }
+  .files li {
+    border-top: 1px solid var(--line);
+    padding: 10px 0;
+  }
+  .files .path {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    color: var(--cool);
+    overflow-wrap: anywhere;
+  }
+  .files .why { font-size: 14px; margin-top: 2px; }
+  .quiz-q { margin-bottom: 14px; }
+  .quiz-opts {
+    display: grid;
+    gap: 8px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+  }
+  .quiz-opt {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: inherit;
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: left;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .quiz-opt:hover:not(:disabled) { border-color: var(--cool); }
+  .quiz-opt.correct {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .quiz-opt.wrong {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+  }
+  .quiz-fb {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--cool-soft);
+    font-size: 14px;
+  }
+  .quiz-fb.ok { background: var(--accent-soft); }
+  .quiz-fb.bad { background: var(--danger-soft); }
+  .quiz-meta {
+    margin-top: 12px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+    font-size: 13px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  footer {
+    margin-top: 24px;
+    font-family: "SF Pro Text", "PingFang SC", sans-serif;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  footer a { color: var(--accent); }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">evaluation · 交互教学</p>
+  <h1>设计怎么定，代码站哪一岗</h1>
+  <p class="lede">重点在评测与改稿设计。每个设计决策下面挂「落点代码」。四种学法可切换；「Scope 落地」按产品链路逐步展开 gate。</p>
+
+  <div class="modes" role="tablist" aria-label="学法">
+    <button type="button" class="mode active" data-mode="story" role="tab" aria-selected="true">故事</button>
+    <button type="button" class="mode" data-mode="map" role="tab" aria-selected="false">设计地图</button>
+    <button type="button" class="mode" data-mode="quiz" role="tab" aria-selected="false">找代码</button>
+    <button type="button" class="mode" data-mode="scope" role="tab" aria-selected="false">Scope 落地</button>
+  </div>
+
+  <section id="view-story" class="panel" aria-label="故事">
+    <div class="rail" id="rail" aria-hidden="true"></div>
+    <div class="acts" id="acts" role="tablist" aria-label="幕次"></div>
+    <div id="stage"></div>
+    <div class="nav">
+      <button type="button" id="prev">上一幕</button>
+      <button type="button" class="primary" id="next">下一幕</button>
+    </div>
+  </section>
+
+  <section id="view-map" class="panel hidden" aria-label="设计地图">
+    <p class="num">点设计，不点文件名</p>
+    <h2 style="margin-top:4px">这条闭环里，决策落在哪</h2>
+    <div class="map-grid" id="map-grid"></div>
+    <div id="map-detail"></div>
+  </section>
+
+  <section id="view-quiz" class="panel hidden" aria-label="找代码">
+    <p class="num">自测</p>
+    <h2 style="margin-top:4px">这句设计，该找谁</h2>
+    <div id="quiz"></div>
+    <div class="quiz-meta">
+      <span id="quiz-score"></span>
+      <button type="button" class="mode" id="quiz-next" style="margin:0">下一题</button>
+    </div>
+  </section>
+
+  <section id="view-scope" class="panel hidden" aria-label="Scope 落地">
+    <div class="rail" id="scope-rail" aria-hidden="true"></div>
+    <div class="acts" id="scope-acts" role="tablist" aria-label="Scope 步骤"></div>
+    <div id="scope-stage"></div>
+    <div class="nav">
+      <button type="button" id="scope-prev">上一步</button>
+      <button type="button" class="primary" id="scope-next">下一步</button>
+    </div>
+  </section>
+
+  <footer>
+    正文 <a href="how-it-works.md">how-it-works.md</a> ·
+    模块图 <a href="structure-map.html">structure-map.html</a> ·
+    总图 <a href="design.md">design.md</a>
+  </footer>
+</main>
+<script>
+const ACTS = [
+  {
+    tab: "为何",
+    num: "开场",
+    title: "模型说改好了，你不能信",
+    body: `
+      <p>评测只回答：这一版在认得的问题上好不好用；不好时最早坏在改稿链路哪一站。</p>
+      <p>暂时没有其他用户，在线空着。失败先来自本机使用、规则扫描、离线跑挂。</p>
+    `,
+    code: [
+      {
+        file: "evaluation/harness/client.py",
+        role: "产品边界：只走 HTTP",
+        more: "HttpEvalClient 打开作品、受理轮次、轮询事件、读 Trace。评测不 import 业务模块——设计上的「外部作者」。",
+      },
+      {
+        file: "evaluation/harness/runner_api.py",
+        role: "唯一批跑引擎",
+        more: "run_batch 被 CLI 与工作台共用：参数、探测 base-url、取消、进度、写报告。避免两套跑法分叉。",
+      },
+      {
+        file: "dev-notes/evaluation/design.md §0",
+        role: "总图：离线 / 空槽在线 / Case / 观测",
+        more: "在线监控没有对应实现模块——这是刻意空槽，不是漏写。",
+      },
+    ],
+  },
+  {
+    tab: "考题",
+    num: "第一幕",
+    title: "冻成可重复的考题",
+    body: `
+      <div class="quote">把第一章结尾改成舒尔茨答应今晚就带姜戈去农场……保留五个坑与三个名那句对白。</div>
+      <p>模型看得见初态与作者话；看不见锚点期望与检查项。锚点不唯一则整案拒绝加载。</p>
+    `,
+    code: [
+      {
+        file: "evaluation/cases/revise_ch1_ending_farm_tonight.yaml",
+        role: "考题数据",
+        more: "steps / expect / checks。后两部分不进提示词。",
+      },
+      {
+        file: "evaluation/harness/schema.py",
+        role: "出题校验",
+        more: "load_case → Case；_assert_unique_anchor 保证「天黑得比钟点早。」在初态里唯一。",
+      },
+      {
+        file: "evaluation/works/base/被解救的罪人/",
+        role: "冻结原书",
+        more: "真实作品快照。*.meta/ 是评测说明，不进试验复制。",
+      },
+    ],
+  },
+  {
+    tab: "开考",
+    num: "第二幕",
+    title: "复制可毁掉的书，对真实产品代发",
+    body: `
+      <p>新开输出目录 → 复制作品 → HTTP 代发 → 收事件与输入 → 证据落盘。聊天自述不作证据。</p>
+    `,
+    code: [
+      {
+        file: "evaluation/harness/runtime.py",
+        role: "单场编排",
+        more: "AttemptRunner.run：prepare_work_copy、ensure_work_git、跑 steps、build_evidence、调 grade 与 stages。",
+      },
+      {
+        file: "evaluation/harness/evidence.py",
+        role: "证据包",
+        more: "snapshot_files、file_diff、extract_commit_receipts、write_evidence_pack / load_attempt_evidence——支持离线重评。",
+      },
+      {
+        file: "evaluation/workbench/jobs.py",
+        role: "工作台触发同一引擎",
+        more: "create_job 后台线程调 run_batch；单 active Job；cancel_event 协作取消。",
+      },
+      {
+        file: "frontend/src/eval-workbench/LaunchPage.tsx",
+        role: "跑测 UI",
+        more: "选题、冒烟/门禁、base-url、进度轮询、取消。",
+      },
+    ],
+  },
+  {
+    tab: "判卷",
+    num: "第三幕",
+    title: "must / quality / human",
+    body: `
+      <p>必须项不过即挂；质量项记报告；人工项（今晚去农场）在工作台复核后合并。</p>
+    `,
+    code: [
+      {
+        file: "evaluation/harness/checks.py",
+        role: "程序判分",
+        more: "grade_attempt 只吃证据。only_region_changed、preserved_verbatim、committed_via_candidate…；human → pending_review。",
+      },
+      {
+        file: "evaluation/harness/report.py",
+        role: "汇总与门禁",
+        more: "build_report、gate_decision、compare_to_baseline、apply_reviews、regrade_report。",
+      },
+      {
+        file: "evaluation/workbench/data.py",
+        role: "复核落盘",
+        more: "write_reviews_file / load_reviews_file；读 attempt 证据给结果页。",
+      },
+    ],
+  },
+  {
+    tab: "归因",
+    num: "第四幕",
+    title: "最早坏环，而不是一个红叉",
+    body: `
+      <p>六环 earliest fail → first_failed_stage。然后分岔：改产品，或改考题/检查项。</p>
+    `,
+    code: [
+      {
+        file: "evaluation/harness/stages.py",
+        role: "过程环",
+        more: "compute_stages：范围登记→读原文→候选→核对→修补→提交。",
+      },
+      {
+        file: "evaluation/harness/runtime.py",
+        role: "挂上试验结果",
+        more: "_with_stages 把 stages / first_failed_stage 写进 AttemptResult。",
+      },
+      {
+        file: "frontend/src/eval-workbench/（结果页）",
+        role: "归因与 Trace",
+        more: "从失败检查跳证据与 Trace；写归因。失败转案例（阶段 4）尚未做。",
+      },
+    ],
+  },
+  {
+    tab: "台子",
+    num: "第五幕",
+    title: "工作台是控制室",
+    body: `
+      <p>Case 库读考题；结果读答卷；跑测真触发。一次一个 Job。产物在 data/evaluation/runs/。</p>
+    `,
+    code: [
+      {
+        file: "evaluation/workbench/server.py",
+        role: "本机 API + 静态页",
+        more: "/api/cases、/api/jobs、报告与证据；托管 dist/eval-workbench.html。",
+      },
+      {
+        file: "frontend/src/eval-workbench/App.tsx",
+        role: "三入口壳",
+        more: "hash：#/cases · #/runs · #/launch；主题在 theme.ts。",
+      },
+      {
+        file: "frontend/src/eval-workbench/CasesPage.tsx",
+        role: "Case 库",
+        more: "只读浏览；相关运行；跳跑测并预勾选。",
+      },
+      {
+        file: "evaluation/__main__.py",
+        role: "CLI 入口",
+        more: "list / run / score / workbench——run 与 score 走 harness，workbench 起服务。",
+      },
+    ],
+  },
+];
+
+const MAP = [
+  {
+    k: "边界",
+    t: "评测 ↔ 产品分离",
+    title: "评测是外部作者，不是内部单测",
+    why: "保真：测的是真实本地模式服务。评测挂了也不能假装调到了产品内部函数。",
+    files: [
+      { path: "evaluation/harness/client.py", why: "唯一 HTTP 边界（Protocol + HttpEvalClient）" },
+      { path: "evaluation/harness/runtime.py", why: "编排时只依赖 EvalClient，不 import hastings 业务" },
+    ],
+  },
+  {
+    k: "出题",
+    t: "案例五块 + 锚点",
+    title: "可重复考场：可见现场 / 不可见标准",
+    why: "模型看不到检查项，避免「对着标准答案写作」。锚点失败直接拒载，省模型钱。",
+    files: [
+      { path: "evaluation/cases/*.yaml", why: "考题数据" },
+      { path: "evaluation/harness/schema.py", why: "加载与锚点唯一校验" },
+      { path: "evaluation/works/base/", why: "冻结作品初态" },
+    ],
+  },
+  {
+    k: "执行",
+    t: "隔离复制 + 批跑",
+    title: "每次试验一本可毁掉的书",
+    why: "比较版本时不得复用旧产物；CLI 与 UI 共用 run_batch，避免两套语义。",
+    files: [
+      { path: "evaluation/harness/runner_api.py", why: "run_batch：批跑、取消、进度、报告" },
+      { path: "evaluation/harness/runtime.py", why: "单次 AttemptRunner" },
+      { path: "evaluation/workbench/jobs.py", why: "单 active Job 包装同一引擎" },
+    ],
+  },
+  {
+    k: "证据",
+    t: "只信文件与 Trace",
+    title: "Agent 自述不是证据",
+    why: "判分与归因都建立在可落盘、可重载的证据上；支持 score 离线重评。",
+    files: [
+      { path: "evaluation/harness/evidence.py", why: "快照、diff、回执、证据包" },
+      { path: "evaluation/harness/checks.py", why: "grade_attempt 只吃 AttemptEvidence" },
+    ],
+  },
+  {
+    k: "O/I",
+    t: "交付 + 过程环",
+    title: "结果对不对，卡在哪一站",
+    why: "must/quality/human 答交付；stages 答最早失败环。CIAO 嵌在这里，不另起顶层。",
+    files: [
+      { path: "evaluation/harness/checks.py", why: "O：交付检查" },
+      { path: "evaluation/harness/stages.py", why: "I：六环 earliest fail" },
+      { path: "evaluation/harness/report.py", why: "汇总、gate、基线、合并人工" },
+    ],
+  },
+  {
+    k: "控制",
+    t: "工作台三入口",
+    title: "同一套产物的三种视角",
+    why: "Case / 结果 / 跑测不是三套评测，是控制室。设计重心仍在 harness。",
+    files: [
+      { path: "evaluation/workbench/server.py", why: "API 与页面托管" },
+      { path: "evaluation/workbench/data.py", why: "读 Case、运行、证据" },
+      { path: "frontend/src/eval-workbench/", why: "CasesPage / 结果 / LaunchPage" },
+    ],
+  },
+  {
+    k: "产品",
+    t: "Scope → 落地",
+    title: "改稿权限合同与版本提交",
+    why: "应用证明「未越已记录范围 + 写前版本有效」；不能证明自然语言意图已理解。详见「Scope 落地」模式。",
+    files: [
+      { path: "src/hastings/workspace/task_scope.py", why: "set_scope / require / 授权引文校验" },
+      { path: "src/hastings/workspace/agent.py", why: "set_task_scope、before_mutation、propose_story_scene" },
+      { path: "src/hastings/workspace/service.py", why: "候选 review/repair → commit_change" },
+    ],
+  },
+];
+
+const SCOPE_STEPS = [
+  {
+    tab: "规矩",
+    num: "先立规矩",
+    title: "能证明什么，不能证明什么",
+    body: `
+      <div class="quote">把第一章结尾改成舒尔茨答应今晚就带姜戈去农场……只改这一章。</div>
+      <p>应用能证明：操作没有超出<strong>已记录</strong>范围，且写前材料/版本仍有效。</p>
+      <p>应用不能证明：范围解释一定符合自然语言意图。授权引文匹配 ≠ 意图理解已证明。</p>
+    `,
+    gates: [],
+    code: [
+      {
+        file: "src/hastings/workspace/task_scope.py（模块头注释）",
+        role: "权限合同，不是意图证明",
+        more: "普通任务起初没有作品写权限；材料选择不产生操作授权；授权依据只来自作者消息。",
+      },
+    ],
+  },
+  {
+    tab: "无写权",
+    num: "第 1 步",
+    title: "开场：默认没有写权限",
+    body: `
+      <p>轮次开始时 ScopeController 为空。可以列目录、搜索、读文件、回答；写工具不能用，直到 set_task_scope。</p>
+      <p>农场案里模型通常先 read_file 读 <span class="mono">正文/0001 拔牙人进镇.md</span>，材料系统记下本轮提供的原文与版本。</p>
+    `,
+    gates: [
+      { t: "写工具", d: "无 scope 时 scope.require 抛 TASK_SCOPE_REQUIRED_CONFLICT" },
+    ],
+    code: [
+      {
+        file: "src/hastings/workspace/task_scope.py · ScopeController.require",
+        role: "无范围则拒写",
+        more: "current is None → 提示先用 set_task_scope 登记授权引文与确切路径。",
+      },
+    ],
+  },
+  {
+    tab: "登记",
+    num: "第 2 步",
+    title: "确认 scope：set_task_scope",
+    body: `
+      <p>典型参数：mode=edit；authorization=作者原话短引文；grants 含该章 update；summary 写清本轮要做什么。</p>
+      <p>通过后出现带 version 的 TaskScope，事件 <span class="mono">task_scope_set</span> 落盘——这是记录下来的权限合同。</p>
+    `,
+    gates: [
+      { t: "summary", d: "必须写清本轮要做什么" },
+      { t: "edit grants", d: "至少登记一个确切路径/模块授权" },
+      { t: "确切路径", d: "不接受目录前缀或通配符" },
+      { t: "authorization", d: "非空且是本轮作者消息子串，否则 TASK_SCOPE_EVIDENCE_INVALID" },
+      { t: "模块动词", d: "装卸/发布须作者原话含对应动词" },
+      { t: "重登记", d: "只能收窄；扩大走 extend_task_scope + 已读证据" },
+    ],
+    code: [
+      {
+        file: "src/hastings/workspace/agent.py · set_task_scope",
+        role: "工具入口",
+        more: "组装 ScopeDraft → check_module_references → scope.set_scope → record(task_scope_set)。",
+      },
+      {
+        file: "src/hastings/workspace/task_scope.py · _validate_draft / _validate_authorization",
+        role: "登记时 gate",
+        more: "结构校验 + 授权引文必须出现在 author_texts。",
+      },
+    ],
+  },
+  {
+    tab: "候选",
+    num: "第 3 步",
+    title: "propose_story_scene：正式正文仍未改",
+    body: `
+      <p>提交路径 + base_digest + 候选全文。内部 before_mutation(..., candidate_proposal=True)。</p>
+      <p>通过后 candidate.propose 只留草稿；返回「正式正文未修改；本轮结束时核对」。</p>
+    `,
+    gates: [
+      { t: "结构就绪", d: "动正文前 require_structure_for_prose" },
+      { t: "必须走候选", d: "非候选提议直接写正文 → STORY_CANDIDATE_REQUIRED" },
+      { t: "scope.require", d: "有范围、非只读、在 grants 内、不在 denied" },
+      { t: "digest preflight", d: "check_write_intent：目标存在且指纹仍匹配" },
+      { t: "已读目标", d: "更新时 materials.require_target_read 须完整读过" },
+      { t: "参考/模块", d: "参考完整 + 模块必读覆盖" },
+      { t: "verify_current", d: "依赖版本未漂；准备 Git 记 version_baseline；session.guard" },
+    ],
+    code: [
+      {
+        file: "src/hastings/workspace/agent.py · before_mutation",
+        role: "统一写前检查顺序",
+        more: "范围 → 目标现状 → 读取前提 → 参考完整性 → 版本 → 准备 Git。",
+      },
+      {
+        file: "src/hastings/workspace/agent.py · propose_story_scene",
+        role: "候选提议工具",
+        more: "candidate_proposal=True 绕过「禁止直接写正文」，但仍过 scope 与材料 gate。",
+      },
+      {
+        file: "src/hastings/workspace/story_candidate.py · propose",
+        role: "草稿落候选对象",
+        more: "再核 base_digest；documents 更新；正式文件未动。",
+      },
+    ],
+  },
+  {
+    tab: "落地",
+    num: "第 4 步",
+    title: "核对通过 → commit_change 版本落地",
+    body: `
+      <p>写作轮结束后进入候选 review；不过则 repair，最多两轮核对。</p>
+      <p>approved 后再次 verify_current，再 story_store.commit_change；事件 story_candidate_committed。两次仍不过则正式正文不动，向作者提问。</p>
+    `,
+    gates: [
+      { t: "review approved", d: "程序 findings + 模型报告；approved 才算过" },
+      { t: "再 verify_current", d: "提交前材料版本仍有效" },
+      { t: "commit_change", d: "revision_source=candidate；正式正文与 revision 前进" },
+      { t: "RevisionStore", d: "章节修订记录写入" },
+    ],
+    code: [
+      {
+        file: "src/hastings/workspace/service.py · 候选 review/repair",
+        role: "应用驱动的第二段 Agent",
+        more: "系统提示切到核对阶段；最多两轮；失败 → needs_input，正式正文未改。",
+      },
+      {
+        file: "story_store.commit_change + story_candidate_committed",
+        role: "版本落地",
+        more: "回执含 change_id / revision / paths；评测 must committed_via_candidate 认这份回执。",
+      },
+    ],
+  },
+  {
+    tab: "对照",
+    num: "第 5 步",
+    title: "和评测六环怎么对齐",
+    body: `
+      <p>产品步骤与评测侧一一对应，方便归因时从 first_failed_stage 跳回产品 gate。</p>
+    `,
+    gates: [
+      { t: "task_scope_set", d: "六环 scope · 质量项 scope_matches_auth" },
+      { t: "读章 / 输入", d: "六环 read · chapter_in_model_input" },
+      { t: "propose_story_scene", d: "六环 candidate" },
+      { t: "review / repair", d: "六环 verify / repair" },
+      { t: "story_candidate_committed", d: "六环 commit · must committed_via_candidate" },
+      { t: "区域与意图", d: "must 区域项 + human 农场意图" },
+    ],
+    code: [
+      {
+        file: "evaluation/harness/stages.py",
+        role: "过程环对照产品链路",
+        more: "从证据事件反推 earliest fail，不替代产品 gate，只做归因钩子。",
+      },
+      {
+        file: "dev-notes/evaluation/how-it-works.md · 产品侧一节",
+        role: "文字版全文",
+        more: "与本模式同内容，便于检索与引用。",
+      },
+    ],
+  },
+];
+
+const QUIZ = [
+  {
+    q: "设计要求：评测不能 import 产品业务模块。实现边界主要在哪？",
+    options: [
+      { id: "a", label: "evaluation/harness/checks.py", ok: false },
+      { id: "b", label: "evaluation/harness/client.py（HttpEvalClient）", ok: true },
+      { id: "c", label: "frontend/src/eval-workbench/theme.ts", ok: false },
+    ],
+    explain: "对本地模式只走 HTTP。checks 只读证据；theme 只管工作台外观。",
+  },
+  {
+    q: "考题里锚点必须在初态唯一——谁在开考前拦住坏题？",
+    options: [
+      { id: "a", label: "evaluation/harness/schema.py", ok: true },
+      { id: "b", label: "evaluation/harness/stages.py", ok: false },
+      { id: "c", label: "evaluation/workbench/jobs.py", ok: false },
+    ],
+    explain: "load_case / _validate_expect。stages 是跑完后算过程环；jobs 是触发批跑。",
+  },
+  {
+    q: "CLI 与工作台必须共用同一条跑测语义。共用入口是？",
+    options: [
+      { id: "a", label: "evaluation/harness/runner_api.run_batch", ok: true },
+      { id: "b", label: "evaluation/harness/stages.compute_stages", ok: false },
+      { id: "c", label: "evaluation/workbench/data.list_cases", ok: false },
+    ],
+    explain: "jobs 与 __main__ 的 run 都调 run_batch。list_cases 只读 Case 库。",
+  },
+  {
+    q: "「只信文件差异与回执，不信模型说改好了」——判分入口？",
+    options: [
+      { id: "a", label: "checks.grade_attempt", ok: true },
+      { id: "b", label: "client.poll_events", ok: false },
+      { id: "c", label: "App.tsx 主题切换", ok: false },
+    ],
+    explain: "grade_attempt 只吃 AttemptEvidence。poll_events 只是采集；主题与判分无关。",
+  },
+  {
+    q: "报告里的 first_failed_stage 从哪算出来？",
+    options: [
+      { id: "a", label: "stages.compute_stages", ok: true },
+      { id: "b", label: "schema.load_cases", ok: false },
+      { id: "c", label: "theme.toggleTheme", ok: false },
+    ],
+    explain: "过程六环在 stages；runtime 写入 AttemptResult，再进 report。",
+  },
+  {
+    q: "人工项「今晚去农场」复核写回后，谁合并进报告？",
+    options: [
+      { id: "a", label: "report.apply_reviews（常经 evaluation score）", ok: true },
+      { id: "b", label: "runtime.prepare_work_copy", ok: false },
+      { id: "c", label: "evidence.snapshot_files", ok: false },
+    ],
+    explain: "工作台先 write_reviews_file；score/apply_reviews 把 human 结论合并进 report。",
+  },
+];
+
+let mode = "story";
+let idx = 0;
+let mapIdx = 0;
+let quizIdx = 0;
+let quizAnswered = 0;
+let quizCorrect = 0;
+let quizLocked = false;
+let scopeIdx = 0;
+
+const $ = (id) => document.getElementById(id);
+
+function setMode(next) {
+  mode = next;
+  document.querySelectorAll(".mode[data-mode]").forEach((btn) => {
+    const on = btn.dataset.mode === mode;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  $("view-story").classList.toggle("hidden", mode !== "story");
+  $("view-map").classList.toggle("hidden", mode !== "map");
+  $("view-quiz").classList.toggle("hidden", mode !== "quiz");
+  $("view-scope").classList.toggle("hidden", mode !== "scope");
+  if (mode === "story") paintStory();
+  if (mode === "map") paintMap();
+  if (mode === "quiz") paintQuiz();
+  if (mode === "scope") paintScope();
+}
+
+document.querySelectorAll(".mode[data-mode]").forEach((btn) => {
+  btn.addEventListener("click", () => setMode(btn.dataset.mode));
+});
+
+function paintStory() {
+  $("rail").innerHTML = ACTS.map((_, i) => `<span class="${i <= idx ? "on" : ""}"></span>`).join("");
+  $("acts").innerHTML = ACTS.map(
+    (a, i) =>
+      `<button type="button" class="act ${i === idx ? "active" : ""}" data-i="${i}">${a.tab}</button>`
+  ).join("");
+  $("acts").querySelectorAll(".act").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      idx = Number(btn.dataset.i);
+      paintStory();
+    });
+  });
+  const a = ACTS[idx];
+  const code = a.code
+    .map(
+      (c, i) => `
+      <button type="button" class="code-item" data-c="${i}">
+        <div class="file">${c.file}</div>
+        <div class="role">${c.role}</div>
+        <div class="more">${c.more}</div>
+      </button>`
+    )
+    .join("");
+  $("stage").innerHTML = `
+    <div class="num">${a.num}</div>
+    <h2>${a.title}</h2>
+    ${a.body}
+    <div class="code-box">
+      <h3>设计落点 · 点开看代码干什么</h3>
+      <div class="code-row">${code}</div>
+    </div>`;
+  $("stage").querySelectorAll(".code-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const open = btn.classList.contains("open");
+      $("stage").querySelectorAll(".code-item").forEach((b) => b.classList.remove("open"));
+      if (!open) btn.classList.add("open");
+    });
+  });
+  $("prev").disabled = idx === 0;
+  $("next").disabled = idx === ACTS.length - 1;
+  $("next").textContent = idx === ACTS.length - 1 ? "完" : "下一幕";
+}
+
+$("prev").addEventListener("click", () => {
+  if (idx > 0) {
+    idx -= 1;
+    paintStory();
+  }
+});
+$("next").addEventListener("click", () => {
+  if (idx < ACTS.length - 1) {
+    idx += 1;
+    paintStory();
+  }
+});
+
+function paintMap() {
+  $("map-grid").innerHTML = MAP.map(
+    (m, i) => `
+    <button type="button" class="map-node ${i === mapIdx ? "active" : ""}" data-i="${i}">
+      <div class="k">${m.k}</div>
+      <div class="t">${m.t}</div>
+    </button>`
+  ).join("");
+  $("map-grid").querySelectorAll(".map-node").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      mapIdx = Number(btn.dataset.i);
+      paintMap();
+    });
+  });
+  const m = MAP[mapIdx];
+  $("map-detail").innerHTML = `
+    <h3 class="detail-title">${m.title}</h3>
+    <p>${m.why}</p>
+    <ul class="files">
+      ${m.files
+        .map(
+          (f) => `<li><div class="path">${f.path}</div><div class="why">${f.why}</div></li>`
+        )
+        .join("")}
+    </ul>`;
+}
+
+function paintQuiz() {
+  const item = QUIZ[quizIdx];
+  quizLocked = false;
+  $("quiz").innerHTML = `
+    <div class="quiz-q"><p><strong>${quizIdx + 1}. ${item.q}</strong></p></div>
+    <div class="quiz-opts">
+      ${item.options
+        .map(
+          (o) =>
+            `<button type="button" class="quiz-opt" data-id="${o.id}">${o.label}</button>`
+        )
+        .join("")}
+    </div>
+    <div id="quiz-fb" class="hidden"></div>`;
+  $("quiz-score").textContent = `已答 ${quizAnswered} · 对 ${quizCorrect}`;
+  $("quiz").querySelectorAll(".quiz-opt").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (quizLocked) return;
+      quizLocked = true;
+      quizAnswered += 1;
+      const opt = item.options.find((o) => o.id === btn.dataset.id);
+      const ok = Boolean(opt && opt.ok);
+      if (ok) quizCorrect += 1;
+      $("quiz").querySelectorAll(".quiz-opt").forEach((b) => {
+        b.disabled = true;
+        const o = item.options.find((x) => x.id === b.dataset.id);
+        if (o.ok) b.classList.add("correct");
+        if (b === btn && !ok) b.classList.add("wrong");
+      });
+      const fb = $("quiz-fb");
+      fb.className = `quiz-fb ${ok ? "ok" : "bad"}`;
+      fb.classList.remove("hidden");
+      fb.innerHTML = `<strong>${ok ? "对" : "再看一眼"}。</strong> ${item.explain}`;
+      $("quiz-score").textContent = `已答 ${quizAnswered} · 对 ${quizCorrect}`;
+    });
+  });
+}
+
+$("quiz-next").addEventListener("click", () => {
+  quizIdx = (quizIdx + 1) % QUIZ.length;
+  paintQuiz();
+});
+
+function paintScope() {
+  $("scope-rail").innerHTML = SCOPE_STEPS.map(
+    (_, i) => `<span class="${i <= scopeIdx ? "on" : ""}"></span>`
+  ).join("");
+  $("scope-acts").innerHTML = SCOPE_STEPS.map(
+    (s, i) =>
+      `<button type="button" class="act ${i === scopeIdx ? "active" : ""}" data-i="${i}">${s.tab}</button>`
+  ).join("");
+  $("scope-acts").querySelectorAll(".act").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      scopeIdx = Number(btn.dataset.i);
+      paintScope();
+    });
+  });
+  const s = SCOPE_STEPS[scopeIdx];
+  const gates =
+    s.gates && s.gates.length
+      ? `<div class="code-box"><h3>本步 Gate · 点开看含义</h3><div class="code-row">${s.gates
+          .map(
+            (g, i) => `
+        <button type="button" class="code-item" data-g="${i}">
+          <div class="file">${g.t}</div>
+          <div class="role">gate</div>
+          <div class="more">${g.d}</div>
+        </button>`
+          )
+          .join("")}</div></div>`
+      : "";
+  const code = s.code
+    .map(
+      (c, i) => `
+      <button type="button" class="code-item" data-c="${i}">
+        <div class="file">${c.file}</div>
+        <div class="role">${c.role}</div>
+        <div class="more">${c.more}</div>
+      </button>`
+    )
+    .join("");
+  $("scope-stage").innerHTML = `
+    <div class="num">${s.num}</div>
+    <h2>${s.title}</h2>
+    ${s.body}
+    ${gates}
+    <div class="code-box">
+      <h3>源码入口 · 点开看干什么</h3>
+      <div class="code-row">${code}</div>
+    </div>`;
+  $("scope-stage").querySelectorAll(".code-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const open = btn.classList.contains("open");
+      const group = btn.parentElement;
+      group.querySelectorAll(".code-item").forEach((b) => b.classList.remove("open"));
+      if (!open) btn.classList.add("open");
+    });
+  });
+  $("scope-prev").disabled = scopeIdx === 0;
+  $("scope-next").disabled = scopeIdx === SCOPE_STEPS.length - 1;
+  $("scope-next").textContent = scopeIdx === SCOPE_STEPS.length - 1 ? "完" : "下一步";
+}
+
+$("scope-prev").addEventListener("click", () => {
+  if (scopeIdx > 0) {
+    scopeIdx -= 1;
+    paintScope();
+  }
+});
+$("scope-next").addEventListener("click", () => {
+  if (scopeIdx < SCOPE_STEPS.length - 1) {
+    scopeIdx += 1;
+    paintScope();
+  }
+});
+
+setMode("story");
+</script>
+</body>
+</html>

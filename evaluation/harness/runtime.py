@@ -224,6 +224,7 @@ class AttemptRunner:
     budget: CallBudget
     timeout_s: float = 300.0
     poll_s: float = 1.0
+    capture_inputs: bool = True
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
 
     def run(self, case: Case, *, attempt: int = 1) -> AttemptResult:
@@ -251,7 +252,7 @@ class AttemptRunner:
             ensure_work_git(work_dir)
             before = snapshot_files(work_dir)
             workspace_id = self.client.open_workspace(str(work_dir))
-            self.client.set_capture_inputs(workspace_id, True)
+            self.client.set_capture_inputs(workspace_id, self.capture_inputs)
             for step in case.steps:
                 if self.budget.exhausted():
                     self._persist(

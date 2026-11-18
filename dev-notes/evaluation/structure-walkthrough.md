@@ -1,6 +1,6 @@
 # 评测系统结构讲解
 
-更新于 2026-11-15。配合交互图解：[structure-map.html](structure-map.html)。设计依据：[design.md](design.md)。
+更新于 2026-11-15。配合交互图解：[structure-map.html](structure-map.html)。若想先听运转原理，读故事版：[how-it-works.md](how-it-works.md) · [how-it-works.html](how-it-works.html)。设计依据：[design.md](design.md)。
 
 ## 1. 它解决什么问题
 
@@ -106,7 +106,7 @@ data/evaluation/runs/<name>/
 
 `workbench/server.py` 扫运行根目录，优先托管 `frontend/dist/eval-workbench.html`（共用产品 Trace 组件），否则回退 `workbench/static/index.html`。
 
-职责：读报告与证据、人工复核、归因写回；第一版不负责选题触发跑测。启动见 [evaluation/SETUP.md](../../evaluation/SETUP.md)。
+职责：Case 库只读、报告与证据、人工复核与归因、跑测 Job（`jobs.py` 调同一 `run_batch`）。启动见 [evaluation/SETUP.md](../../evaluation/SETUP.md)。原理故事与代码落点见 [how-it-works.md](how-it-works.md)。
 
 ## 9. 和 CIAO 的挂接（当前实现）
 
@@ -119,7 +119,7 @@ data/evaluation/runs/<name>/
 
 ## 10. 建议阅读顺序
 
-1. 打开 [structure-map.html](structure-map.html) 点模块看职责  
-2. 读本页第 4–5 节对照源码  
+1. 打开 [how-it-works.html](how-it-works.html)：故事 → 设计地图 → 找代码 → Scope 落地  
+2. 需要目录对照时再读本页第 4–5 节 / [structure-map.html](structure-map.html)  
 3. 打开 `cases/revise_ch1_ending_farm_tonight.yaml` 看一条完整案例  
 4. 按 [SETUP.md](../../evaluation/SETUP.md) 跑一次冒烟，再开工作台看报告与证据  

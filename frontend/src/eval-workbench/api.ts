@@ -50,6 +50,10 @@ export type CaseView = {
 
 export type Report = {
   mode?: string;
+  suite_id?: string | null;
+  env_id?: string | null;
+  evaluator_id?: string | null;
+  evaluator_version?: number | null;
   identity?: Record<string, unknown>;
   summary?: Record<string, number>;
   cases?: CaseView[];
@@ -108,10 +112,45 @@ export type DiffView = {
 export type RunSummary = {
   id: string;
   mode?: string | null;
+  suite_id?: string | null;
+  env_id?: string | null;
+  evaluator_id?: string | null;
+  evaluator_version?: number | null;
   gate_passed?: boolean | null;
   summary?: Record<string, number>;
   identity?: Record<string, unknown>;
   mtime?: number;
+};
+
+export type SuiteSummary = {
+  id: string;
+  version: number;
+  desc: string;
+  cases: string[];
+  default_env: string;
+  default_evaluator: string;
+  mode: string;
+  repeat: number;
+  source: string;
+};
+
+export type EnvSummary = {
+  id: string;
+  version: number;
+  desc: string;
+  capture_inputs: boolean;
+  budget: number;
+  timeout_s: number;
+  work_baseline: string;
+  source: string;
+};
+
+export type EvaluatorSummary = {
+  id: string;
+  version: number;
+  desc: string;
+  checks: { id: string; level: string; role: string; impl?: string | null; question?: string | null }[];
+  source: string;
 };
 
 export type CaseSummary = {
@@ -136,8 +175,10 @@ export type CaseDetail = {
     region: { path: string; from: string; to: string };
     preserve: string[];
   };
-  checks: { id: string; level: string; question?: string | null }[];
+  checks: { id: string; level: string; role?: string | null; question?: string | null }[];
   check_counts: { must: number; quality: number; human: number };
+  evaluator_id?: string | null;
+  evaluator_version?: number | null;
 };
 
 export type CaseRunLink = RunSummary & {
@@ -166,6 +207,10 @@ export type JobPayload = {
   gate_passed?: boolean | null;
   log: string[];
   baseline?: string | null;
+  suite_id?: string | null;
+  env_id?: string | null;
+  evaluator_id?: string | null;
+  evaluator_version?: number | null;
 };
 
 function runBase(runId: string) {
@@ -232,7 +277,9 @@ export const fetchJobs = () =>
   api<{ jobs: JobPayload[]; active_id: string | null }>("/api/jobs");
 export const fetchJob = (jobId: string) => api<JobPayload>(`/api/jobs/${encodeURIComponent(jobId)}`);
 export const createJob = (body: {
-  case_ids: string[];
+  case_ids?: string[];
+  suite_id?: string;
+  env_id?: string;
   mode: "smoke" | "gate";
   repeat: number;
   base_url: string;
@@ -250,3 +297,27 @@ export const cancelJob = (jobId: string) =>
     method: "POST",
     body: "{}",
   });
+
+export const fetchSuites = () => api<{ suites: SuiteSummary[] }>("/api/suites");
+export const fetchEnvs = () => api<{ envs: EnvSummary[] }>("/api/envs");
+export const fetchEvaluators = () =>
+  api<{ evaluators: EvaluatorSummary[] }>("/api/evaluators");
+
+export type QaQueueItem = {
+  run_id: string;
+  case_id: string;
+  attempt: number;
+  check_id: string;
+  level: string;
+  machine_verdict: string;
+  human_verdict: string | null;
+  attribution_category: string | null;
+  reason: string;
+};
+
+export type QaQueue = {
+  summary: { pending: number; reviewed: number; eval_bug: number };
+  items: QaQueueItem[];
+};
+
+export const fetchQaQueue = () => api<QaQueue>("/api/qa/queue");

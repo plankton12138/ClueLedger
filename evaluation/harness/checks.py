@@ -35,6 +35,7 @@ class CheckResult:
     verdict: Verdict
     reason: str
     evidence: tuple[EvidenceRef, ...] = ()
+    role: str = "required"
 
 
 @dataclass(frozen=True)
@@ -445,7 +446,21 @@ _HANDLERS = {
 }
 
 
+def _with_role(result: CheckResult, role: str) -> CheckResult:
+    if result.role == role:
+        return result
+    return CheckResult(
+        result.check_id,
+        result.level,
+        result.verdict,
+        result.reason,
+        evidence=result.evidence,
+        role=role,
+    )
+
+
 def _grade_one(check: Check, case: Case, evidence: AttemptEvidence) -> CheckResult:
+    role = check.role
     if check.level == "human":
         return CheckResult(
             check.id,
@@ -458,8 +473,10 @@ def _grade_one(check: Check, case: Case, evidence: AttemptEvidence) -> CheckResu
                     anchor=case.expect.region.from_anchor,
                 )
             ),
+            role=role,
         )
-    handler = _HANDLERS.get(check.id)
+    handler_key = check.impl or check.id
+    handler = _HANDLERS.get(handler_key)
     if handler is None:
         return CheckResult(
             check.id,
@@ -467,14 +484,16 @@ def _grade_one(check: Check, case: Case, evidence: AttemptEvidence) -> CheckResu
             "fail",
             f"未知检查项：{check.id}",
             evidence=(),
+            role=role,
         )
-    return handler(case, evidence)
+    return _with_role(handler(case, evidence), role)
 
 
 def _outcome(checks: list[CheckResult]) -> Outcome:
-    if any(item.verdict == "fail" for item in checks):
+    required = [item for item in checks if item.role != "diagnostic"]
+    if any(item.verdict == "fail" for item in required):
         return "fail"
-    if any(item.verdict == "pending_review" for item in checks):
+    if any(item.verdict == "pending_review" for item in required):
         return "pending_review"
     return "pass"
 

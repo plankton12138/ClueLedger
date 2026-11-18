@@ -1,0 +1,96 @@
+{
+  "title": "《Agent评测白皮书》系列02：商家 AI 助手的评测与优化闭环实践",
+  "author": "美团技术团队（图灵评测×商增）",
+  "published": "2026-11-17",
+  "source_url": "https://tech.meituan.com/2026/11/17/Agent-Evaluation-White-Paper-02.html",
+  "wechat_url": "https://mp.weixin.qq.com/s?__biz=MjM5NjQ5MTI5OA==&mid=2651783747&idx=1&sn=d697bb242a34232160d2cc7f0cf71a9d",
+  "fetched_at": "2026-11-17",
+  "local_file": "meituan-agent-eval-whitepaper-02.md",
+  "series": "meituan-agent-eval-whitepaper",
+  "series_role": "系列02 / 业务实践篇（承接系列01双闭环）",
+  "precedes": "meituan-agent-eval-whitepaper-01.md",
+  "image_count": 16,
+  "images": [
+    {
+      "index": 1,
+      "src": "https://p0.meituan.net/meituantechblog/d0e9a2d6ec1e1d81ece9c211e303bada569296.jpg",
+      "alt": "《Agent评测白皮书》系列02：商家 AI 助手的评测与优化闭环实践"
+    },
+    {
+      "index": 2,
+      "src": "https://p0.meituan.net/meituantechblog/1c1d9dd8cb5e604097bc6140e1cd8f95265956.png",
+      "alt": "图2"
+    },
+    {
+      "index": 3,
+      "src": "https://p1.meituan.net/meituantechblog/a07802a36d99c9db6c76f53fc71f9f73209046.png",
+      "alt": "图3"
+    },
+    {
+      "index": 4,
+      "src": "https://p0.meituan.net/meituantechblog/5e8753fa68de80764228f33f7cb2961c448379.png",
+      "alt": "图4"
+    },
+    {
+      "index": 5,
+      "src": "https://p1.meituan.net/meituantechblog/508d7d2669568f7f03c10e86b88f3863760930.png",
+      "alt": "图5"
+    },
+    {
+      "index": 6,
+      "src": "https://p0.meituan.net/meituantechblog/db1ddba1f0a8b493ac0e0c91f7c678c3415555.png",
+      "alt": "图6"
+    },
+    {
+      "index": 7,
+      "src": "https://p0.meituan.net/meituantechblog/7217564645d0c19ffd452f3e26217caf2546248.png",
+      "alt": "图7"
+    },
+    {
+      "index": 8,
+      "src": "https://p0.meituan.net/meituantechblog/0d6bd2144925d3bfd2cfe37397e4b622545455.png",
+      "alt": "图8"
+    },
+    {
+      "index": 9,
+      "src": "https://p1.meituan.net/meituantechblog/bd73d5f691a8bb50625bcbd91c563df8214304.png",
+      "alt": "图9"
+    },
+    {
+      "index": 10,
+      "src": "https://p0.meituan.net/meituantechblog/cf4cd8717ee190f3658f88387137b680224979.png",
+      "alt": "图10"
+    },
+    {
+      "index": 11,
+      "src": "https://p1.meituan.net/meituantechblog/74c703a4a2151d006c786bbb71b57865203545.png",
+      "alt": "图11"
+    },
+    {
+      "index": 12,
+      "src": "https://p0.meituan.net/meituantechblog/741d7b77d4de5f7b21158c12894760fb113612.png",
+      "alt": "图12"
+    },
+    {
+      "index": 13,
+      "src": "https://p0.meituan.net/meituantechblog/0751f3ab945d8de31a0b0cbef26935ec183905.png",
+      "alt": "图13"
+    },
+    {
+      "index": 14,
+      "src": "https://p0.meituan.net/meituantechblog/ac55f68681cdb51e218fc7039cbfc02f422638.png",
+      "alt": "图14"
+    },
+    {
+      "index": 15,
+      "src": "https://p1.meituan.net/meituantechblog/49b41468a4a039aa4f085bc6b28dff7e338712.png",
+      "alt": "图15"
+    },
+    {
+      "index": 16,
+      "src": "https://p1.meituan.net/meituantechblog/a4596c422b8dab263b4bae394cce8c52336302.png",
+      "alt": "图16"
+    }
+  ],
+  "note": "本地参考存档；图片仍为原文 CDN 外链，未下载。正文与微信/SegmentFault 同步稿一致，以 tech.meituan.com 官方链接为准。"
+}

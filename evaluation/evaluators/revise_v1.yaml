@@ -1,0 +1,28 @@
+id: revise_v1
+version: 1
+desc: 对话改稿首案检查包（成功必需项 + 门禁质量项）
+checks:
+  - id: only_region_changed
+    level: must
+    role: required
+    impl: only_region_changed
+  - id: region_actually_changed
+    level: must
+    role: required
+    impl: region_actually_changed
+  - id: preserved_verbatim
+    level: must
+    role: required
+    impl: preserved_verbatim
+  - id: committed_via_candidate
+    level: must
+    role: required
+    impl: committed_via_candidate
+  - id: chapter_in_model_input
+    level: quality
+    role: required
+    impl: chapter_in_model_input
+  - id: farm_tonight_present
+    level: human
+    role: required
+    question: 改后的结尾是否明确约定今晚（或当夜）就去农场查问？

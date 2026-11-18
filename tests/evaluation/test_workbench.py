@@ -408,3 +408,103 @@ def test_workbench_jobs_rejects_existing_out(tmp_path: Path, monkeypatch) -> Non
         server.shutdown()
         server.server_close()
         jobmod.reset_jobs_for_tests()
+
+
+def test_workbench_qa_queue_pending_review_and_corrupt_run(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    good = runs_root / "good"
+    _seed_report(good)
+    (good / "reviews.json").write_text(
+        json.dumps(
+            {
+                "reviews": [
+                    {
+                        "case_id": "revise_ch1_ending_farm_tonight",
+                        "attempt": 1,
+                        "check_id": "farm_tonight",
+                        "verdict": "pending_review",
+                        "evidence_ref": "",
+                    }
+                ],
+                "attributions": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    bad = runs_root / "bad"
+    bad.mkdir(parents=True)
+    (bad / "report.json").write_text(
+        json.dumps(
+            {
+                "attempts": [
+                    {
+                        "case_id": "x",
+                        "attempt": "not-a-number",
+                        "checks": [{"id": "h", "level": "human", "verdict": "pending_review"}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    from evaluation.workbench.data import build_qa_queue
+
+    payload = build_qa_queue(runs_root)
+    assert payload["summary"]["pending"] >= 1
+    assert any(
+        i["run_id"] == "good"
+        and i["check_id"] == "farm_tonight"
+        and i["human_verdict"] == "pending_review"
+        for i in payload["items"]
+    )
+    assert all(i["run_id"] != "bad" for i in payload["items"])
+
+
+def test_workbench_qa_queue(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    _seed_report(runs_root / "demo")
+    run_b = runs_root / "done"
+    _seed_report(run_b)
+    (run_b / "reviews.json").write_text(
+        json.dumps(
+            {
+                "reviews": [
+                    {
+                        "case_id": "revise_ch1_ending_farm_tonight",
+                        "attempt": 1,
+                        "check_id": "farm_tonight",
+                        "verdict": "pass",
+                        "evidence_ref": "after:x",
+                    }
+                ],
+                "attributions": [
+                    {
+                        "case_id": "revise_ch1_ending_farm_tonight",
+                        "attempt": 1,
+                        "category": "eval",
+                        "note": "判错",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    server, base = _serve(runs_root)
+    try:
+        with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
+            payload = client.get("/api/qa/queue").json()
+            assert payload["summary"]["pending"] >= 1
+            assert payload["summary"]["eval_bug"] >= 1
+            pending_ids = {
+                (i["run_id"], i["check_id"])
+                for i in payload["items"]
+                if i.get("level") == "human"
+                and i.get("human_verdict") in (None, "uncertain", "pending_review")
+            }
+            assert ("demo", "farm_tonight") in pending_ids
+            assert ("done", "farm_tonight") not in pending_ids
+    finally:
+        server.shutdown()
+        server.server_close()

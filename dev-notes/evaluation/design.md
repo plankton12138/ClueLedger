@@ -1,6 +1,6 @@
 # 评测体系重建设计
 
-更新于 2026-11-16。顶层按「三块能力 + 观测地基」组织；离线块内用 **CIAO** 拆测与归因。参考：[Agent 评测白皮书 01：评测全览](https://tech.meituan.com/2026/09/10/Agent-Evaluation-White-Paper-01.html)（[本地](refer/meituan-agent-eval-whitepaper-01.md)）；[看了那么多 Agent 评测文章，为什么依然搭不出自己的评测体系？](https://mp.weixin.qq.com/s?__biz=MzY4ODQ5MTgxNg==&mid=2247483697&sn=bff0defbd34bf4798ce255700156bebc&idx=1)（Gene化论 / Pexo，CIAO；[本地](refer/ciao-agent-eval-pexo-gene.md)）。
+更新于 2026-11-18。顶层按「三块能力 + 观测地基」组织；离线块内用 **CIAO** 拆测与归因。参考：[Agent 评测白皮书 01：评测全览](https://tech.meituan.com/2026/09/10/Agent-Evaluation-White-Paper-01.html)（[本地](refer/meituan-agent-eval-whitepaper-01.md)）；[系列 02：商家 AI 助手评测闭环](https://tech.meituan.com/2026/11/17/Agent-Evaluation-White-Paper-02.html)（[本地](refer/meituan-agent-eval-whitepaper-02.md)）；[看了那么多 Agent 评测文章，为什么依然搭不出自己的评测体系？](https://mp.weixin.qq.com/s?__biz=MzY4ODQ5MTgxNg==&mid=2247483697&sn=bff0defbd34bf4798ce255700156bebc&idx=1)（Gene化论 / Pexo，CIAO；[本地](refer/ciao-agent-eval-pexo-gene.md)）。
 
 ## 0. 整体评测体系（简化）
 
@@ -89,6 +89,56 @@ flowchart TB
 ## B. 离线评测 / 回测
 
 固定评测集、固定检查标准、尽可能贴近生产的本地模式执行环境；用于版本变更后的回测与发版门禁。离线只能守住已知问题；未知靠本机使用与日后在线补。
+
+### B.0 评测资产模型
+
+对照系列 02 评测平台截图的六块资产，线簿冷启动用仓库文件 + 本机工作台承接同等职责，不建 SaaS。工作台一级导航收成四入口（资产 / 开跑 / 报告 / 质检），资产页内切换套件·环境·检查项；本机裁剪（资产只读、无 LLM Judge 编辑器）；详见[评测工作台重设计](workbench-design.md)。
+
+#### B.0.1 六块职责与落盘
+
+| 资产 | 职责 | 源真相 |
+| --- | --- | --- |
+| **Task / Suite** | 可执行题目；Suite 是选题清单 | `evaluation/cases/*.yaml`、`evaluation/suites/*.yaml` |
+| **评测环境 Env** | 服务、预算、采证开关等运行条件档案 | `evaluation/envs/*.yaml`；作品初态仍在 `evaluation/works/base/` |
+| **Evaluator 包** | 可复用检查注册表（required / diagnostic） | `evaluation/evaluators/*.yaml`；实现在 `harness/checks.py` |
+| **Pipeline Job** | 一次绑定 Suite × Env × Evaluator → 批量执行 | `data/evaluation/jobs/<id>/job.json` → `data/evaluation/runs/<run>/` |
+| **评测报告** | 完成率、分层检查、成本；可下钻证据 | `runs/<run>/report.json` + 证据包 |
+| **人工质检** | human 项复核、归因；校准集后置 | `runs/<run>/reviews.json`；`evaluation/calibration/` 占位 |
+
+```mermaid
+flowchart LR
+  suite[Suite]
+  env[EnvProfile]
+  agent[AgentIdentity_at_run]
+  pack[EvaluatorPack]
+  job[PipelineJob]
+  run[Run_evidence_report]
+  review[HumanReview]
+  suite --> job
+  env --> job
+  pack --> job
+  job --> run
+  agent -.-> run
+  run --> review
+```
+
+硬规则：一次 Job 固定 Suite × Env × Evaluator 包版本；Agent 版本身份在跑时写入 report（代码提交等），不预造假版本文件。改题、改尺子、改被测配置不要混在同一轮解释里。
+
+与双 Loop：产品迭代改 Agent 后用同一 Suite/Evaluator 回归；评测迭代改 Evaluator 或补 Task 后用已存证据重评。与 CIAO：Evaluator 的 required 项主要服务 O/I；diagnostic 服务诊断；C 视角过程集仍单独建设（B.5）。
+
+#### B.0.2 最小 Schema
+
+**案例**（`cases/`）：保留 `work` / `history` / `steps` / `expect`。优先 `evaluator: <包 id>`，可用 `checks_extra` 追加；无 `evaluator` 时仍接受内嵌 `checks`（迁移兼容）。
+
+**Suite**（`suites/`）：`id`、`cases`、`default_env`、`default_evaluator`、`mode`、`repeat`。
+
+**Env**（`envs/`）：`id`、`capture_inputs`、`budget`、`timeout_s`、`work_baseline`（固定从 `works/base` 复制）；`base_url` 由 Job 启动时覆盖。
+
+**Evaluator 包**（`evaluators/`）：`id`、`version`、检查项列表（`id` / `level` / `role` / `impl` / 可选 `question`）。`role: required` 参与任务成功判定；`role: diagnostic` 只进分层报告。须进门禁质量退化的项标 `required` + `level: quality`。LLM Judge 仅预留，当前不启用。
+
+**Job**：`suite`、`env`、`evaluator`、`mode`、`repeat`、`out`、状态与时间；执行仍走 `runner_api.run_batch`。
+
+**报告**：除既有字段外写入 `suite_id`、`env_id`、`evaluator_id`、`evaluator_version`，供版本比较核对基线。
 
 ### B.1 方法学：软件工程 → CIAO → 线簿
 
@@ -278,9 +328,9 @@ checks:
 | 界面 | 归属 | 职责 |
 | --- | --- | --- |
 | 运行追踪 | 线簿前端 | A：归因阅读；阶段 4 起「加入案例池」 |
-| 评测工作台 | 本机独立页，非产品 | Case 库（只读）、结果浏览与复核归因、选题触发冒烟/门禁 |
+| 评测工作台 | 本机独立页，非产品 | 四入口：资产 / 开跑 / 报告 / 质检（资产只读；报告同屏 KPI+Trace；质检为跨 run 队列） |
 
-工作台由评测命令在本机打开。CLI 与工作台共用 `evaluation.harness.runner_api.run_batch`；工作台可写 `data/evaluation/runs` 与 `reviews.json`，不编辑案例 YAML。
+工作台由评测命令在本机打开。CLI 与工作台共用 `evaluation.harness.runner_api.run_batch`；工作台可写 `data/evaluation/runs`、`data/evaluation/jobs` 与 `reviews.json`，阶段 4 前不编辑案例 YAML。
 
 #### B.8.2 结果分类
 
@@ -292,15 +342,13 @@ checks:
 | 基础设施错误 | 网络、限流、服务未起等与产品行为无关 | 否，单独计数 |
 | 未运行 | 预算耗尽或中止 | 否，单独计数 |
 
-#### B.8.3 工作台第一版
+#### B.8.3 工作台界面水位
 
-**报告页**：汇总与门禁结论；案例列表与相对基线的变好/变差/不变；版本身份；点开看检查项与证据入口。
+**W1–W7 + 资产台 D0–D3**：证据包、Trace 下钻、复核与归因、运行总览矩阵、Suite/Env/Evaluator 只读、Job 跑批已落地。
 
-**复核页**：人工项是/否/不确定 + 证据位置；写回后合并进报告。
+**四入口壳（已落地减法）**：导航与页面主任务按[评测工作台重设计](workbench-design.md) §4；报告列表进同屏详情（默认失败试验）；质检独立队列（`GET /api/qa/queue`，写回仍用 `reviews.json`）；开跑为选套件单页；归因保存后可跳开跑 / 资产·检查项。硬校验「资产不完全可比」、校准集标记等见 workbench §9 未做清单。
 
 前后一致性抽查可后做：隐去原结论重判，不一致则改问题描述，不直接改历史结论。
-
-工作台重设计（证据包、Trace、复核与归因、运行总览、Case 库与跑测控制）见[评测工作台重设计](workbench-design.md)；W1–W7 已落地。
 
 #### B.8.4 后续与离线重评
 

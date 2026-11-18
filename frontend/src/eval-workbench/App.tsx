@@ -19,11 +19,16 @@ import {
   mergeScore,
   saveReviews,
 } from "./api";
-import { CasesPage } from "./CasesPage";
+import { AssetsPage } from "./AssetsPage";
 import { evidenceTraceLoader } from "./evidenceLoader";
+import { gateLabel, modeLabel, modeShort } from "./labels";
 import { LaunchPage } from "./LaunchPage";
 import { checkLens, firstSpanRef, hasFileRef, marksFromChecks, missingFromChecks } from "./marks";
+import { QaPage } from "./QaPage";
+import { parseHash, writeHash, type Route } from "./routing";
 import { resolveTheme, toggleTheme, type WbTheme } from "./theme";
+
+const PRODUCT_ATTR = new Set(["context", "model", "tool", "verify", "commit"]);
 
 function ShellHeader({
   nav,
@@ -55,55 +60,6 @@ function ShellHeader({
   );
 }
 
-type Route =
-  | { page: "cases"; caseId: string | null }
-  | { page: "runs"; runId: string | null; preferCaseId?: string | null }
-  | { page: "launch"; presetCaseIds: string[] };
-
-function parseHash(): Route {
-  const raw = location.hash.replace(/^#/, "");
-  const [pathPart, queryPart = ""] = raw.split("?");
-  const path = pathPart.replace(/^\//, "");
-  const params = new URLSearchParams(queryPart);
-  if (path.startsWith("cases/") || path === "cases") {
-    const id = path === "cases" ? null : decodeURIComponent(path.slice("cases/".length).split("/")[0] || "");
-    return { page: "cases", caseId: id || null };
-  }
-  if (path.startsWith("launch")) {
-    const cases = (params.get("cases") || "")
-      .split(",")
-      .map(item => item.trim())
-      .filter(Boolean);
-    return { page: "launch", presetCaseIds: cases };
-  }
-  if (path.startsWith("runs/") || path === "runs" || path === "") {
-    if (path === "runs" || path === "") return { page: "runs", runId: null };
-    const id = decodeURIComponent(path.slice("runs/".length).split("/")[0] || "");
-    return { page: "runs", runId: id || null, preferCaseId: params.get("case") };
-  }
-  // 兼容旧链接：#/runs/foo 以外的纯运行名
-  const legacy = location.hash.match(/^#\/?runs\/([^/?#]+)/);
-  if (legacy) return { page: "runs", runId: decodeURIComponent(legacy[1]) };
-  return { page: "runs", runId: null };
-}
-
-function writeHash(route: Route) {
-  let next = "#/runs";
-  if (route.page === "cases") {
-    next = route.caseId ? `#/cases/${encodeURIComponent(route.caseId)}` : "#/cases";
-  } else if (route.page === "launch") {
-    const q = route.presetCaseIds.length
-      ? `?cases=${route.presetCaseIds.map(encodeURIComponent).join(",")}`
-      : "";
-    next = `#/launch${q}`;
-  } else if (route.runId) {
-    const q = route.preferCaseId ? `?case=${encodeURIComponent(route.preferCaseId)}` : "";
-    next = `#/runs/${encodeURIComponent(route.runId)}${q}`;
-  }
-  if (location.hash === next) return;
-  location.hash = next;
-}
-
 const VERDICT: Record<string, string> = {
   pass: "通过",
   fail: "失败",
@@ -125,6 +81,40 @@ const COLOR: Record<string, string> = {
 type Filter = "all" | "fail" | "pending_review";
 type Tab = "checks" | "diff" | "review" | "attr";
 type Selection = { caseId: string; attempt: number } | null;
+
+function pickDefaultSelection(
+  report: Report,
+  preferCaseId?: string | null,
+  preferAttempt?: number | null,
+): Selection {
+  const cases = report.cases || [];
+  if (preferCaseId) {
+    const matched = cases.find(item => item.case_id === preferCaseId);
+    const picked =
+      (preferAttempt != null &&
+        matched?.attempts?.find(item => item.attempt === preferAttempt)) ||
+      matched?.attempts?.[0];
+    if (picked) return { caseId: preferCaseId, attempt: picked.attempt };
+  }
+  for (const caseItem of cases) {
+    for (const row of caseItem.attempts || []) {
+      if (
+        row.outcome === "fail" ||
+        row.outcome === "pending_review" ||
+        caseItem.must_failed ||
+        row.status === "infrastructure_error"
+      ) {
+        return { caseId: caseItem.case_id, attempt: row.attempt };
+      }
+    }
+  }
+  const firstCase = cases[0];
+  const firstAttempt = firstCase?.attempts?.[0];
+  if (firstCase && firstAttempt) {
+    return { caseId: firstCase.case_id, attempt: firstAttempt.attempt };
+  }
+  return null;
+}
 
 function outcomeColor(status: string, outcome?: string | null) {
   if (status === "infrastructure_error" || status === "not_run") return COLOR[status];
@@ -159,13 +149,12 @@ export function WorkbenchApp() {
   const [status, setStatus] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [selection, setSelection] = useState<Selection>(null);
-  const [view, setView] = useState<"overview" | "attempt">("overview");
 
   const onToggleTheme = useCallback(() => {
     setTheme(current => toggleTheme(current));
   }, []);
 
-  const runId = route.page === "runs" ? route.runId : null;
+  const runId = route.page === "reports" ? route.runId : null;
 
   const loadRuns = useCallback(async () => {
     setError("");
@@ -184,15 +173,19 @@ export function WorkbenchApp() {
   }, []);
 
   const openRun = useCallback(
-    (id: string | null, preferCaseId?: string) => {
+    (id: string | null, preferCaseId?: string | null, preferAttempt?: number | null) => {
       setError("");
       setReport(null);
       setReviews([]);
       setAttributions([]);
       setSelection(null);
-      setView("overview");
       setStatus("");
-      navigate({ page: "runs", runId: id, preferCaseId: preferCaseId || null });
+      navigate({
+        page: "reports",
+        runId: id,
+        preferCaseId: preferCaseId || null,
+        preferAttempt: preferAttempt ?? null,
+      });
       if (!id) void loadRuns();
     },
     [loadRuns, navigate],
@@ -217,7 +210,7 @@ export function WorkbenchApp() {
     const syncHash = () => setRoute(parseHash());
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
-    if (!location.hash) writeHash({ page: "runs", runId: null });
+    if (!location.hash) writeHash({ page: "reports", runId: null });
     return () => {
       window.removeEventListener("hashchange", syncHash);
       window.removeEventListener("popstate", syncHash);
@@ -228,12 +221,12 @@ export function WorkbenchApp() {
     if (!runId) {
       setReport(null);
       setSelection(null);
-      setView("overview");
       return;
     }
     let cancelled = false;
     setError("");
-    const preferCaseId = route.page === "runs" ? route.preferCaseId : null;
+    const preferCaseId = route.page === "reports" ? route.preferCaseId : null;
+    const preferAttempt = route.page === "reports" ? route.preferAttempt : null;
     void (async () => {
       try {
         const nextReport = await fetchReport(runId);
@@ -242,27 +235,7 @@ export function WorkbenchApp() {
         setReport(nextReport);
         setReviews(payload.reviews || []);
         setAttributions(payload.attributions || []);
-        const cases = nextReport.cases || [];
-        if (preferCaseId) {
-          const matched = cases.find(item => item.case_id === preferCaseId);
-          const first = matched?.attempts?.[0];
-          if (first) {
-            setSelection({ caseId: preferCaseId, attempt: first.attempt });
-            setView("attempt");
-            return;
-          }
-        }
-        if (cases.length === 1) {
-          const only = cases[0];
-          const first = only.attempts?.[0];
-          if (first) {
-            setSelection({ caseId: only.case_id, attempt: first.attempt });
-            setView("attempt");
-            return;
-          }
-        }
-        setSelection(null);
-        setView("overview");
+        setSelection(pickDefaultSelection(nextReport, preferCaseId, preferAttempt));
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
       }
@@ -272,7 +245,11 @@ export function WorkbenchApp() {
     };
   }, [runId, route]);
 
-  async function persistAndScore(nextReviews: Review[], nextAttrs: Attribution[]) {
+  async function persistAndScore(
+    nextReviews: Review[],
+    nextAttrs: Attribution[],
+    opts?: { handoffAttribution?: boolean },
+  ) {
     if (!runId) return;
     setStatus("");
     try {
@@ -281,8 +258,22 @@ export function WorkbenchApp() {
       setAttributions(saved.attributions);
       const scored = await mergeScore(runId);
       setReport(scored);
-      setStatus(`已合并；门禁 ${scored.gate?.passed ? "通过" : "不通过"}`);
+      setStatus(`已合并；${gateLabel(scored.gate?.passed)}`);
       void loadRuns();
+      if (opts?.handoffAttribution && selection) {
+        const focus = nextAttrs.find(
+          item => item.case_id === selection.caseId && item.attempt === selection.attempt,
+        );
+        if (focus?.category === "eval") {
+          navigate({ page: "assets", tab: "evaluators" });
+        } else if (focus?.category && PRODUCT_ATTR.has(focus.category)) {
+          navigate({
+            page: "run",
+            presetCaseIds: [],
+            suiteId: scored.suite_id || null,
+          });
+        }
+      }
     } catch (reason) {
       setStatus(reason instanceof Error ? reason.message : String(reason));
     }
@@ -292,47 +283,67 @@ export function WorkbenchApp() {
     <nav className="wb-nav">
       <button
         type="button"
-        className={`wb-chip ${route.page === "cases" ? "btn" : "ghost"}`}
-        onClick={() => navigate({ page: "cases", caseId: null })}
+        className={`wb-chip ${route.page === "assets" ? "btn" : "ghost"}`}
+        onClick={() => navigate({ page: "assets", tab: "suites" })}
       >
-        Case 库
+        资产
       </button>
       <button
         type="button"
-        className={`wb-chip ${route.page === "runs" ? "btn" : "ghost"}`}
+        className={`wb-chip ${route.page === "run" ? "btn" : "ghost"}`}
+        onClick={() => navigate({ page: "run", presetCaseIds: [], suiteId: null })}
+      >
+        开跑
+      </button>
+      <button
+        type="button"
+        className={`wb-chip ${route.page === "reports" ? "btn" : "ghost"}`}
         onClick={() => openRun(null)}
       >
-        结果
+        报告
       </button>
       <button
         type="button"
-        className={`wb-chip ${route.page === "launch" ? "btn" : "ghost"}`}
-        onClick={() => navigate({ page: "launch", presetCaseIds: [] })}
+        className={`wb-chip ${route.page === "qa" ? "btn" : "ghost"}`}
+        onClick={() => navigate({ page: "qa" })}
       >
-        跑测
+        质检
       </button>
     </nav>
   );
 
-  if (route.page === "cases") {
+  if (route.page === "assets") {
     return (
       <div className="wb-root">
         <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme} />
-        <CasesPage
-          caseId={route.caseId}
-          onOpenCase={id => navigate({ page: "cases", caseId: id })}
-          onOpenRun={(id, prefer) => openRun(id, prefer)}
-          onLaunchCase={id => navigate({ page: "launch", presetCaseIds: [id] })}
+        <AssetsPage
+          tab={route.tab}
+          onTab={tab => navigate({ page: "assets", tab })}
+          onLaunchSuite={id => navigate({ page: "run", presetCaseIds: [], suiteId: id })}
+          onLaunchCase={id => navigate({ page: "run", presetCaseIds: [id], suiteId: null })}
         />
       </div>
     );
   }
 
-  if (route.page === "launch") {
+  if (route.page === "qa") {
     return (
       <div className="wb-root">
         <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme} />
-        <LaunchPage presetCaseIds={route.presetCaseIds} onOpenRun={id => openRun(id)} />
+        <QaPage onOpenItem={(id, caseId, attempt) => openRun(id, caseId, attempt)} />
+      </div>
+    );
+  }
+
+  if (route.page === "run") {
+    return (
+      <div className="wb-root">
+        <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme} />
+        <LaunchPage
+          presetCaseIds={route.presetCaseIds}
+          presetSuiteId={route.suiteId}
+          onOpenRun={id => openRun(id)}
+        />
       </div>
     );
   }
@@ -382,7 +393,15 @@ export function WorkbenchApp() {
     <div className="wb-root">
       <ShellHeader nav={nav} theme={theme} onToggleTheme={onToggleTheme}>
         <span className="wb-chip mono">{runId}</span>
-        <span className="wb-chip">{report.mode === "gate" ? "门禁 · 每案 3 次" : "冒烟 · 每案 1 次"}</span>
+        <span className="wb-chip">{modeLabel(report.mode)}</span>
+        {(report.suite_id || report.env_id || report.evaluator_id) && (
+          <span className="wb-chip" title="资产基线">
+            {[report.suite_id, report.env_id, report.evaluator_id]
+              .filter(Boolean)
+              .join(" · ")}
+            {report.evaluator_version != null ? ` v${report.evaluator_version}` : ""}
+          </span>
+        )}
         {identity.git_commit != null && (
           <span className="wb-chip mono">{String(identity.git_commit).slice(0, 8)}</span>
         )}
@@ -393,12 +412,10 @@ export function WorkbenchApp() {
             {identity.budget_max != null ? ` / ${String(identity.budget_max)}` : ""}
           </span>
         )}
-        <span className={`wb-chip ${gate.passed ? "ok" : "bad"}`}>
-          {gate.passed ? "门禁通过" : "门禁不通过"}
-        </span>
+        <span className={`wb-chip ${gate.passed ? "ok" : "bad"}`}>{gateLabel(gate.passed)}</span>
         {report.baseline_compare && (
           <span className="wb-chip">
-            对比基线{" "}
+            对比上次{" "}
             {String((report.baseline_compare.baseline_identity || {}).git_commit || "").slice(0, 8) ||
               "已绑定"}
           </span>
@@ -406,34 +423,13 @@ export function WorkbenchApp() {
         <button type="button" className="wb-chip ghost" onClick={() => openRun(null)}>
           ← 结果列表
         </button>
-        {view === "attempt" && (
-          <button
-            type="button"
-            className="wb-chip ghost"
-            onClick={() => {
-              setSelection(null);
-              setView("overview");
-            }}
-          >
-            本案总览
-          </button>
-        )}
         <button type="button" className="wb-chip ghost" onClick={() => void reload()}>
           刷新
         </button>
       </ShellHeader>
 
-      {view === "overview" || !selection ? (
-        <Overview
-          report={report}
-          filter={filter}
-          onFilter={setFilter}
-          onOpen={(caseId, attempt) => {
-            setSelection({ caseId, attempt });
-            setView("attempt");
-          }}
-        />
-      ) : (
+      <ReportKpi report={report} />
+      {selection ? (
         <AttemptView
           runId={runId}
           report={report}
@@ -444,10 +440,16 @@ export function WorkbenchApp() {
           reviews={reviews}
           attributions={attributions}
           status={status}
-          onSaveReviews={(next, attrs) => void persistAndScore(next, attrs)}
+          onSaveReviews={(next, attrs, handoff) =>
+            void persistAndScore(next, attrs, { handoffAttribution: handoff })
+          }
           onReviewsChange={setReviews}
           onAttributionsChange={setAttributions}
         />
+      ) : (
+        <p className="wb-muted" style={{ padding: "0 1rem 1rem" }}>
+          本次运行没有可展开的案例试验。
+        </p>
       )}
     </div>
   );
@@ -478,8 +480,9 @@ function RunPicker({
         <thead>
           <tr>
             <th>运行</th>
-            <th>模式</th>
-            <th>门禁</th>
+            <th>跑法</th>
+            <th>资产</th>
+            <th>验收</th>
             <th>摘要</th>
             <th>时间</th>
           </tr>
@@ -488,12 +491,14 @@ function RunPicker({
           {runs.map(item => {
             const summary = item.summary || {};
             const when = item.mtime ? new Date(item.mtime * 1000).toLocaleString() : "—";
+            const assets = [item.suite_id, item.env_id, item.evaluator_id].filter(Boolean).join(" · ");
             return (
               <tr key={item.id} className="click" onClick={() => onOpen(item.id)} style={{ cursor: "pointer" }}>
                 <td><code>{item.id}</code></td>
-                <td>{item.mode || "—"}</td>
+                <td>{modeShort(item.mode)}</td>
+                <td className="wb-muted">{assets || "—"}</td>
                 <td className={item.gate_passed ? "wb-delta better" : "wb-delta worse"}>
-                  {item.gate_passed == null ? "—" : item.gate_passed ? "通过" : "不通过"}
+                  {gateLabel(item.gate_passed)}
                 </td>
                 <td className="wb-muted">
                   通过 {summary.pass || 0} · 失败 {summary.fail || 0} · 待复核 {summary.pending_review || 0}
@@ -508,83 +513,42 @@ function RunPicker({
   );
 }
 
-function Overview({
-  report,
-  filter,
-  onFilter,
-  onOpen,
-}: {
-  report: Report;
-  filter: Filter;
-  onFilter: (value: Filter) => void;
-  onOpen: (caseId: string, attempt: number) => void;
-}) {
-  const baseline = Object.fromEntries(
-    (report.baseline_compare?.cases || []).map(item => [item.case_id, item]),
-  );
-  const maxAttempts = Math.max(1, ...((report.cases || []).map(item => item.attempts?.length || 0)));
+function ReportKpi({ report }: { report: Report }) {
+  const summary = report.summary || {};
+  const pass = summary.pass || 0;
+  const fail = summary.fail || 0;
+  const pending = summary.pending_review || 0;
+  const total = pass + fail + pending || 0;
+  const blockers = (report.gate?.blockers || []).length;
+  const deltaWorse = (report.baseline_compare?.cases || []).filter(item => item.delta === "worse").length;
+  const deltaBetter = (report.baseline_compare?.cases || []).filter(item => item.delta === "better").length;
 
   return (
-    <div className="wb-overview">
-      <div className="wb-filters" style={{ marginBottom: 12, maxWidth: 360 }}>
-        {(["all", "fail", "pending_review"] as Filter[]).map(item => (
-          <button key={item} type="button" className={filter === item ? "on" : ""} onClick={() => onFilter(item)}>
-            {item === "all" ? "全部" : item === "fail" ? "失败" : "待复核"}
-          </button>
-        ))}
+    <div className="wb-overview" style={{ paddingBottom: 0 }}>
+      <div className="wb-kpi-grid">
+        <div className="wb-kpi">
+          <div className="label">是否通过</div>
+          <strong className={report.gate?.passed ? "wb-delta better" : "wb-delta worse"}>
+            {gateLabel(report.gate?.passed)}
+          </strong>
+        </div>
+        <div className="wb-kpi">
+          <div className="label">通过数</div>
+          <strong>
+            {pass}/{total || "—"}
+          </strong>
+        </div>
+        <div className="wb-kpi">
+          <div className="label">未过的必须项</div>
+          <strong>{blockers}</strong>
+        </div>
+        <div className="wb-kpi">
+          <div className="label">相对上次</div>
+          <strong>
+            {report.baseline_compare ? `变好 ${deltaBetter} · 变差 ${deltaWorse}` : "—"}
+          </strong>
+        </div>
       </div>
-      <table className="wb-matrix">
-        <thead>
-          <tr>
-            <th>案例</th>
-            {Array.from({ length: maxAttempts }, (_, index) => <th key={index}>#{index + 1}</th>)}
-            <th>基线</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(report.cases || [])
-            .filter(caseItem => {
-              if (filter === "all") return true;
-              return (caseItem.attempts || []).some(row =>
-                filter === "fail"
-                  ? row.outcome === "fail" || caseItem.must_failed
-                  : row.outcome === "pending_review",
-              );
-            })
-            .map(caseItem => {
-              const cmp = baseline[caseItem.case_id];
-              return (
-                <tr key={caseItem.case_id}>
-                  <td><code>{caseItem.case_id}</code></td>
-                  {Array.from({ length: maxAttempts }, (_, index) => {
-                    const row = caseItem.attempts?.[index];
-                    if (!row) return <td key={index} className="wb-muted">—</td>;
-                    return (
-                      <td key={index}>
-                        <button
-                          type="button"
-                          title={`${row.status} · ${row.outcome || "-"}`}
-                          style={{ background: outcomeColor(row.status, row.outcome) }}
-                          onClick={() => onOpen(caseItem.case_id, row.attempt)}
-                        />
-                      </td>
-                    );
-                  })}
-                  <td className={`wb-delta ${cmp?.delta || ""}`}>
-                    {cmp ? `${cmp.delta}（${cmp.quality_pass_count}/${cmp.baseline_quality_pass_count}）` : "—"}
-                  </td>
-                </tr>
-              );
-            })}
-        </tbody>
-      </table>
-      {(report.gate?.blockers || []).length > 0 && (
-        <ul className="wb-muted">
-          {report.gate!.blockers!.map((item, index) => (
-            <li key={index}>[{item.kind}] {item.case_id}: {item.detail}</li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
@@ -612,7 +576,7 @@ function AttemptView({
   reviews: Review[];
   attributions: Attribution[];
   status: string;
-  onSaveReviews: (reviews: Review[], attributions: Attribution[]) => void;
+  onSaveReviews: (reviews: Review[], attributions: Attribution[], handoffAttribution?: boolean) => void;
   onReviewsChange: (reviews: Review[]) => void;
   onAttributionsChange: (attributions: Attribution[]) => void;
 }) {
@@ -828,7 +792,7 @@ function AttemptView({
                 diff={diff}
                 reply={trace?.events.find(item => item.kind === "reply")?.summary || ""}
                 onChange={onReviewsChange}
-                onSave={() => onSaveReviews(reviews, attributions)}
+                onSave={() => onSaveReviews(reviews, attributions, false)}
                 status={status}
               />
             )}
@@ -844,7 +808,7 @@ function AttemptView({
                   );
                   onAttributionsChange([...others, next]);
                 }}
-                onSave={() => onSaveReviews(reviews, attributions)}
+                onSave={() => onSaveReviews(reviews, attributions, true)}
                 status={status}
               />
             )}
@@ -997,11 +961,11 @@ function ReviewPane({
                 onChange={event => upsert(check.id, { evidence_ref: event.target.value })}
               />
             </div>
-            <div>
+            <div className="wb-review-doc">
               {diff && (
                 <pre
                   className="wb-diff"
-                  style={{ display: "block", cursor: "pointer" }}
+                  style={{ cursor: "pointer" }}
                   onClick={() =>
                     upsert(check.id, {
                       evidence_ref: `after:${diff.path} ¶${diff.region.from || ""}`.trim(),
@@ -1012,7 +976,7 @@ function ReviewPane({
                   }}
                 />
               )}
-              {reply && <pre style={{ background: "#f6fbfa", marginTop: 8 }}>{reply}</pre>}
+              {reply && <pre className="wb-diff" style={{ marginTop: 8 }}>{reply}</pre>}
             </div>
           </div>
         );

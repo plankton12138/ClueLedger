@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from evaluation.harness.assets import AssetLoadError, load_evaluator_by_id
 from evaluation.harness.report import apply_reviews, gate_decision, write_report
-from evaluation.harness.runner_api import RunBatchError
+from evaluation.harness.runner_api import RunBatchError, resolve_run_env_knobs, resolve_suite_batch
 from evaluation.harness.schema import CaseLoadError
 from evaluation.workbench import data as wb
 from evaluation.workbench import jobs as jobmod
@@ -383,29 +384,122 @@ def make_handler(
                         _error("JOB_INVALID", "workbench.jobs", "请求体须为对象", "提交跑测参数"),
                     )
                     return True
+                suite_id = body.get("suite_id")
+                env_id = body.get("env_id")
                 case_ids = body.get("case_ids") or []
+                explicit_max = body.get("max_requests")
+                explicit_timeout = body.get("timeout")
+                if suite_id:
+                    try:
+                        (
+                            suite,
+                            _env,
+                            suite_cases,
+                            suite_mode,
+                            suite_repeat,
+                            _budget,
+                            _env_timeout,
+                        ) = resolve_suite_batch(str(suite_id))
+                    except RunBatchError as exc:
+                        code, where, why, fix = _parse_error_message(str(exc))
+                        self._send_json(400, _error(code, where, why, fix))
+                        return True
+                    if not case_ids:
+                        case_ids = suite_cases
+                    mode = str(body.get("mode") or suite_mode)
+                    try:
+                        repeat = int(body.get("repeat") or suite_repeat)
+                    except (TypeError, ValueError):
+                        self._send_json(
+                            400,
+                            _error(
+                                "JOB_INVALID",
+                                "workbench.jobs",
+                                "repeat 无效",
+                                "改为数字",
+                            ),
+                        )
+                        return True
+                    if not env_id:
+                        env_id = suite.default_env  # type: ignore[attr-defined]
+                    evaluator_id = suite.default_evaluator  # type: ignore[attr-defined]
+                else:
+                    if not isinstance(case_ids, list):
+                        self._send_json(
+                            400,
+                            _error(
+                                "JOB_INVALID", "workbench.jobs", "case_ids 须为数组", "勾选案例"
+                            ),
+                        )
+                        return True
+                    mode = str(body.get("mode") or "smoke")
+                    try:
+                        repeat = int(body.get("repeat") or (3 if mode == "gate" else 1))
+                    except (TypeError, ValueError):
+                        self._send_json(
+                            400,
+                            _error(
+                                "JOB_INVALID",
+                                "workbench.jobs",
+                                "repeat 无效",
+                                "改为数字",
+                            ),
+                        )
+                        return True
+                    evaluator_id = body.get("evaluator_id")
+
                 if not isinstance(case_ids, list):
                     self._send_json(
                         400,
                         _error("JOB_INVALID", "workbench.jobs", "case_ids 须为数组", "勾选案例"),
                     )
                     return True
-                mode = str(body.get("mode") or "smoke")
+
                 try:
-                    repeat = int(body.get("repeat") or (3 if mode == "gate" else 1))
-                    max_requests = int(body.get("max_requests") or 30)
-                    timeout_s = float(body.get("timeout") or 300.0)
+                    parsed_max = int(explicit_max) if explicit_max is not None else None
+                    parsed_timeout = (
+                        float(explicit_timeout) if explicit_timeout is not None else None
+                    )
                 except (TypeError, ValueError):
                     self._send_json(
                         400,
                         _error(
                             "JOB_INVALID",
                             "workbench.jobs",
-                            "repeat / max_requests / timeout 无效",
+                            "max_requests / timeout 无效",
                             "改为数字",
                         ),
                     )
                     return True
+
+                try:
+                    env_id, max_requests, timeout_s, capture_inputs = resolve_run_env_knobs(
+                        str(env_id) if env_id else None,
+                        max_requests=parsed_max,
+                        timeout_s=parsed_timeout,
+                    )
+                except RunBatchError as exc:
+                    code, where, why, fix = _parse_error_message(str(exc))
+                    self._send_json(400, _error(code, where, why, fix))
+                    return True
+
+                evaluator_version: int | None = None
+                if evaluator_id:
+                    try:
+                        pack = load_evaluator_by_id(str(evaluator_id))
+                        evaluator_version = pack.version
+                    except AssetLoadError as exc:
+                        self._send_json(
+                            400,
+                            _error(
+                                "EVAL_ASSET",
+                                "workbench.jobs",
+                                str(exc),
+                                "检查 evaluators 目录",
+                            ),
+                        )
+                        return True
+
                 out_name = body.get("out_name")
                 baseline_name = body.get("baseline")
                 baseline_path: Path | None = None
@@ -436,6 +530,11 @@ def make_handler(
                         out_name=str(out_name) if out_name else None,
                         baseline=baseline_path,
                         timeout_s=timeout_s,
+                        suite_id=str(suite_id) if suite_id else None,
+                        env_id=str(env_id) if env_id else None,
+                        evaluator_id=str(evaluator_id) if evaluator_id else None,
+                        evaluator_version=evaluator_version,
+                        capture_inputs=capture_inputs,
                     )
                 except jobmod.JobConflictError as exc:
                     code, where, why, fix = _parse_error_message(str(exc))
@@ -467,6 +566,10 @@ def make_handler(
                 self._send_json(200, {"runs": wb.list_runs(runs_root), "runs_root": str(runs_root)})
                 return
 
+            if path == "/api/qa/queue":
+                self._send_json(200, wb.build_qa_queue(runs_root))
+                return
+
             if path == "/api/attribution-options":
                 self._send_json(
                     200,
@@ -481,6 +584,41 @@ def make_handler(
                 return
 
             if parts[:2] == ["api", "cases"] and self._cases_api(parts[2:], "GET"):
+                return
+
+            if path == "/api/suites":
+                try:
+                    self._send_json(200, {"suites": wb.list_suite_summaries()})
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json(
+                        400,
+                        _error("EVAL_ASSET", "workbench.suites", str(exc), "检查 suites 目录"),
+                    )
+                return
+
+            if path == "/api/envs":
+                try:
+                    self._send_json(200, {"envs": wb.list_env_summaries()})
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json(
+                        400,
+                        _error("EVAL_ASSET", "workbench.envs", str(exc), "检查 envs 目录"),
+                    )
+                return
+
+            if path == "/api/evaluators":
+                try:
+                    self._send_json(200, {"evaluators": wb.list_evaluator_summaries()})
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json(
+                        400,
+                        _error(
+                            "EVAL_ASSET",
+                            "workbench.evaluators",
+                            str(exc),
+                            "检查 evaluators 目录",
+                        ),
+                    )
                 return
 
             if parts[:2] == ["api", "jobs"] and self._jobs_api(parts[2:], "GET"):

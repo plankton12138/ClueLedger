@@ -46,6 +46,11 @@ class Job:
     timeout_s: float = 300.0
     cases_root: Path | None = None
     works_root: Path | None = None
+    suite_id: str | None = None
+    env_id: str | None = None
+    evaluator_id: str | None = None
+    evaluator_version: int | None = None
+    capture_inputs: bool = True
     cancel_event: threading.Event = field(default_factory=threading.Event)
     log: list[str] = field(default_factory=list)
     completed_attempts: int = 0
@@ -83,6 +88,10 @@ class Job:
             "gate_passed": self.gate_passed,
             "log": list(self.log[-40:]),
             "baseline": str(self.baseline) if self.baseline else None,
+            "suite_id": self.suite_id,
+            "env_id": self.env_id,
+            "evaluator_id": self.evaluator_id,
+            "evaluator_version": self.evaluator_version,
         }
 
 
@@ -116,6 +125,11 @@ def create_job(
     out_name: str | None = None,
     baseline: Path | None = None,
     timeout_s: float = 300.0,
+    suite_id: str | None = None,
+    env_id: str | None = None,
+    evaluator_id: str | None = None,
+    evaluator_version: int | None = None,
+    capture_inputs: bool = True,
 ) -> Job:
     global _ACTIVE_ID
     if not case_ids:
@@ -175,6 +189,11 @@ def create_job(
             timeout_s=timeout_s,
             cases_root=cases_root,
             works_root=works_root,
+            suite_id=suite_id,
+            env_id=env_id,
+            evaluator_id=evaluator_id,
+            evaluator_version=evaluator_version,
+            capture_inputs=capture_inputs,
             total_attempts=len(case_ids) * int(repeat),
         )
         _JOBS[job_id] = job
@@ -237,6 +256,12 @@ def _run_job(job: Job) -> None:
             cancel_event=job.cancel_event,
             on_progress=on_progress,
             strict_gate_repeat=True,
+            suite_id=job.suite_id,
+            env_id=job.env_id,
+            evaluator_id=job.evaluator_id,
+            evaluator_version=job.evaluator_version,
+            capture_inputs=job.capture_inputs,
+            job_id=job.id,
         )
         with _LOCK:
             job.gate_passed = batch.gate_passed

@@ -1,0 +1,8 @@
+id: local_default
+version: 1
+desc: 本机本地模式默认环境；base_url 由 Job / CLI 启动时覆盖
+capture_inputs: true
+budget: 30
+timeout_s: 300.0
+work_baseline: base
+# base_url 示例：http://127.0.0.1:8000（勿写入仓库固定端口）

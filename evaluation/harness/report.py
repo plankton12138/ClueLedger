@@ -42,6 +42,7 @@ def _attempt_row(result: AttemptResult) -> dict[str, Any]:
             {
                 "id": item.check_id,
                 "level": item.level,
+                "role": item.role,
                 "verdict": item.verdict,
                 "reason": item.reason,
                 "evidence": _serialize_evidence(item.evidence),
@@ -53,12 +54,23 @@ def _attempt_row(result: AttemptResult) -> dict[str, Any]:
     }
 
 
+def _gate_relevant(check: dict[str, Any]) -> bool:
+    """required（或缺省）参与门禁；diagnostic 只进报告分层。"""
+    return check.get("role", "required") != "diagnostic"
+
+
 def _quality_passed(row: dict[str, Any]) -> bool:
     if row.get("status") != "completed":
         return False
     checks = row.get("checks") or []
-    quality = [c for c in checks if c.get("level") == "quality"]
+    quality = [c for c in checks if c.get("level") == "quality" and _gate_relevant(c)]
     if not quality:
+        # 无 required 质量项时，不因 diagnostic 失败拉低；与 _outcome 一致只看 required
+        required = [c for c in checks if _gate_relevant(c)]
+        if any(c.get("verdict") == "fail" for c in required):
+            return False
+        if required:
+            return True
         return row.get("outcome") in {"pass", "pending_review"}
     return all(c.get("verdict") in {"pass", "skipped"} for c in quality) and not any(
         c.get("verdict") == "fail" for c in quality
@@ -67,7 +79,8 @@ def _quality_passed(row: dict[str, Any]) -> bool:
 
 def _must_failed(row: dict[str, Any]) -> bool:
     return any(
-        c.get("level") == "must" and c.get("verdict") == "fail" for c in (row.get("checks") or [])
+        c.get("level") == "must" and c.get("verdict") == "fail" and _gate_relevant(c)
+        for c in (row.get("checks") or [])
     )
 
 
@@ -97,6 +110,10 @@ def build_report(
     *,
     identity: dict[str, Any] | None = None,
     mode: str = "smoke",
+    suite_id: str | None = None,
+    env_id: str | None = None,
+    evaluator_id: str | None = None,
+    evaluator_version: int | None = None,
 ) -> dict[str, Any]:
     attempts = [_attempt_row(result) for result in results]
     cases: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -115,6 +132,10 @@ def build_report(
         )
     return {
         "mode": mode,
+        "suite_id": suite_id,
+        "env_id": env_id,
+        "evaluator_id": evaluator_id,
+        "evaluator_version": evaluator_version,
         "identity": identity or {},
         "summary": _recount(attempts),
         "cases": case_views,

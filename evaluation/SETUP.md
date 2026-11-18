@@ -1,6 +1,6 @@
 # 评测平台启动
 
-本机独立服务，不属于产品。默认地址 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)。扫描 `data/evaluation/runs` 与 `evaluation/cases`。
+本机独立服务，不属于产品。默认地址 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)。扫描 `data/evaluation/runs`、`evaluation/cases` 与 suites/envs/evaluators 资产。
 
 ## 前置
 
@@ -18,7 +18,7 @@ npm --prefix frontend run build
 uv run python -m evaluation workbench
 ```
 
-打开后顶栏三入口：**Case 库** / **结果** / **跑测**。在「跑测」可选题并触发冒烟或门禁（需本机已启动本地模式服务）。
+打开后顶栏三区：**资产** / **运行** / **报告与质检**。在「运行 · Pipeline」可选 Suite × Env 触发冒烟或门禁（需本机已启动本地模式服务）。
 
 可选参数：
 
@@ -31,11 +31,11 @@ uv run python -m evaluation workbench
 
 ## 尚无运行结果时
 
-先启动本地模式产品服务，再在工作台「跑测」开始，或用 CLI：
+先启动本地模式产品服务，再在工作台 Pipeline 开始，或用 CLI：
 
 ```powershell
 uv run python -m hastings.server
-uv run python -m evaluation run --base-url http://127.0.0.1:8000 --case revise_ch1_ending_farm_tonight --out data/evaluation/runs/smoke-1 --mode smoke
+uv run python -m evaluation run --base-url http://127.0.0.1:8000 --suite smoke_revise --out data/evaluation/runs/smoke-1
 uv run python -m evaluation workbench --run smoke-1
 ```
 

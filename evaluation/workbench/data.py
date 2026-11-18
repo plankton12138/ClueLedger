@@ -6,11 +6,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+from evaluation.harness.assets import list_envs, list_evaluators, list_suites
 from evaluation.harness.evidence import attempt_paths
 from evaluation.harness.schema import Case, CaseLoadError, load_cases
 
-CASES_ROOT = Path(__file__).resolve().parents[1] / "cases"
-WORKS_ROOT = Path(__file__).resolve().parents[1] / "works"
+EVAL_ROOT = Path(__file__).resolve().parents[1]
+CASES_ROOT = EVAL_ROOT / "cases"
+WORKS_ROOT = EVAL_ROOT / "works"
+SUITES_ROOT = EVAL_ROOT / "suites"
+ENVS_ROOT = EVAL_ROOT / "envs"
+EVALUATORS_ROOT = EVAL_ROOT / "evaluators"
 
 STAGE_LABELS = {
     "scope": "范围登记",
@@ -247,6 +252,12 @@ def list_runs(runs_root: Path) -> list[dict[str, Any]]:
             {
                 "id": path.name,
                 "mode": report.get("mode") if isinstance(report, dict) else None,
+                "suite_id": report.get("suite_id") if isinstance(report, dict) else None,
+                "env_id": report.get("env_id") if isinstance(report, dict) else None,
+                "evaluator_id": report.get("evaluator_id") if isinstance(report, dict) else None,
+                "evaluator_version": (
+                    report.get("evaluator_version") if isinstance(report, dict) else None
+                ),
                 "gate_passed": bool(gate.get("passed")) if isinstance(gate, dict) else None,
                 "summary": summary if isinstance(summary, dict) else {},
                 "identity": identity if isinstance(identity, dict) else {},
@@ -283,6 +294,7 @@ def list_cases(
                 "history": case.history,
                 "step_count": len(case.steps),
                 "check_counts": _check_counts(case),
+                "evaluator_id": case.evaluator_id,
                 "source": str(case.source),
             }
         )
@@ -321,11 +333,73 @@ def get_case_detail(
             "preserve": list(case.expect.preserve),
         },
         "checks": [
-            {"id": check.id, "level": check.level, "question": check.question}
+            {
+                "id": check.id,
+                "level": check.level,
+                "role": check.role,
+                "question": check.question,
+            }
             for check in case.checks
         ],
         "check_counts": _check_counts(case),
+        "evaluator_id": case.evaluator_id,
+        "evaluator_version": case.evaluator_version,
     }
+
+
+def list_suite_summaries() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": suite.id,
+            "version": suite.version,
+            "desc": suite.desc,
+            "cases": list(suite.case_ids),
+            "default_env": suite.default_env,
+            "default_evaluator": suite.default_evaluator,
+            "mode": suite.mode,
+            "repeat": suite.repeat,
+            "source": str(suite.source),
+        }
+        for suite in list_suites(suites_dir=SUITES_ROOT)
+    ]
+
+
+def list_env_summaries() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": env.id,
+            "version": env.version,
+            "desc": env.desc,
+            "capture_inputs": env.capture_inputs,
+            "budget": env.budget,
+            "timeout_s": env.timeout_s,
+            "work_baseline": env.work_baseline,
+            "source": str(env.source),
+        }
+        for env in list_envs(envs_dir=ENVS_ROOT)
+    ]
+
+
+def list_evaluator_summaries() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": pack.id,
+            "version": pack.version,
+            "desc": pack.desc,
+            "checks": [
+                {
+                    "id": check.id,
+                    "level": check.level,
+                    "role": check.role,
+                    "impl": check.impl,
+                    "question": check.question,
+                }
+                for check in pack.checks
+            ],
+            "source": str(pack.source),
+        }
+        for pack in list_evaluators(evaluators_dir=EVALUATORS_ROOT)
+    ]
 
 
 def list_runs_for_case(runs_root: Path, case_id: str) -> list[dict[str, Any]]:
@@ -354,3 +428,124 @@ def list_runs_for_case(runs_root: Path, case_id: str) -> list[dict[str, Any]]:
             }
         )
     return related
+
+
+def build_qa_queue(runs_root: Path) -> dict[str, Any]:
+    """聚合各 run 待人工项与归因摘要；单 run 损坏则跳过。"""
+    items: list[dict[str, Any]] = []
+    pending = 0
+    reviewed = 0
+    eval_bug = 0
+    if not runs_root.is_dir():
+        return {"summary": {"pending": 0, "reviewed": 0, "eval_bug": 0}, "items": []}
+
+    def _require_int(value: Any) -> int:
+        if value is None or value == "":
+            return 0
+        return int(value)
+
+    for path in sorted(runs_root.iterdir(), key=lambda p: p.name):
+        if not path.is_dir():
+            continue
+        report_path = path / "report.json"
+        if not report_path.is_file():
+            continue
+        try:
+            report = read_json(report_path, {})
+            if not isinstance(report, dict):
+                continue
+            try:
+                payload = load_reviews_file(path / "reviews.json")
+            except Exception:  # noqa: BLE001
+                payload = {"reviews": [], "attributions": []}
+            reviews = payload.get("reviews") if isinstance(payload, dict) else []
+            attributions = payload.get("attributions") if isinstance(payload, dict) else []
+            if not isinstance(reviews, list):
+                reviews = []
+            if not isinstance(attributions, list):
+                attributions = []
+
+            review_index: dict[tuple[str, int, str], dict[str, Any]] = {}
+            for row in reviews:
+                if not isinstance(row, dict):
+                    continue
+                review_key = (
+                    str(row.get("case_id") or ""),
+                    _require_int(row.get("attempt")),
+                    str(row.get("check_id") or ""),
+                )
+                review_index[review_key] = row
+
+            attr_index: dict[tuple[str, int], dict[str, Any]] = {}
+            for row in attributions:
+                if not isinstance(row, dict):
+                    continue
+                attr_key = (str(row.get("case_id") or ""), _require_int(row.get("attempt")))
+                attr_index[attr_key] = row
+                if row.get("category") == "eval":
+                    eval_bug += 1
+
+            attempts = report.get("attempts")
+            if not isinstance(attempts, list):
+                continue
+            for attempt_row in attempts:
+                if not isinstance(attempt_row, dict):
+                    continue
+                case_id = str(attempt_row.get("case_id") or "")
+                attempt_n = _require_int(attempt_row.get("attempt"))
+                checks = attempt_row.get("checks")
+                if not isinstance(checks, list):
+                    continue
+                attr = attr_index.get((case_id, attempt_n))
+                attr_cat = (
+                    str(attr.get("category"))
+                    if isinstance(attr, dict) and attr.get("category")
+                    else None
+                )
+                for check in checks:
+                    if not isinstance(check, dict):
+                        continue
+                    check_id = str(check.get("id") or "")
+                    level = str(check.get("level") or "")
+                    machine = str(check.get("verdict") or "")
+                    reason = str(check.get("reason") or "")
+                    human_row = review_index.get((case_id, attempt_n, check_id))
+                    human_verdict = None
+                    if isinstance(human_row, dict) and human_row.get("verdict") is not None:
+                        human_verdict = str(human_row.get("verdict"))
+                    elif level == "human" and machine in {"pending_review", "uncertain"}:
+                        human_verdict = machine
+
+                    include = False
+                    if level == "human":
+                        if human_verdict in (None, "uncertain", "pending_review"):
+                            include = True
+                            pending += 1
+                        elif human_verdict in {"pass", "fail"}:
+                            reviewed += 1
+                            # reviewed stay out of default queue table
+                    elif machine == "fail" and attr_cat is None:
+                        include = True
+
+                    if not include:
+                        continue
+                    items.append(
+                        {
+                            "run_id": path.name,
+                            "case_id": case_id,
+                            "attempt": attempt_n,
+                            "check_id": check_id,
+                            "level": level,
+                            "machine_verdict": machine,
+                            "human_verdict": human_verdict,
+                            "attribution_category": attr_cat,
+                            "reason": reason,
+                        }
+                    )
+        except Exception:  # noqa: BLE001
+            continue
+
+    return {
+        "summary": {"pending": pending, "reviewed": reviewed, "eval_bug": eval_bug},
+        "items": items,
+    }
