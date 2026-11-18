@@ -8,7 +8,7 @@
 
 ## 评测体系重建
 
-- [设计](evaluation/design.md)：开发阶段 0—5；端到端评测集（先做对话改稿）、候选核对过程集、回测门禁、失败转案例；工作台重设计见 [workbench-design.md](evaluation/workbench-design.md)（W1–W6 已落地）。
+- [设计](evaluation/design.md)：2026-11-18 修订，按三个问题组织——回归评测（已实现，案例 1 条）、质量对比（待实现）、使用信号（待实现）；后续步骤 R1—R7 未开始。工作台重设计见 [workbench-design.md](evaluation/workbench-design.md)（W1–W7 已落地）。
 - [阶段 0 · 最小可归因](evaluation/observation-development-plan.md)：确定性与浏览器 e2e 已通过；在线单例待手测。
 - [阶段 1 · 拆除旧评测](evaluation/stage1-retire-old-eval.md)：已删除旧 `eval/` 与旧评测测试。
 - [阶段 2 · 改稿评测集与工作台](evaluation/stage2-revise-suite.md)：T0–T6 完成；运行说明见 [evaluation/README.md](../evaluation/README.md)。
