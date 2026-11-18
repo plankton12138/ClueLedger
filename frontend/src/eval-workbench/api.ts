@@ -4,6 +4,7 @@ export type CheckRow = {
   id: string;
   level: string;
   verdict: string;
+  role?: string;
   reason: string;
   evidence?: EvidenceRef[];
 };
@@ -106,7 +107,7 @@ export type DiffView = {
   region: { path?: string; from?: string; to?: string };
   preserve: string[];
   unchanged: boolean;
-  diff: { changed?: string[]; unchanged?: string[] };
+  diff: { changed?: string[]; unchanged?: string[]; removed?: string[] };
 };
 
 export type RunSummary = {
@@ -120,6 +121,22 @@ export type RunSummary = {
   summary?: Record<string, number>;
   identity?: Record<string, unknown>;
   mtime?: number;
+  case_ids?: string[];
+  check_summary?: CheckSummary;
+  review_target?: CheckTarget | null;
+  issue_target?: CheckTarget | null;
+};
+
+export type CheckTarget = { caseId: string; attempt: number; checkId?: string | null };
+
+export type CheckSummary = {
+  required: number;
+  quality: number;
+  diagnostic?: number;
+  pending: number;
+  insufficient: number;
+  abnormal: number;
+  rejected: number;
 };
 
 export type SuiteSummary = {

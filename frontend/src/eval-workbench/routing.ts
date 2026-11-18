@@ -1,4 +1,6 @@
 export type AssetTab = "suites" | "envs" | "evaluators";
+export type ReportFocus = "checks" | "diff" | "review" | "attr";
+export type RecordFilter = "all" | "review" | "issues";
 
 export type Route =
   | { page: "assets"; tab: AssetTab }
@@ -8,8 +10,10 @@ export type Route =
       runId: string | null;
       preferCaseId?: string | null;
       preferAttempt?: number | null;
-    }
-  | { page: "qa" };
+      preferCheckId?: string | null;
+      filter?: RecordFilter;
+      focus?: ReportFocus | null;
+    };
 
 function parseCases(raw: string): string[] {
   return raw
@@ -31,18 +35,29 @@ function parseAttempt(raw: string | null): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function parseFocus(raw: string | null): ReportFocus | null {
+  if (raw === "checks" || raw === "diff" || raw === "review" || raw === "attr") return raw;
+  return null;
+}
+
 function runRoute(
   path: string,
   prefix: "reports" | "runs",
   params: URLSearchParams,
 ): Route {
-  if (path === prefix) return { page: "reports", runId: null, preferCaseId: null };
+  const rawFilter = params.get("filter");
+  const filter = rawFilter === "review" || rawFilter === "issues" ? { filter: rawFilter } as const : {};
+  if (path === prefix) return { page: "reports", runId: null, preferCaseId: null, ...filter };
   const id = decodeURIComponent(path.slice(`${prefix}/`.length).split("/")[0] || "");
+  const focus = parseFocus(params.get("focus"));
   return {
     page: "reports",
     runId: id || null,
     preferCaseId: params.get("case"),
     preferAttempt: parseAttempt(params.get("attempt")),
+    ...(params.has("check") ? { preferCheckId: params.get("check") } : {}),
+    ...(focus ? { focus } : {}),
+    ...filter,
   };
 }
 
@@ -53,7 +68,7 @@ export function parseHash(hash?: string): Route {
   const params = new URLSearchParams(queryPart);
 
   if (path === "qa" || path.startsWith("qa/")) {
-    return { page: "qa" };
+    return { page: "reports", runId: null, filter: "review" };
   }
 
   if (path === "assets" || path.startsWith("assets/")) {
@@ -98,13 +113,11 @@ export function parseHash(hash?: string): Route {
   return { page: "reports", runId: null, preferCaseId: null };
 }
 
-export function writeHash(route: Route): void {
+export function routeHash(route: Route): string {
   let next = "#/reports";
   if (route.page === "assets") {
     const tab = route.tab === "suites" ? "" : `?tab=${route.tab}`;
     next = `#/assets${tab}`;
-  } else if (route.page === "qa") {
-    next = "#/qa";
   } else if (route.page === "run") {
     const params = new URLSearchParams();
     if (route.presetCaseIds.length) {
@@ -113,15 +126,21 @@ export function writeHash(route: Route): void {
     if (route.suiteId) params.set("suite", route.suiteId);
     const q = params.toString();
     next = `#/run${q ? `?${q}` : ""}`;
-  } else if (route.runId) {
+  } else {
     const params = new URLSearchParams();
     if (route.preferCaseId) params.set("case", route.preferCaseId);
     if (route.preferAttempt != null) params.set("attempt", String(route.preferAttempt));
+    if (route.preferCheckId) params.set("check", route.preferCheckId);
+    if (route.focus) params.set("focus", route.focus);
+    if (route.filter && route.filter !== "all") params.set("filter", route.filter);
     const q = params.toString();
-    next = `#/reports/${encodeURIComponent(route.runId)}${q ? `?${q}` : ""}`;
-  } else {
-    next = "#/reports";
+    next = `#/reports${route.runId ? `/${encodeURIComponent(route.runId)}` : ""}${q ? `?${q}` : ""}`;
   }
+  return next;
+}
+
+export function writeHash(route: Route): void {
+  const next = routeHash(route);
   if (typeof location === "undefined") return;
   if (location.hash === next) return;
   location.hash = next;

@@ -232,8 +232,74 @@ def resolve_run_dir(runs_root: Path, run_id: str) -> Path | None:
     return candidate
 
 
+def _run_checks(
+    report: dict[str, Any], reviews: list[Any]
+) -> tuple[list[str], dict[str, int], dict[str, Any] | None, dict[str, Any] | None]:
+    cases = report.get("cases") or []
+    attempts = (
+        [row for case in cases for row in case.get("attempts", [])]
+        if cases
+        else report.get("attempts") or []
+    )
+    saved = {
+        (row.get("case_id"), row.get("attempt"), row.get("check_id")): row.get("verdict")
+        for row in reviews
+        if isinstance(row, dict)
+    }
+    case_ids = dict.fromkeys(str(case["case_id"]) for case in cases if case.get("case_id"))
+    checks = dict.fromkeys(
+        ("required", "quality", "diagnostic", "pending", "insufficient", "abnormal", "rejected"), 0
+    )
+    review_target = None
+    issue_target = None
+    issue_priority = 3
+    for row in attempts:
+        case_id = row.get("case_id")
+        if not case_id:
+            continue
+        case_ids[str(case_id)] = None
+        target = {"caseId": case_id, "attempt": row.get("attempt", 1)}
+        if row.get("status") in {"infrastructure_error", "not_run"}:
+            checks["abnormal"] += 1
+            if issue_priority > 1:
+                issue_target = target
+                issue_priority = 1
+        for check in row.get("checks") or []:
+            check_id = check.get("id")
+            check_target = {**target, "checkId": check_id}
+            level = check.get("level")
+            verdict = check.get("verdict")
+            if level == "human":
+                review = saved.get((case_id, row.get("attempt", 1), check_id))
+                verdict = review or verdict
+                if verdict in {"pending_review", "uncertain"}:
+                    checks["insufficient" if review == "pending_review" else "pending"] += 1
+                    if review_target is None:
+                        review_target = check_target
+            if verdict != "fail":
+                continue
+            if level != "human" and check.get("role") == "diagnostic":
+                checks["diagnostic"] += 1
+                priority = 2
+            elif level == "must":
+                checks["required"] += 1
+                priority = 0
+            elif level == "quality":
+                checks["quality"] += 1
+                priority = 2
+            elif level == "human":
+                checks["rejected"] += 1
+                priority = 2
+            else:
+                continue
+            if priority < issue_priority:
+                issue_target = check_target
+                issue_priority = priority
+    return list(case_ids), checks, review_target, issue_target
+
+
 def list_runs(runs_root: Path) -> list[dict[str, Any]]:
-    """扫描已落盘运行（含 report.json 的子目录），按修改时间新到旧。"""
+    """扫描已落盘运行，汇总有效的人工复核与程序检查结果。"""
     if not runs_root.is_dir():
         return []
     items: list[dict[str, Any]] = []
@@ -243,25 +309,37 @@ def list_runs(runs_root: Path) -> list[dict[str, Any]]:
         report_path = path / "report.json"
         if not report_path.is_file():
             continue
-        report = read_json(report_path, {})
-        gate = report.get("gate") if isinstance(report, dict) else None
-        summary = report.get("summary") if isinstance(report, dict) else None
-        identity = report.get("identity") if isinstance(report, dict) else None
-        mtime = report_path.stat().st_mtime
+        try:
+            report = read_json(report_path, {})
+            mtime = report_path.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        if not isinstance(report, dict):
+            continue
+        try:
+            reviews = load_reviews_file(path / "reviews.json")["reviews"]
+        except (OSError, ValueError):
+            reviews = []
+        case_ids, checks, review_target, issue_target = _run_checks(report, reviews)
+        gate = report.get("gate")
+        summary = report.get("summary")
+        identity = report.get("identity")
         items.append(
             {
                 "id": path.name,
-                "mode": report.get("mode") if isinstance(report, dict) else None,
-                "suite_id": report.get("suite_id") if isinstance(report, dict) else None,
-                "env_id": report.get("env_id") if isinstance(report, dict) else None,
-                "evaluator_id": report.get("evaluator_id") if isinstance(report, dict) else None,
-                "evaluator_version": (
-                    report.get("evaluator_version") if isinstance(report, dict) else None
-                ),
+                "mode": report.get("mode"),
+                "suite_id": report.get("suite_id"),
+                "env_id": report.get("env_id"),
+                "evaluator_id": report.get("evaluator_id"),
+                "evaluator_version": report.get("evaluator_version"),
                 "gate_passed": bool(gate.get("passed")) if isinstance(gate, dict) else None,
                 "summary": summary if isinstance(summary, dict) else {},
                 "identity": identity if isinstance(identity, dict) else {},
                 "mtime": mtime,
+                "case_ids": case_ids,
+                "check_summary": checks,
+                "review_target": review_target,
+                "issue_target": issue_target,
             }
         )
     items.sort(key=lambda item: float(item.get("mtime") or 0), reverse=True)

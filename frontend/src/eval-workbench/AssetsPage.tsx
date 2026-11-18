@@ -12,22 +12,18 @@ import {
   fetchEvaluators,
   fetchSuites,
 } from "./api";
-import { modeShort } from "./labels";
+import { caseName, modeShort } from "./labels";
 import type { AssetTab } from "./routing";
 
 export type { AssetTab };
 
 const TAB_LABEL: Record<AssetTab, string> = {
-  suites: "Task 集",
-  envs: "评测环境",
-  evaluators: "检查项",
+  suites: "套件",
+  envs: "环境",
+  evaluators: "检查包",
 };
 
-const TAB_HINT: Record<AssetTab, string> = {
-  suites: "点案例展开步骤、预期与检查项；套件可折叠查看绑定",
-  envs: "运行条件档案 · 点开查看预算与采证",
-  evaluators: "检查包 · 必须项进验收，诊断项只用于定位",
-}
+const TAB_ORDER: AssetTab[] = ["suites", "envs", "evaluators"];
 
 function roleLabel(role: string) {
   return role === "diagnostic" ? "诊断" : "必需";
@@ -136,7 +132,7 @@ function TaskDetailBody({
               onLaunch(detail.id);
             }}
           >
-            带到开跑
+            使用案例
           </button>
         </div>
       )}
@@ -146,7 +142,7 @@ function TaskDetailBody({
 
 export function AssetsPage({
   tab,
-  onTab: _onTab,
+  onTab,
   onLaunchSuite,
   onLaunchCase,
 }: {
@@ -155,7 +151,6 @@ export function AssetsPage({
   onLaunchSuite: (suiteId: string) => void;
   onLaunchCase: (caseId: string) => void;
 }) {
-  void _onTab;
   const [suites, setSuites] = useState<SuiteSummary[]>([]);
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [envs, setEnvs] = useState<EnvSummary[]>([]);
@@ -242,13 +237,22 @@ export function AssetsPage({
   }, [tab, envs, selectedEnvId]);
 
   return (
-    <div className="wb-page wb-assets">
-      <div className="wb-page-head wb-assets-head">
-        <div className="wb-assets-title">
-          <h2>{TAB_LABEL[tab]}</h2>
-          <p className="wb-muted">{TAB_HINT[tab]}</p>
+    <main className="rr-page rr-wide rr-config">
+      <header className="rr-title"><h1>评测配置</h1></header>
+      <div className="rr-record-toolbar">
+        <div className="rr-tabs" role="group" aria-label="配置类型">
+          {TAB_ORDER.map(item => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={tab === item}
+              onClick={() => onTab(item)}
+            >
+              {TAB_LABEL[item]}
+            </button>
+          ))}
         </div>
-        <button type="button" className="wb-chip ghost" onClick={() => void reload()}>
+        <button type="button" className="rr-link" onClick={() => void reload()}>
           刷新
         </button>
       </div>
@@ -261,93 +265,44 @@ export function AssetsPage({
 
       {tab === "suites" && (
         <div className="wb-asset-stack">
-          <section className="wb-asset-section">
-            <div className="wb-asset-section-head">
-              <h3>Suite</h3>
-              <span className="wb-muted">{suites.length} 个 · 只读 YAML</span>
-            </div>
-            {!suites.length && <p className="wb-empty">尚无 Suite。</p>}
-            {suites.length > 0 && (
-              <div className="wb-table-wrap">
-                <table className="wb-table">
-                  <thead>
-                    <tr>
-                      <th>名称</th>
-                      <th>跑法</th>
-                      <th>案例数</th>
-                      <th>默认环境 / 检查包</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suites.map(item => {
-                      const key = `suite:${item.id}`;
-                      const open = openKey === key;
-                      return (
-                        <tr key={item.id} className={open ? "open" : ""}>
-                          <td>
-                            <button type="button" className="wb-linkish" onClick={() => toggle(key)}>
-                              <code>{item.id}</code>
-                            </button>
-                            {item.desc && <div className="wb-muted">{item.desc}</div>}
-                            {open && (
-                              <div className="wb-table-inline-detail">
-                                <ul className="wb-pill-list">
-                                  {item.cases.map(caseId => (
-                                    <li key={caseId}>
-                                      <button
-                                        type="button"
-                                        className="wb-pill-link"
-                                        onClick={() => {
-                                          void ensureTaskDetail(caseId);
-                                          toggle(`task:${caseId}`);
-                                        }}
-                                      >
-                                        <code>{caseId}</code>
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                                <p className="wb-path" title={item.source}>
-                                  {item.source}
-                                </p>
-                              </div>
-                            )}
-                          </td>
-                          <td>
-                            <span className="wb-tag">{modeShort(item.mode)}</span>
-                            <span className="wb-muted"> · 每案 {item.repeat} 次</span>
-                          </td>
-                          <td>{item.cases.length}</td>
-                          <td className="wb-muted">
-                            {item.default_env} · {item.default_evaluator}
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="wb-chip btn"
-                              onClick={() => onLaunchSuite(item.id)}
-                            >
-                              带到开跑
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+          <section>
+            {!suites.length && <p className="rr-empty">还没有评测套件。</p>}
+            {suites.map(item => (
+              <article key={item.id} className="rr-record-row">
+                <div className="rr-record-main">
+                  <h2>{item.desc || item.id}</h2>
+                  <div className="rr-meta">
+                    {modeShort(item.mode)} · {item.cases.length} 个案例 · 每案 {item.repeat} 次 · {item.default_env}
+                  </div>
+                  <details className="rr-disclosure rr-config-detail">
+                    <summary>套件详情</summary>
+                    <div className="rr-detail">
+                      <p>{item.id} · v{item.version} · {item.default_evaluator}</p>
+                      <p className="rr-meta">{item.source}</p>
+                      <div className="rr-record-actions">
+                        {item.cases.map(id => (
+                          <button key={id} type="button" className="rr-link" onClick={() => {
+                            void ensureTaskDetail(id);
+                            setOpenKey(`task:${id}`);
+                            document.getElementById(`wb-task-${id}`)?.scrollIntoView({ block: "nearest" });
+                          }}>{caseName(id)}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                </div>
+                <button type="button" className="rr-link" onClick={() => onLaunchSuite(item.id)}>使用套件 →</button>
+              </article>
+            ))}
           </section>
 
           <section className="wb-asset-section">
             <div className="wb-asset-section-head">
-              <h3>案例摘要</h3>
-              <span className="wb-muted">{cases.length} 条 · 展开看步骤与检查项</span>
+              <h2 className="rr-config-subtitle">案例</h2>
             </div>
             <div className="wb-asset-list">
               {!cases.length && (
-                <p className="wb-empty">尚无 Task。把 YAML 放进 evaluation/cases 后刷新。</p>
+                <p className="wb-empty">还没有可用案例。</p>
               )}
               {cases.map(item => {
                 const key = `task:${item.id}`;
@@ -368,7 +323,7 @@ export function AssetsPage({
                       <span className="wb-asset-chevron" aria-hidden />
                       <div className="wb-asset-main">
                         <div className="wb-asset-id-row">
-                          <code className="wb-asset-id">{item.id}</code>
+                          <strong>{caseName(item.id)}</strong>
                           {suitesFor.map(suiteId => (
                             <span key={suiteId} className="wb-tag">
                               {suiteId}
@@ -380,21 +335,9 @@ export function AssetsPage({
                         </p>
                       </div>
                       <div className="wb-asset-meta">
-                        <span>must {item.check_counts.must}</span>
-                        <span>quality {item.check_counts.quality}</span>
-                        <span>human {item.check_counts.human}</span>
-                        {onLaunchCase && (
-                          <button
-                            type="button"
-                            className="wb-chip ghost"
-                            onClick={event => {
-                              event.stopPropagation();
-                              onLaunchCase(item.id);
-                            }}
-                          >
-                            带到开跑
-                          </button>
-                        )}
+                        <span>必须 {item.check_counts.must}</span>
+                        <span>质量 {item.check_counts.quality}</span>
+                        <span>人工 {item.check_counts.human}</span>
                       </div>
                     </button>
                     {open && (
@@ -418,7 +361,7 @@ export function AssetsPage({
       {tab === "envs" && (
         <div className="wb-split-pane">
           <aside className="wb-split-list">
-            {!envs.length && <p className="wb-empty">尚无 Env。</p>}
+            {!envs.length && <p className="wb-empty">还没有运行环境。</p>}
             {envs.map(item => (
               <button
                 key={item.id}
@@ -432,7 +375,7 @@ export function AssetsPage({
             ))}
           </aside>
           <div className="wb-split-detail">
-            {!selectedEnv && <p className="wb-empty">选择左侧 Env 查看档案。</p>}
+            {!selectedEnv && <p className="wb-empty">选择环境查看详情。</p>}
             {selectedEnv && (
               <>
                 <h3>
@@ -467,7 +410,7 @@ export function AssetsPage({
                   </div>
                   <div>
                     <dt>base_url</dt>
-                    <dd className="wb-muted">由开跑页 / CLI 启动时覆盖，不做在线 Agent 向导</dd>
+                    <dd className="wb-muted">在开始评测时填写</dd>
                   </div>
                 </dl>
               </>
@@ -562,6 +505,6 @@ export function AssetsPage({
           })}
         </div>
       )}
-    </div>
+    </main>
   );
 }

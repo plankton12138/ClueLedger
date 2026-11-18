@@ -171,6 +171,24 @@ def test_workbench_lists_runs_and_opens(tmp_path: Path) -> None:
         with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
             listed = client.get("/api/runs").json()
             assert {item["id"] for item in listed["runs"]} == {"smoke-a", "smoke-b"}
+            item = next(item for item in listed["runs"] if item["id"] == "smoke-a")
+            assert item["case_ids"] == ["revise_ch1_ending_farm_tonight"]
+            assert item["check_summary"]["required"] == 1
+            assert item["check_summary"]["pending"] == 1
+            assert item["issue_target"]["checkId"] == "committed_via_candidate"
+            assert item["review_target"]["checkId"] == "farm_tonight"
+            review = {
+                "case_id": item["case_ids"][0],
+                "attempt": 1,
+                "check_id": "farm_tonight",
+                "verdict": "pending_review",
+            }
+            saved = client.put("/api/runs/smoke-a/reviews", json={"reviews": [review]})
+            assert saved.status_code == 200
+            revised = client.get("/api/runs").json()["runs"]
+            item = next(item for item in revised if item["id"] == "smoke-a")
+            assert item["check_summary"]["pending"] == 0
+            assert item["check_summary"]["insufficient"] == 1
             report = client.get("/api/runs/smoke-a/report").json()
             assert report["summary"]["pending_review"] == 1
             page = client.get("/")

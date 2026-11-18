@@ -7,6 +7,7 @@ import subprocess
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -187,11 +188,17 @@ def run_batch(
     results: list[AttemptResult] = []
     cancelled = False
     run_error: str | None = None
+    started_at = datetime.now(UTC).isoformat(timespec="seconds")
 
     def _write_partial() -> dict[str, Any]:
         report = build_report(
             results,
-            identity={**git_identity(), "budget_used": budget.used, "budget_max": max_requests},
+            identity={
+                **git_identity(),
+                "started_at": started_at,
+                "budget_used": budget.used,
+                "budget_max": max_requests,
+            },
             mode=mode,
             suite_id=suite_id,
             env_id=env_id,
