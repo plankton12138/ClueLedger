@@ -34,7 +34,7 @@ interface SessionState {
 
 function resetPage(): void {
   // 模块级 store 会跨账号保留；退出或失效后整页重载，避免上一个账号的作品与草稿状态
-  // 短暂出现在同一标签页。未提交草稿仍在 localStorage，不随重载丢失。
+  // 短暂出现在同一标签页。
   if (typeof window !== "undefined") {
     window.localStorage.removeItem("hastings.billing.pendingOrder");
     window.location.reload();

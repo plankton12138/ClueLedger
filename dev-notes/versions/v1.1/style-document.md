@@ -5,7 +5,7 @@
 > 本契约顺延为后续版本的 `STYLE.md` 写作约定方案；其文件定位、指纹、外部核对与索引重建
 > 契约与学习来源无关，届时继续沿用。v1.1 只保留 `STYLE.md` 的空装配位。
 > 旧修订学习方案的契约与示例见 [archive-revision-learning/](archive-revision-learning/README.md)。
-产品范围见[产品方案](../../../product-design/v1.1/README.md)，执行顺序见[开发计划](development-plan.md)。
+产品范围见[产品方案](../../../product-design/archive/v1.1/README.md)，执行顺序见[开发计划](development-plan.md)。
 本文统一规定 `STYLE.md` 的维护、生效和外部编辑行为；记录结构、接口和验收分别引用本文。
 
 ## 1. 目标与取舍

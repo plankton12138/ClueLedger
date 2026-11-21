@@ -6,7 +6,7 @@
 
 | 文档 | 内容 |
 |---|---|
-| [产品方案](../../../product-design/v1.0.2/README.md) | 用户看到什么、容量与预算的区别、范围与取舍 |
+| [产品方案](../../../product-design/archive/v1.0.2/README.md) | 用户看到什么、容量与预算的区别、范围与取舍 |
 | [开发计划](development-plan.md) | 默认策略、计算规则、接口字段、阶段任务和交付门槛 |
 | [分模块代码示例](implementation-examples.md) | 容量目录、预算计算、请求检查、接口和页面示例 |
 | [验收计划](acceptance.md) | 边界、浏览器、在线验证和版本检查 |

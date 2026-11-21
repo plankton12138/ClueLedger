@@ -1,7 +1,7 @@
 # 灵感悬浮体验
 
 日期：2026-10-25。状态：已实施，本次确定性验证通过。版本保持 `0.8.0`。
-产品取舍见[设计说明](../../../../product-design/v0.8/ideas-companion.md)。
+产品取舍见[设计说明](../../../../product-design/archive/v0.8/ideas-companion.md)。
 
 ## 当前行为
 

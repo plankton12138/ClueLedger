@@ -1,7 +1,7 @@
 # 0.8 全局模块库与作品装配
 
 日期：2026-10-24。状态：**待实施**。本契约落实同类型多实例、跨作品复用、版本固定与卸下后的上下文隔离。
-产品入口见[产品方案](../../../product-design/v0.8/README.md)，其他数据见[数据与存储](data-and-storage.md)。
+产品入口见[产品方案](../../../product-design/archive/v0.8/README.md)，其他数据见[数据与存储](data-and-storage.md)。
 
 ## 1. 三种对象
 

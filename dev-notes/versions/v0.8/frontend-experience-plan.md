@@ -13,8 +13,8 @@
 - 本文：为什么调整、页面行为、模块任务、接口约束、实施顺序和验收矩阵。
 - [模块代码示例](frontend-experience-examples.md)：各模块的建议接口与关键实现模式；均为待落地示例。
 - [dark 原型](../../prototypes/dark/README.md)：只参考模块分工、字号尺度、视口利用和空间节奏；深色外观、演示数据与按钮都不是成品要求。
-- [写作台设计 · 模块化布局与空间利用](../../../product-design/v0.3/writers-desk-design.md#模块化布局与空间利用)：dark 布局原则与老 iOS 视觉基调的共同约束。
-- [0.8 产品方案](../../../product-design/v0.8/README.md)：业务边界、共享版本、灵感授权与故事资料来源。
+- [写作台设计 · 模块化布局与空间利用](../../../product-design/archive/v0.3/writers-desk-design.md#模块化布局与空间利用)：dark 布局原则与老 iOS 视觉基调的共同约束。
+- [0.8 产品方案](../../../product-design/archive/v0.8/README.md)：业务边界、共享版本、灵感授权与故事资料来源。
 - [当前模块导航](modules/README.md)：已有能力；实施后同步更新，不提前宣称交付。
 
 ## 1. 目标、范围与取舍

@@ -17,7 +17,7 @@
 | P0—P5 实现、脚本和测试 | 分支 `codex/reserved-v1.3-clue-registry`，保留点 `fce0fde3` |
 | 当前运行代码基线 | `f3457505` 的 v1.2 代码；版本继续为 1.2.0 |
 | 规格、实施记录及真模型探针说明 | [章节线索结构提案](clue-registry-proposal.md) |
-| 尚未实施的前端交互讨论稿 | [线索工作台提案](../../../product-design/v1.3/clue-workbench-preview.md) |
+| 尚未实施的前端交互讨论稿 | [线索工作台提案](../../../product-design/archive/v1.3/clue-workbench-preview.md) |
 
 恢复开发时先重新确认范围和前后端契约，再以新提交重新接入。保留分支的历史提交已存在于主分支祖先中，仅合并该分支不会撤销本次功能撤回。
 

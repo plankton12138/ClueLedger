@@ -10,7 +10,7 @@
 
 | 文档 | 内容 |
 |---|---|
-| [产品方案](../../../product-design/v1.0.8/README.md) | 双布局共存、作者操作、删减范围和设计取舍 |
+| [产品方案](../../../product-design/archive/v1.0.8/README.md) | 双布局共存、作者操作、删减范围和设计取舍 |
 | [详细开发计划](development-plan.md) | 真实基线、六个模块、阶段依赖及代码落点 |
 | [数据与接口](data-and-api.md) | 随章投影、统一引用、前后端对应、写入和披露边界 |
 | [分模块实现示例](implementation-examples.md) | 六个模块的关键设计示例，均非已实现 API |

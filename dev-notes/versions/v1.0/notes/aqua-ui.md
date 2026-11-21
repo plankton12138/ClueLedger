@@ -2,9 +2,9 @@
 
 日期：2026-10-28。作者确认采用经典 OS X 原型的布局、较大字号与按钮位置，并保留复古对话气泡。包版本保持 `0.9.0`。
 
-后续范围覆盖：作者本轮取消故事资料板块，并要求简化线索与统一模型交互，见[整改方案](../../../../product-design/v1.0/interaction-redesign.md)。下文保留为当时实施记录，其中故事资料导航、页面和恢复行为不能作为当前需求重新引入。
+后续范围覆盖：作者本轮取消故事资料板块，并要求简化线索与统一模型交互，见[整改方案](../../../../product-design/archive/v1.0/interaction-redesign.md)。下文保留为当时实施记录，其中故事资料导航、页面和恢复行为不能作为当前需求重新引入。
 
-设计原则见[当前视觉与布局](../../../../product-design/visual-language.md)，参考图见[经典 OS X Aqua 原型](../../../prototypes/osx-aqua-20261027/README.md)。
+设计原则见[当前视觉与布局](../../../../product-design/archive/visual-language.md)，参考图见[经典 OS X Aqua 原型](../../../prototypes/osx-aqua-20261027/README.md)。
 
 ## 已实施
 

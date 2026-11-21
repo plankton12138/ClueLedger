@@ -46,15 +46,10 @@ uv run python -m hastings.server --mode server --database .\data\clueledger.sqli
 
 未配置 SMTP 时，验证码邮件写到应用状态目录下的 `mail-outbox/`。
 
-## 离线评测工作台
-
-评测不是产品的一部分。启动与冒烟流程见 [evaluation/SETUP.md](evaluation/SETUP.md)。
-
 ## 相关文档
 
 | 文档 | 内容 |
 | --- | --- |
 | [README.md](README.md) | 产品能力与使用路径 |
 | [frontend/README.md](frontend/README.md) | 前端开发与构建 |
-| [evaluation/SETUP.md](evaluation/SETUP.md) | 评测平台启动 |
 | [dev-notes/README.md](dev-notes/README.md) | 各版本开发记录 |

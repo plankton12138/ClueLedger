@@ -8,7 +8,7 @@
 
 配套文档：
 
-- [产品设计](../../../product-design/v0.8/story-overview.md)：定位、使用过程与取舍。
+- [产品设计](../../../product-design/archive/v0.8/story-overview.md)：定位、使用过程与取舍。
 - [分模块实现示例](story-overview-examples.md)：类型、版本核对、更新编排、接口和前端关键分支的设计示意；生产实现与验证另见 O6 记录。
 - [模块体验](modules/module-experience.md)、[统一事件索引](modules/story-index.md)：继续沿用的数据边界。
 - [既有故事资料](../versions/v0.7/modules/story-materials.md)：旧资料、覆盖、任务与来源的历史实现。

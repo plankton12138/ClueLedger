@@ -82,7 +82,7 @@ def operation_status_for_run(status: str) -> OperationStatus:
 
 @dataclass
 class Operation:
-    """一次被受理的模型任务。字段与[数据契约](../../dev-notes/versions/v1.0.1/data-and-runtime.md)一致。"""
+    """一次被受理的模型任务。"""
 
     id: str
     owner: str

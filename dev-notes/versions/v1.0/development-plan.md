@@ -10,7 +10,7 @@
 实际记录：[S0 基线](notes/S0-baseline.md)、[S1 线索账本](notes/S1-clue-ledger.md)、[S2 原文定位](notes/S2-source-locations.md)、[S3 本章线索](notes/S3-chapter-clues.md)、[S4 作者计划](notes/S4-clue-design.md)、[S5 推理核对](notes/S5-clue-review.md)、[S6 对话引用](notes/S6-clue-references.md)、[S7 验证与在线评测](notes/S7-verification.md)。
 按作者要求，旧数据直接放弃；自动迁移、旧 ID 别名及迁移备份已从当前实现移除。其余阶段仍按本页推进。
 
-产品范围见[产品方案](../../../product-design/v1.0/README.md)，唯一数据契约见[数据与恢复](data-and-recovery.md)，
+产品范围见[产品方案](../../../product-design/archive/v1.0/README.md)，唯一数据契约见[数据与恢复](data-and-recovery.md)，
 接口见[接口与前端](api-and-frontend.md)，分模块示例与验收分别见[示例](implementation-examples.md)、[验收](acceptance.md)。
 
 ## 1. 实施目标和范围

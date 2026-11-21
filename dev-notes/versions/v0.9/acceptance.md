@@ -2,7 +2,7 @@
 
 日期：2026-10-26（2026-10-27 更新）。状态：**验收矩阵；已执行项以[运行与验证](release.md)为准**。
 目标是证明统计口径可靠、压缩后仍能继续完成作者任务，且不重复产生作品修改。
-对应[开发计划](development-plan.md)与[产品方案](../../../product-design/v0.9/README.md)。
+对应[开发计划](development-plan.md)与[产品方案](../../../product-design/archive/v0.9/README.md)。
 U/C/R/UI 已建立[逐项证据映射](notes/R1-acceptance-matrix.md)。在线 E01–E08 两方案共 16 次任务，
 18 条语义判定已记录代理复核，复评分通过；独立人工签收与部分专项验收仍待完成。
 

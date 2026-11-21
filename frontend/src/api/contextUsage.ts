@@ -1,5 +1,5 @@
 /**
- * 会话累计用量视图（0.9 U0 契约）。
+ * 会话累计用量视图。
  *
  * 字段名与服务端 `workspace/conversation_usage.py` 的 `UsageTotals` 完全一致，
  * 两侧改名必须同时改。这里只定义「拿到数字之后怎么解释」，聚合与估算仍由服务端负责：
@@ -134,7 +134,6 @@ export function formatPercent(share: number | null): string {
   return `${percent < 1 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
 
-/** 浮层内的精确数字：加千分位，避免 128000 与 12800 看混。 */
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined) {
     return "—";
@@ -275,7 +274,6 @@ export function breakdown(context: ContextView): BreakdownItem[] {
   ];
 }
 
-/** 请求耗时之和，不是从打开会话到现在的时长。 */
 export function formatDuration(ms: number | null): string {
   if (ms === null) {
     return "—";

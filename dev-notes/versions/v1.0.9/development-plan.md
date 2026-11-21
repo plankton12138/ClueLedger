@@ -1,6 +1,6 @@
 # v1.0.9 详细开发计划
 
-日期：2026-11-02。状态：**P0—P6 已实施；P7 验收与 1.0.9 交付待实施**。[产品方案](../../../product-design/v1.0.9/README.md)、[数据与接口](data-and-api.md)、[视觉规范](style-document.md)和[验收计划](acceptance.md)共同约束实现；接口与格式已在 P0 冻结，见 [契约冻结](notes/p0-contract-freeze.md)，P1—P3 修订见同文件第 7—9 节，P4—P6 记录见 `notes/`。正文为主修订不回改历史记录。
+日期：2026-11-02。状态：**P0—P6 已实施；P7 验收与 1.0.9 交付待实施**。[产品方案](../../../product-design/archive/v1.0.9/README.md)、[数据与接口](data-and-api.md)、[视觉规范](style-document.md)和[验收计划](acceptance.md)共同约束实现；接口与格式已在 P0 冻结，见 [契约冻结](notes/p0-contract-freeze.md)，P1—P3 修订见同文件第 7—9 节，P4—P6 记录见 `notes/`。正文为主修订不回改历史记录。
 
 ## 1. 交付目标
 

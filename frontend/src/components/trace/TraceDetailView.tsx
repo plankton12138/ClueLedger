@@ -120,7 +120,7 @@ export function TraceDetailView({
       if (capture === true) {
         return <p role="status">本步没有输入附件。可能已过期，或当时未写入快照。</p>;
       }
-      return <p role="status">正在确认是否保存了模型输入…</p>;
+      return loading ? <p role="status">正在确认是否保存了模型输入…</p> : <p>模型输入的保存状态未知。</p>;
     }
     if (item.kind === "gate" && first?.where != null) {
       return (

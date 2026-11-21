@@ -2,21 +2,12 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "../ui/Button";
 import { duration, kinds, statusLabel } from "./labels";
-import type { TraceEvent, TraceMark, TraceMissingRow, TurnTrace } from "./types";
-
-const markColor: Record<TraceMark["verdict"], string> = {
-  pass: "#1f9d6b",
-  fail: "#e0464e",
-  skipped: "#9aa1b2",
-  pending_review: "#d98a12",
-};
+import type { TraceEvent, TurnTrace } from "./types";
 
 export function TraceTimelineView({
   trace,
   error,
   loading,
-  marks = [],
-  missing = [],
   activeSpanId,
   onSelect,
   onRetry,
@@ -25,8 +16,6 @@ export function TraceTimelineView({
   trace?: TurnTrace;
   error?: string;
   loading?: boolean;
-  marks?: TraceMark[];
-  missing?: TraceMissingRow[];
   activeSpanId?: string;
   onSelect?: (spanId: string) => void;
   onRetry?: () => void;
@@ -35,6 +24,7 @@ export function TraceTimelineView({
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [localActive, setLocalActive] = useState("");
   const active = activeSpanId ?? localActive;
+  const usage = trace?.usage ?? { input: null, output: null, partial: false };
 
   const { events, loops, visible, range } = useMemo(() => {
     const list = trace?.events ?? [];
@@ -76,16 +66,6 @@ export function TraceTimelineView({
     });
   }
 
-  const marksBySpan = useMemo(() => {
-    const map = new Map<string, TraceMark[]>();
-    for (const mark of marks) {
-      const list = map.get(mark.span_id) ?? [];
-      list.push(mark);
-      map.set(mark.span_id, list);
-    }
-    return map;
-  }, [marks]);
-
   return (
     <section className="trace-timeline" aria-label="执行时间线">
       {error && (
@@ -101,15 +81,15 @@ export function TraceTimelineView({
           <div className="trace-stats">
             <span>{statusLabel(trace.turn.status)}</span>
             <span>
-              总耗时 <strong>{duration(trace.turn.duration_ms)}</strong>
+              总耗时 <strong>{duration(trace.turn.duration_ms ?? null)}</strong>
             </span>
-            <span>{loops.size} Loops</span>
+            <span>{loops.size} 个执行循环</span>
             <span>{events.filter(item => item.kind === "tool_call").length} 次工具调用</span>
             <span>
-              Tokens {trace.usage.input ?? "—"} 入 / {trace.usage.output ?? "—"} 出
-              {trace.usage.partial
+              Tokens {usage.input ?? "—"} 入 / {usage.output ?? "—"} 出
+              {usage.partial
                 ? "（部分记录）"
-                : trace.usage.input === null && trace.usage.output === null
+                : usage.input === null && usage.output === null
                   ? "（未记录）"
                   : ""}
             </span>
@@ -118,9 +98,9 @@ export function TraceTimelineView({
               {trace.turn.story_revision ? ` · 方案 ${trace.turn.story_revision}` : ""}
             </span>
           </div>
-          {!trace.turn.trace_available ? (
+          {trace.turn.trace_available === false ? (
             <p>该轮未记录运行追踪，可在「事件流」查看已有记录。</p>
-          ) : events.length === 0 && missing.length === 0 ? (
+          ) : events.length === 0 ? (
             <p>该轮暂无执行事件。</p>
           ) : (
             <>
@@ -160,7 +140,6 @@ export function TraceTimelineView({
                 const left = offset === null ? undefined : (offset / range) * 100;
                 const width = ((item.duration_ms ?? 0) / range) * 100;
                 const isLoop = item.kind === "loop";
-                const rowMarks = marksBySpan.get(item.span_id) ?? [];
                 return (
                   <button
                     type="button"
@@ -184,18 +163,6 @@ export function TraceTimelineView({
                       </small>
                       <b>{item.name}</b>
                       {isLoop && <small>{item.tool_calls ?? 0} 次调用</small>}
-                      {rowMarks.map(mark => (
-                        <i
-                          key={`${mark.span_id}-${mark.check_id ?? mark.verdict}`}
-                          className="trace-check-mark"
-                          title={
-                            mark.check_id
-                              ? `${mark.check_id} · ${mark.verdict}`
-                              : mark.verdict
-                          }
-                          style={{ background: markColor[mark.verdict] }}
-                        />
-                      ))}
                     </span>
                     <span
                       className="trace-track"
@@ -221,27 +188,6 @@ export function TraceTimelineView({
                   </button>
                 );
               })}
-              {missing.map(row => (
-                <button
-                  type="button"
-                  key={row.id}
-                  className="trace-row trace-event"
-                  data-kind="missing"
-                  data-status="missing"
-                  aria-current={active === row.id}
-                  onClick={() => select(row.id)}
-                >
-                  <span>
-                    <small>预期</small>
-                    <b>{row.name}</b>
-                  </span>
-                  <span className="trace-track" aria-label="未出现">
-                    <i data-mark="missing" />
-                  </span>
-                  <span>—</span>
-                  <span>未出现</span>
-                </button>
-              ))}
             </>
           )}
         </>

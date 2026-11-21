@@ -2,7 +2,7 @@
 
 当前版本为 **1.2.0**，面向浏览器前端与本地服务。v1.3 章节线索登记及前端提案已标记为保留、暂不上线；实现位于 `codex/reserved-v1.3-clue-registry`，见[保留记录](../dev-notes/versions/v1.3/README.md)。
 
-当前视觉为[经典 OS X Aqua](../product-design/visual-language.md)：银灰工具栏、暖白稿纸，绿色作者气泡与银灰模型回复气泡。页面随窗口宽度切换分栏，保留阅读字号。
+当前视觉为[经典 OS X Aqua](../product-design/README.md#2-写作台与章节阅读)：银灰工具栏、暖白稿纸，绿色作者气泡与银灰模型回复气泡。页面随窗口宽度切换分栏，保留阅读字号。
 
 ## 当前可用流程
 

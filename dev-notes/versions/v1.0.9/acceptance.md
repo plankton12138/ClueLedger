@@ -17,7 +17,7 @@ Aqua 视觉、旧页面撤除、前后端接口清理和版本一致性同样是
 
 ### 2.1 主样本：《雪夜旅馆》
 
-沿用[真实可用性用例](../../../product-design/research/ideas-clues-usability-cases.md)：
+沿用[真实可用性用例](../../../product-design/archive/research/ideas-clues-usability-cases.md)：
 
 - 作品起点：暴雪封山的旅馆发生命案，林砚从仍在滴水的手套开始怀疑管家，手套之后会有另一种解释。
 - 第一章正文直接写：封山、林砚入住、管家给出不在场证词、章末出现湿手套。没有章节构思步骤。

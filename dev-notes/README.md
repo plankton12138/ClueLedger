@@ -6,13 +6,6 @@
 
 - [开发计划](runtime-trace/development-plan.md)涵盖会话与 Turn 导航、可展开的 Loop、事件甘特时间线，以及记录契约、接口和验收条件。
 
-## 评测体系重建
-
-- [设计](evaluation/design.md)：2026-11-18 修订，按三个问题组织——回归评测（已实现，案例 1 条）、质量对比（待实现）、使用信号（待实现）；后续步骤 R1—R7 未开始。工作台重设计见 [workbench-design.md](evaluation/workbench-design.md)（W1–W7 已落地）。
-- [阶段 0 · 最小可归因](evaluation/observation-development-plan.md)：确定性与浏览器 e2e 已通过；在线单例待手测。
-- [阶段 1 · 拆除旧评测](evaluation/stage1-retire-old-eval.md)：已删除旧 `eval/` 与旧评测测试。
-- [阶段 2 · 改稿评测集与工作台](evaluation/stage2-revise-suite.md)：T0–T6 完成；运行说明见 [evaluation/README.md](../evaluation/README.md)。
-
 ## 修订学习与作品同步（首批实施，版本待定）
 
 - [开发计划](revision-learning/development-plan.md)：作者直接改稿和按作者要求的模型改稿统一记录为修订。
@@ -26,7 +19,7 @@
 | 2.0.0 | [开发日志](versions/v2.0.0/README.md) · [T01 评测日志](../eval/benchmark/t01-regression-log.md) | 全书结构可选；产品回归通过，新稿待人评 |
 | 1.4 | [开发计划](versions/v1.4/development-plan.md) · [订阅方案](versions/v1.4/subscription-plan.md) | 账号 / 隔离 / 订阅；待实施验收 |
 | 1.3 | [保留记录](versions/v1.3/README.md) | 章节线索暂缓上线 |
-| 1.2 | [开发入口](versions/v1.2/README.md) · [产品方案](../product-design/v1.2/README.md) | **当前版本**，已实施并收尾 |
+| 1.2 | [开发入口](versions/v1.2/README.md) · [产品方案](../product-design/archive/v1.2/README.md) | **当前版本**，已实施并收尾 |
 | 1.1 | [开发入口](versions/v1.1/README.md) | 结构装配等已实施 |
 
 1.4 分阶段记录：[P0](versions/v1.4/p0-inventory.md)、[P1](versions/v1.4/notes/P1-email-accounts.md)、[P2](versions/v1.4/notes/P2-isolation.md)、[P3](versions/v1.4/notes/P3-billing.md)、[P4](versions/v1.4/notes/P4-metering.md)、[P5](versions/v1.4/notes/P5-deployment.md)。
@@ -46,7 +39,7 @@
 | --- | --- |
 | 后端代码位置 | [后端导航](../src/hastings/README.md) |
 | 前端运行与界面 | [前端说明](../frontend/README.md) |
-| 评测运行 | [evaluation/README.md](../evaluation/README.md) |
+| 按用户功能验证 | [功能地图](feature-map.md) |
 | 产品设计 | [product-design](../product-design/README.md) |
 
-`uv run python -m hastings.server` 默认启动文件工作区应用。v0.1—v1.1 等历史文档中指向旧 `eval/` 的链接已随阶段 1 拆除失效，以当时记录理解即可，不逐份改写。
+`uv run python -m hastings.server` 默认启动文件工作区应用。

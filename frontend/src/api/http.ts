@@ -2,7 +2,7 @@
  * 统一请求入口（v1.4 P1）。
  *
  * 浏览器只持有 Cookie 会话，不保存 token；写请求自动附带当前会话的 CSRF 令牌。
- * 401 统一交给会话层处理：工作区卸载回登录页，未提交草稿仍在 localStorage。
+ * 401 统一交给会话层处理。
  */
 
 let csrfToken: string | null = null;

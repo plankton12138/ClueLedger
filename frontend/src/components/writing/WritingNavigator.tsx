@@ -1,5 +1,3 @@
-/** 写作页只读目录（v1.2）。内容修改只从对话发起；模块只在此处装入和阅读。 */
-
 import { useEffect, useRef, useState } from "react";
 import { ListTree, Pencil } from "lucide-react";
 import type { WritingBookView } from "../../api/writing";

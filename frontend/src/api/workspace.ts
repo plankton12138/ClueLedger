@@ -1,5 +1,5 @@
 /**
- * 文件工作区客户端（0.4 V04-4）。
+ * 文件工作区客户端。
  *
  * 对应后端 `hastings/workspace/api.py` 的 `/api/file-workspaces`：目录、文件、搜索、
  * Git、会话与轮次。错误统一是 `{"error": {code, where, why, fix, details}}`，
@@ -944,12 +944,6 @@ export function listConversations(workspaceId: string): Promise<ConversationList
   return request<ConversationList>(`/${workspaceId}/conversations`);
 }
 
-/**
- * 会话累计用量：服务端聚合，前端不自己累计。
- *
- * `through_seq` 是这次统计覆盖到的事件序号；客户端用它判断本地视图是否落后，
- * 避免一个慢请求把更新的数字覆盖回去。
- */
 /**
  * 手动整理上下文：提交即返回，整理在后台跑。
  *

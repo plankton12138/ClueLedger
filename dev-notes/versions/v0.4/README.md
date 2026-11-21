@@ -8,7 +8,7 @@
 
 | 要了解 | 入口 |
 |---|---|
-| 产品范围、内容结构和交互 | [0.4 产品方案](../../../product-design/v0.4/README.md) |
+| 产品范围、内容结构和交互 | [0.4 产品方案](../../../product-design/archive/v0.4/README.md) |
 | 模块调整、代码示例、实施顺序与验收 | [修改计划](development-plan.md) |
 | 供应商连接的交付范围、子阶段与验收口径 | [供应商连接开发计划](model-connections-plan.md) |
 | 已实现行为：会话边界、连续讨论、草稿、任务归属与恢复 | [会话与草稿](modules/conversations.md) |

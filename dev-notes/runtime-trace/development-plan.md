@@ -108,8 +108,6 @@ Turn 是一次作者请求及其执行结果。Loop 是 Turn 内一次模型回�
 
 ## 6. 最小可归因补齐（2026-11-14）
 
-评测重建前置阶段，计划见 [observation-development-plan.md](../evaluation/observation-development-plan.md)。
-
 - 受理时在 `turn_started` 记录 `work_commit` / `story_revision`，并追加 `work_revision_recorded`；Trace 顶栏展示作品短哈希。
 - 详情区改为事件、输入、输出、属性；模型步在未开启 `capture_inputs` 时明确提示。
 - 失败与拦截在时间线与详情边框上可区分。

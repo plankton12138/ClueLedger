@@ -3,7 +3,7 @@
 日期：2026-10-24。状态：**核心能力已实现；发布验收部分完成**。运行包版本为 `0.8.0`。
 A–F 的承诺项已接线；G 的确定性、浏览器与 v0.8 冒烟评测已执行，验收矩阵逐项编号与
 真实长篇语义复核仍未覆盖，见[运行与验证](release.md)。
-产品范围见[产品方案](../../../product-design/v0.8/README.md)，实施契约见[数据](data-and-storage.md)、
+产品范围见[产品方案](../../../product-design/archive/v0.8/README.md)，实施契约见[数据](data-and-storage.md)、
 [上下文](context-and-index.md)、[接口](api-and-frontend.md)与[验收](acceptance.md)。
 
 2026-10-25 后续工作：[故事总览开发计划](story-overview-plan.md)与[分模块示例](story-overview-examples.md)已实施接线，**O6 本轮验证已执行，扩展范围见阶段记录**。该计划承接自由内容模块和时间线主视图的产品方向，不改变本文历史阶段的交付状态。

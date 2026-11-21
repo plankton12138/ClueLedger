@@ -1,7 +1,7 @@
 # 作品目录与真实删除
 
 日期：2026-10-26。状态：已实施，版本保持 `0.8.0`。
-产品行为见[作品目录方案](../../../../product-design/v0.8/workspace-storage.md)。
+产品行为见[作品目录方案](../../../../product-design/archive/v0.8/workspace-storage.md)。
 
 ## 交付范围
 

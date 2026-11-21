@@ -3317,7 +3317,6 @@ class TurnService:
             # 先释放占用：装配接口不必等到服务内部表格清完才恢复可用。
             if not superseded and self.run_registry is not None:
                 self.run_registry.release(self.workspace.root, info.turn_id)
-            # 清理四张按 turn_id 索引的表，防止旧轮次的状态泄漏到后续轮次。
             # 新代次一定在旧代次收尾之后才启动，所以这些清理不会碰到它。
             self._harnesses.pop(info.turn_id, None)
             self._started.discard(info.turn_id)

@@ -6,7 +6,7 @@
 
 作者从空白作品就能提出谜题、片段或结局，由 Agent 形成可分支、汇合与收束的创作结构。结构持续参与写作，正文提供实际呈现依据。作者用自然语言修改，应用处理关联、版本与恢复。
 
-写作区提供构思／正文切换和同一个对话区。取消独立故事资料，减少表单和参数，以当前安排、正文位置和可继续操作的结果为主体。产品依据见[全流程](../../../product-design/v1.0.1/structure-and-agent-lifecycle.md)和[页面设计](../../../product-design/v1.0.1/page-design.md)。
+写作区提供构思／正文切换和同一个对话区。取消独立故事资料，减少表单和参数，以当前安排、正文位置和可继续操作的结果为主体。产品依据见[全流程](../../../product-design/archive/v1.0.1/structure-and-agent-lifecycle.md)和[页面设计](../../../product-design/archive/v1.0.1/page-design.md)。
 
 本版必须完成：
 

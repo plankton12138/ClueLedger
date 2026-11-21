@@ -1,6 +1,6 @@
 import { errorMessage } from "../api/errors";
 /**
- * 会话状态（0.4 V04-10）。
+ * 会话状态。
  *
  * 每个作品一组会话，每个会话一份独立状态：事件、运行中的轮次、草稿。当前选中项只决定
  * 「显示哪一份」，不决定事件归属——切走不会停止服务器任务，切回来按快照接上。
@@ -731,7 +731,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const workspaceId = get().workspaceId;
       if (!workspaceId || get().selectedId === conversationId) return;
       const previous = get().selectedId;
-      // 先切视图再读：慢请求回来时代次已经变了，不会把作者选中的会话抢回去。
       set({ selectedId: conversationId });
       patchEntry(conversationId, { loading: true, error: null });
       // 旧会话的草稿按它自己的键保存，不跟着新选择走。
