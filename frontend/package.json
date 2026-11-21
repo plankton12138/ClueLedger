@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:workbench": "tsc --noEmit && vite build --config vite.workbench.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:workbench": "playwright test --config playwright.workbench.config.ts",
     "test:e2e:local": "playwright test --project=workspace",
     "test:e2e:online": "playwright test --project=online"
   },

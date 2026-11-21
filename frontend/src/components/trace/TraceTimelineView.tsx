@@ -9,6 +9,7 @@ export function TraceTimelineView({
   error,
   loading,
   activeSpanId,
+  initiallyOpenLoop,
   onSelect,
   onRetry,
   detail,
@@ -17,11 +18,12 @@ export function TraceTimelineView({
   error?: string;
   loading?: boolean;
   activeSpanId?: string;
+  initiallyOpenLoop?: string;
   onSelect?: (spanId: string) => void;
   onRetry?: () => void;
   detail?: ReactNode;
 }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [open, setOpen] = useState<Set<string>>(() => new Set(initiallyOpenLoop ? [initiallyOpenLoop] : []));
   const [localActive, setLocalActive] = useState("");
   const active = activeSpanId ?? localActive;
   const usage = trace?.usage ?? { input: null, output: null, partial: false };

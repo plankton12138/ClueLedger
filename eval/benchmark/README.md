@@ -5,4 +5,6 @@
 - [Task Schema v1](task-schema.md)：场景实例与输入、确定性 Code Grader、LLM Grader。
 - [JSON Schema](task.schema.json)：校验任务定义。
 - [离线评测器](evaluator.md)：证据包、运行命令和逐项判定。
+- [工作台只读索引](workbench-index.md)：多任务库目录、任务修订和按执行顺序查询本地档案。
+- [工作台使用说明](workbench.md)：构建和启动本机界面，在线运行、人评、补证与重判。
 - [T01 评测日志](t01-regression-log.md)：基线、人工复核、修复后复跑和独立正文回归。

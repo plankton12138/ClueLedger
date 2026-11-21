@@ -6,6 +6,11 @@
 
 - [开发计划](runtime-trace/development-plan.md)涵盖会话与 Turn 导航、可展开的 Loop、事件甘特时间线，以及记录契约、接口和验收条件。
 
+## 评测工作台（本地首版已实现）
+
+- [开发计划](evaluation/development-plan.md)：多任务目录、隔离运行、按执行顺序归档，以及基于 Trace、证据和人评的复盘。
+- [启动和操作](../eval/benchmark/workbench.md)：默认只读运行配置、在线连接要求、人工复核与证据重判。
+
 ## 修订学习与作品同步（首批实施，版本待定）
 
 - [开发计划](revision-learning/development-plan.md)：作者直接改稿和按作者要求的模型改稿统一记录为修订。

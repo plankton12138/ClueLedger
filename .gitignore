@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+frontend/dist-workbench/
 
 # 虚拟环境（uv）
 .venv/
