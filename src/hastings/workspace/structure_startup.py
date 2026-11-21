@@ -29,7 +29,6 @@ __all__ = [
     "resolve_startup_mode",
     "startup_conversation_prompt",
     "structure_draft_prompt",
-    "structure_gate_prompt",
 ]
 
 STARTUP_QUESTION_LIMIT = 6
@@ -77,12 +76,12 @@ def startup_conversation_prompt(mode: StartupMode) -> tuple[str, str]:
     if mode == "guided":
         opening = (
             "作者希望被引导。一次只问一个问题，问题必须与故事起点直接相关；全程不超过 "
-            f"{STARTUP_QUESTION_LIMIT} 个；每个问题都可以跳过。作者说可以开始后，"
+            f"{STARTUP_QUESTION_LIMIT} 个；每个问题都可以跳过。只有作者明确要求保存结构时，"
             "立即整理并写入第一版 STRUCTURE.md。"
         )
     else:
         opening = (
-            "作者会直接描述想法。请求足以开始创作时，立即整理并写入第一版 "
+            "作者会直接描述想法。明确要求保存结构时，直接整理并写入第一版 "
             "STRUCTURE.md；不要要求作者填写结构字段或进行额外确认。"
         )
     system = (
@@ -100,28 +99,15 @@ def structure_draft_prompt(author_request: str) -> tuple[str, str]:
     )
     instructions = (
         f"作者当前请求：\n{author_request.strip() or '（未提供明确创作内容）'}\n\n"
-        "若这是明确创作请求：先登记 STRUCTURE.md 的任务范围，确认文件现状，再直接写入第一版。"
-        "结构第一个非空行是「## 铁律」，之后按作品需要组织方向、路线、章节骨架与模块索引；"
+        "只有作者明确要求建立或保存全书结构时，才登记 STRUCTURE.md 的任务范围并写入。"
+        "设置独立的「## 铁律」段，位置不限；其他段落按作品需要组织。"
         f"全文不超过 {BUDGET_LIMIT} 字符。未知内容明确保留为未知，不虚构作者排除的内容。"
-        "如果作者要求正文，结构写入成功后继续同一任务。"
-        "如果当前上下文确实不足以判断作者是否要开始作品，只问一次：现在直接建立作品，还是继续聊？"
+        "全书结构是可选文档。只要求写正文时，按已有材料直接写，不得先创建结构。"
+        "如果作者只想讨论，就讨论故事；可以建议建立结构，但不擅自保存。"
         "不要创建其他平行全局摘要。"
         "人物小传、故事背景等详细资料不在本步骤自动创建；需要时通过模块建议请求一次作者决定。"
     )
     return system, instructions
-
-
-def structure_gate_prompt(author_request: str) -> str:
-    """作品还没有结构却收到写正文的请求：同轮先建立结构，再继续正文候选。"""
-    return (
-        "## 本轮必须先建立全书结构\n"
-        "当前作品还没有 STRUCTURE.md。作者要求写正文时，不能先提交正文候选。"
-        "先用 set_task_scope 登记本轮范围，同时包含 STRUCTURE.md 与要写的正文，"
-        "再调用 write_structure 建立第一版；"
-        "第一版可以保留待定项，不需要作者另开一轮确认。"
-        "结构写入成功后，在同一轮继续原请求并提交正文候选。\n"
-        f"作者当前请求：{author_request.strip() or '（未提供明确创作内容）'}"
-    )
 
 
 @dataclass(frozen=True, slots=True)

@@ -61,7 +61,7 @@ def test_check_first_structure_accepts_wellformed() -> None:
 
 
 def test_check_first_structure_flags_missing_marker() -> None:
-    report = check_first_structure("# 我的作品\n## 铁律\n规则\n")
+    report = check_first_structure("# 我的作品\n没有铁律标题。\n")
     assert not report.iron_rules.ok
     assert not report.ok
 

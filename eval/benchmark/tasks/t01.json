@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "scenario": {
+    "id": "T01",
+    "revision": 1,
+    "title": "空作品：从故事想法保存第一版全书结构",
+    "description": "作者第一次打开一部新作品。没有结构、正文、会话历史、可用模块或已装入的模块。作者明确要保存第一版结构，真相和结局保留给作者以后决定；本轮不进入正文写作。",
+    "risks": [
+      "已有足够信息起步，却只在对话里给建议、反复确认或要求先配置模块。",
+      "虽然保存了结构，却漏掉关键设定、填写了作者保留的决定，或擅自创建正文和模块。"
+    ],
+    "provenance": {
+      "kind": "workflow",
+      "references": [
+        "../../product-design/README.md#3-对话创作",
+        "../../mynotes/my-prompts.md#雪山温泉杀人事件"
+      ]
+    },
+    "environment": { "entrypoint": "workspace_chat", "model": "online" },
+    "messages": {
+      "request": "我想写一部发生在日本雪山温泉旅馆的悬疑小说。暴雪封山后，几位和旅馆老板有旧怨的客人被困在一起，老板随后失踪。故事从一位同行者的有限视角展开。请把这个想法整理成第一版全书结构并保存。真相和结局我以后再定；这轮先到结构为止。"
+    },
+    "cases": {
+      "main": {
+        "title": "空作品收到明确的起步请求",
+        "fixture": { "files": {}, "focus": { "kind": "work_home" } },
+        "steps": [{ "id": "start_work", "message": "request" }]
+      }
+    }
+  },
+  "code_graders": {
+    "structure_saved": {
+      "checkpoint": { "case": "main", "step": "start_work" },
+      "role": "required",
+      "evidence": ["workspace_before", "workspace_after"],
+      "rule": {
+        "type": "workspace_diff",
+        "required": { "STRUCTURE.md": "created" },
+        "allow_other_changes": false
+      }
+    },
+    "no_module_side_effects": {
+      "checkpoint": { "case": "main", "step": "start_work" },
+      "role": "required",
+      "evidence": ["modules_after"],
+      "rule": { "type": "modules_empty" }
+    }
+  },
+  "llm_graders": {
+    "usable_structure": {
+      "checkpoint": { "case": "main", "step": "start_work" },
+      "role": "required",
+      "evidence": ["workspace_after"],
+      "rule": {
+        "criterion": "查看已保存的 STRUCTURE.md。保留日本雪山温泉旅馆、封山、与老板有旧怨的客人被困、老板失踪和同行者有限视角，并将它们组织为至少两个有顺序的叙事节点，足以作为下一轮构思的起点。不要求固定标题、章数或措辞。",
+        "pass_examples": ["记录有限视角，并组织成封山导致客人被困、随后发现老板失踪的推进路线。"],
+        "fail_examples": ["只粘贴作者的想法，没有组织叙事路线。", "遗漏有限视角，或把失踪直接写成已经证实的死亡。"]
+      }
+    },
+    "author_decisions_deferred": {
+      "checkpoint": { "case": "main", "step": "start_work" },
+      "role": "required",
+      "evidence": ["workspace_after", "assistant_reply"],
+      "rule": {
+        "criterion": "保存的结构与本轮回复均保留真相和结局由作者以后决定。不将失踪原因、幕后责任者或最终结局写成既定安排；允许留下待定项和未定的疑点。",
+        "pass_examples": ["写明老板失踪原因和故事结局待作者决定。"],
+        "fail_examples": ["在稿件中定死了幕后人物，或在回复里宣布结尾已经设计完成并给出确定的结局。"]
+      }
+    },
+    "no_extra_prerequisite": {
+      "checkpoint": { "case": "main", "step": "start_work" },
+      "role": "required",
+      "evidence": ["assistant_reply"],
+      "rule": {
+        "criterion": "不把重确认开始、先建模块或先决定真相与结局当作保存第一版结构的前提。已交付之后的可选后续建议不阻断本轮。",
+        "pass_examples": ["报告结构已保存，提示后续可以补人物资料，但没有要求现在先选。"],
+        "fail_examples": ["要求作者先选模块或确认是否开始，才肯保存本轮明确请求的结构。"]
+      }
+    }
+  }
+}

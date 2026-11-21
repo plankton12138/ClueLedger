@@ -203,6 +203,7 @@ class CatalogView(BaseModel):
     chapters: list[FileEntryView]
     characters: list[FileEntryView]
     settings: list[FileEntryView]
+    documents: list[FileEntryView] = Field(default_factory=list)
 
 
 class FileViewResponse(BaseModel):
@@ -1150,6 +1151,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             chapters=[_entry(entry) for entry in catalog.chapters],
             characters=[_entry(entry) for entry in catalog.characters],
             settings=[_entry(entry) for entry in catalog.settings],
+            documents=[_entry(entry) for entry in catalog.documents],
         )
 
     @router.get("/{workspace_id}/reading-position", response_model=ReadingPosition)

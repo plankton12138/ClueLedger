@@ -24,7 +24,11 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, managed_kind, normalize_newlines
 from hastings.workspace.story_authorization import authorize_change, validate_model_change
 from hastings.workspace.story_changes import apply_change_set
-from hastings.workspace.story_context import StoryContextSnapshot, assemble_story_input
+from hastings.workspace.story_context import (
+    StoryContextSnapshot,
+    assemble_story_input,
+    verify_story_context,
+)
 from hastings.workspace.story_models import (
     AddNode,
     BindProse,
@@ -38,7 +42,7 @@ from hastings.workspace.story_models import (
     UnbindProse,
 )
 from hastings.workspace.story_review import StoryCheck, StoryReview, build_story_review
-from hastings.workspace.story_store import StoryStore, new_id
+from hastings.workspace.story_store import EMPTY_REVISION, StoryStore, new_id
 from hastings.workspace.story_sync import contract_digest
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
@@ -259,11 +263,8 @@ class StoryCandidate:
 
     def requirements(self) -> StoryReview:
         self.guard()
-        variant = StoryStore(self.state_root, self.workspace).require_variant(
-            self.frozen.variant_id
-        )
-        if variant.revision != self.frozen.revision:
-            raise conflict("构思结构在候选生成后发生变化")
+        # 空作品的主方案可以尚未持久化；沿用受理时冻结的 empty 修订。
+        variant = verify_story_context(StoryStore(self.state_root, self.workspace), self.frozen)
         if self.operations:
             variant = apply_change_set(
                 variant,
@@ -553,11 +554,16 @@ class StoryCandidate:
                 )
                 for path, text in self.documents.items()
             ],
-            read_dependencies=[
-                ReadDependency(
-                    kind="variant", id=self.frozen.variant_id, revision=self.frozen.revision
-                )
-            ],
+            # 空主方案还没有持久化的读取依赖；提交事务仍会校验 empty 基准与文件指纹。
+            read_dependencies=(
+                []
+                if self.frozen.revision == EMPTY_REVISION
+                else [
+                    ReadDependency(
+                        kind="variant", id=self.frozen.variant_id, revision=self.frozen.revision
+                    )
+                ]
+            ),
             operation_id=self.operation_id,
             generation=self.generation,
         )

@@ -199,7 +199,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   }
   /** 结构尚未建立时，把作者带到对话；第一版结构必须由模型写入。 */
   function askForStructure() {
-    prefillChat("先帮我建立这本书的全书结构，再开始写正文。");
+    prefillChat("请帮我整理并保存这本书的全书结构，这轮先不写正文。");
     if (compact) setCompactChat(true);
     else if (!useLayoutStore.getState().chatVisible) useLayoutStore.getState().revealChat();
     if (!canDockDirectory) setDirectory(false);
@@ -242,7 +242,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       <div className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm">
         <div className="paper-lined min-h-full">
           {book.chapters.length === 0
-            ? <EmptyWritingGuide structureReady={book.structure_exists} onChoose={chooseStarter} />
+            ? <EmptyWritingGuide onChoose={chooseStarter} />
             : <p className="mx-auto max-w-2xl text-center text-sm text-mute">选择一章阅读</p>}
         </div>
       </div>

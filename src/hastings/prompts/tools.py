@@ -203,7 +203,7 @@ READ_STRUCTURE_GUIDELINES = ("更新结构前必须先读；带上 digest 供 wr
 WRITE_STRUCTURE_DESCRIPTION = (
     "整体写入 STRUCTURE.md：直接落盘（无需作者逐次确认），随作品 Git 记录可回退。"
     "新建不带 digest；改写必须带上一次 read_structure 得到的 digest。"
-    "全文有字数预算，超限时先压缩再写；第一版必须以「## 铁律」段开头。"
+    "全文有字数预算，超限时先压缩再写；第一版需要独立的「## 铁律」段，位置不限。"
 )
 
 WRITE_STRUCTURE_GUIDELINES = (

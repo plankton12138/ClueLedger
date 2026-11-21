@@ -90,7 +90,7 @@ async def test_write_structure_create_requires_marker(tmp_path: Path) -> None:
     _, tools = _setup(tmp_path)
     await _grant_structure(tools)
     with pytest.raises(WorkspaceError) as exc:
-        await _call(tools["write_structure"], text="# 我的作品\n## 铁律\n规则\n")
+        await _call(tools["write_structure"], text="# 我的作品\n没有铁律标题。\n")
     assert exc.value.code == "STRUCTURE_MARKER_REQUIRED"
 
 

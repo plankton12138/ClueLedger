@@ -63,7 +63,7 @@ export default function StructureView({
     return <article className="plan-view" aria-label="全书结构">
       <header className="plan-view-header">
         <h1><ListTree size={20} strokeWidth={1.8} aria-hidden="true" />全书结构</h1>
-        <p>全书结构是模型每轮写正文前读取的全局依据，也是开始写正文的前提。结构还没有建立；在对话里说出你的想法，模型会整理并写入第一版结构。</p>
+        <p>全书结构是可选的作品文档。你可以直接写正文，也可以在对话里请模型整理并保存结构。</p>
       </header>
       <div className="plan-field">
         <Button size="compact" variant="primary" onClick={onOpenChat}>

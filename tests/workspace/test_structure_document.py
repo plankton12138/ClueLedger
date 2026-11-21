@@ -51,23 +51,29 @@ def test_铁律后直接到文件尾也算完整段() -> None:
     assert result.remainder == ""
 
 
-def test_标记丢失降级全文注入不猜() -> None:
-    text = "# 我的作品\n\n## 铁律\n不写血腥。\n"
-
+def test_代码块内的铁律标记不算章节() -> None:
+    text = "# 我的作品\n\n```md\n## 铁律\n只是一段示例。\n```\n"
     result = split_iron_rules(text)
-
     assert result.ok is False
     assert result.rules == ()
     assert result.remainder == text
 
 
-def test_铁律不在开头按丢失处理() -> None:
-    text = "## 路线\n先有路线。\n\n## 铁律\n不写血腥。\n"
+def test_缩进代码中的围栏不影响后续铁律() -> None:
+    result = split_iron_rules("    ```\n\n## 铁律\n真正的规则。")
+    assert result.rules == ("真正的规则。",)
 
+
+def test_HTML注释中的铁律不算章节() -> None:
+    assert not split_iron_rules("<!--\n## 铁律\n注释。\n-->").ok
+
+
+def test_铁律可以放在其他段落之后() -> None:
+    text = "## 路线\n先有路线。\n\n## 铁律\n不写血腥。\n\n## 骨架\n收束。"
     result = split_iron_rules(text)
-
-    assert result.ok is False
-    assert result.remainder == text
+    assert result.ok is True
+    assert result.rules == ("不写血腥。",)
+    assert result.remainder == "## 路线\n先有路线。\n\n## 骨架\n收束。"
 
 
 def test_空文件与全空行按丢失处理() -> None:

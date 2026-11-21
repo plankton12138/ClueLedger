@@ -23,6 +23,7 @@
 
 | 版本 | 入口 | 状态 |
 | --- | --- | --- |
+| 2.0.0 | [开发日志](versions/v2.0.0/README.md) · [T01 评测日志](../eval/benchmark/t01-regression-log.md) | 全书结构可选；产品回归通过，新稿待人评 |
 | 1.4 | [开发计划](versions/v1.4/development-plan.md) · [订阅方案](versions/v1.4/subscription-plan.md) | 账号 / 隔离 / 订阅；待实施验收 |
 | 1.3 | [保留记录](versions/v1.3/README.md) | 章节线索暂缓上线 |
 | 1.2 | [开发入口](versions/v1.2/README.md) · [产品方案](../product-design/v1.2/README.md) | **当前版本**，已实施并收尾 |

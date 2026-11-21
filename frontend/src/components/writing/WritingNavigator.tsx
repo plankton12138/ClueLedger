@@ -115,9 +115,7 @@ export default function WritingNavigator({
   }
 
   return <nav className="toc-pane writing-navigator" aria-label="作品目录">
-    {/* 全书结构固定在滚动区上方：展开模块或滚动章节时始终可见。
-        结构是写正文的依据与前提，所以没有建立时也保留入口并说明原因。 */}
-    <div className="writing-nav-top">
+    <div className="writing-nav-scroll">
       <section className="writing-structure" aria-label="全书结构">
         <button
           className={`toc-row writing-structure-row ${structureActive ? "on" : ""}`}
@@ -137,8 +135,8 @@ export default function WritingNavigator({
           {structureLoading
             ? "正在读取全书结构…"
             : structureExists
-              ? "写正文的依据，模型每轮都会读取。"
-              : "写正文前，要先有这本书的结构。"}
+              ? "可作为写作参考。"
+              : "全书结构可选，不影响开始写正文。"}
         </p>
         {!structureLoading && !structureExists && currentId && (
           <button type="button" className="writing-structure-action" onClick={onAskStructure}>
@@ -146,8 +144,6 @@ export default function WritingNavigator({
           </button>
         )}
       </section>
-    </div>
-    <div className="writing-nav-scroll">
       <details className="writing-nav-section" open>
         <summary className="writing-nav-section-title">章节</summary>
         <ul className="toc-group">

@@ -266,9 +266,6 @@ class RunContext:
     intent: TaskIntent | None = None
     #: 作者对应用内结构化建议的决定；用于恢复原任务并约束精确操作。
     guidance: Mapping[str, Any] = field(default_factory=dict)
-    #: 本轮结构已就绪：装配时按磁盘现状初始化，``write_structure`` 成功后立即置位。
-    #: 正文工具据此保证「先建立 STRUCTURE.md，再写正文」；不是 HTTP 或作者门槛。
-    structure_ready: bool = False
     story_candidate: StoryCandidate | None = None
     #: 结构提交前的代次资格检查；由服务层注入。
     story_guard: Callable[[], None] | None = None
@@ -282,30 +279,6 @@ class RunContext:
     def record(self, event_type: str, payload: Mapping[str, Any]) -> None:
         if self.emit is not None:
             self.emit(event_type, dict(payload))
-
-    def refresh_structure_ready(self, workspace: Workspace) -> None:
-        """按磁盘现状初始化本轮结构状态；已经就绪后不在同一轮内回退。"""
-        if self.structure_ready:
-            return
-        self.structure_ready = read_structure_state(workspace).exists
-
-    def require_structure_for_prose(self) -> None:
-        """正文工具的统一顺序门槛：同轮没有结构时先补结构。
-
-        这是模型可恢复的内部顺序提示，正常界面不显示给作者；正文保存、导入与候选
-        采用不经过这里，结构先行不能变成 HTTP 或作者门槛。
-        """
-        if self.structure_ready:
-            return
-        raise WorkspaceError(
-            code="STRUCTURE_NOT_READY",
-            where="tools.prose",
-            why="本轮尚未建立全书结构",
-            fix=(
-                "先用 set_task_scope 登记 STRUCTURE.md 与目标正文，"
-                "再用 write_structure 建立全书结构，然后继续当前正文任务"
-            ),
-        )
 
     def before_mutation(
         self,
@@ -323,18 +296,28 @@ class RunContext:
         touches_prose = managed_kind(operation.path) == "chapter" or (
             operation.target is not None and managed_kind(operation.target) == "chapter"
         )
-        if touches_prose and self.story is not None and operation.action in ("create", "update"):
-            # 作品正文先有结构：空作品不能在建立 STRUCTURE.md 之前写入或提出正文。
-            self.require_structure_for_prose()
         structure_write = operation.path == STRUCTURE_PATH and operation.action in (
             "create",
             "update",
         )
         if (
+            structure_write
+            and self.story_candidate is not None
+            and (
+                self.story_candidate.frozen.structure_readonly
+                or not _author_requested_structure_write(self.current_author_text or "")
+            )
+        ):
+            raise WorkspaceError(
+                code="TASK_SCOPE_UNAUTHORIZED_CONFLICT",
+                where="tools.write_structure",
+                why="本轮正文任务没有明确授权保存全书结构",
+                fix="只完成正文；需要保存全书结构时，由作者明确提出",
+            )
+        if (
             (
                 self.story_candidate is not None
-                # 结构不是候选正文：v1.2 允许直接写 STRUCTURE.md，空作品也要能在
-                # 同一轮先补结构；候选流程只约束正文与其他文件。
+                # 全书结构不属于候选正文；独立通过本轮写入范围校验。
                 and not structure_write
             )
             or (self.story is not None and touches_prose)
@@ -482,8 +465,6 @@ def build_tools(
     clue_store: ClueStore | None = None,
 ) -> list[AgentTool]:
     """本轮可用的文件工具；Git 提交与撤销不暴露给模型。"""
-    # 结构状态按磁盘现状进入本轮；``write_structure`` 成功后会把它置位。
-    run.refresh_structure_ready(workspace)
     repo = GitRepo(workspace.root)
 
     def visible_prose(path: str) -> tuple[str, str]:
@@ -1125,8 +1106,6 @@ def build_tools(
             },
         )
         run.materials.after_full_write(view)
-        # 同一轮后续的正文工具立即可用；失败时不会走到这里。
-        run.structure_ready = True
         return _json({"path": view.path, "digest": view.digest, "size": view.size})
 
     async def create_chapter_tool(
@@ -3816,6 +3795,7 @@ def prepare_request_inputs(
             if accepted_context_modules
             else set()
         )
+        structure_requested = _author_requested_structure_write(run.current_author_text or "")
         tools = [
             tool
             for tool in tools
@@ -3828,8 +3808,11 @@ def prepare_request_inputs(
                 "propose_context_modules",
             )
             or tool.name in accepted_module_tools
-            # 结构缺失时保留同轮补结构的唯一入口；否则正文门槛无法恢复。
-            or (tool.name == "write_structure" and not run.structure_ready)
+            or (
+                tool.name == "write_structure"
+                and not candidate.frozen.structure_readonly
+                and structure_requested
+            )
         ]
 
         async def read_previous_candidate(
@@ -3988,15 +3971,6 @@ def prepare_request_inputs(
             )
     if run.story_candidate is not None:
         system += CANDIDATE_FLOW_INSTRUCTIONS
-    if (
-        run.story is not None
-        and run.story.purpose in ("write", "revise")
-        and not run.structure_ready
-    ):
-        from hastings.workspace.structure_startup import structure_gate_prompt
-
-        # 放在候选说明之后：结构缺失时这是本轮的最后一个顺序要求。
-        system += "\n\n" + structure_gate_prompt(run.current_author_text or "")
     if run.story is not None and run.state_root is not None and run.operation_id:
         from hastings.workspace.story_drafts import StoryDraftStore
 
@@ -4190,6 +4164,30 @@ def _json(payload: Mapping[str, Any], *, terminate: bool = False) -> AgentToolRe
     if terminate:
         result.terminate = True
     return result
+
+
+def _author_requested_structure_write(text: str) -> bool:
+    """正文轮只接受针对结构文档的明确写入请求；禁止项优先。"""
+    target = (
+        r"(?:(?:这本书|本书|这部作品|本作品)的\s*)?"
+        r"(?:全书结构|结构文档|`?STRUCTURE\.md`?|结构)"
+    )
+    action = r"(?:保存|写入|建立|创建|更新|修改|改动|整理并保存|整理并写入)"
+    only_reply = r"(?:只|仅)(?:需|需要)?(?:在(?:聊天|对话|回复)(?:里|中|内)?)?(?:展示|列出|讨论)"
+    negative = rf"(?:不要|不必|不用|不能|无需|禁止|别|不得|不需要|不|{only_reply})\s*"
+    if re.search(rf"{negative}(?:(?:{action}|写|整理)\s*)?{target}", text, re.IGNORECASE):
+        return False
+    if re.search(rf"{target}\s*(?:暂时|先)?\s*{negative}(?:{action}|写|整理)", text, re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"(?:^|[。；;，,\n]|然后|并且?|再)\s*(?:(?:请|先|帮我|直接)\s*)*"
+            rf"(?:{action}\s*{target}|把\s*{target}\s*{action})"
+            r"(?=$|[。；;，,、\s]|然后|再|并)",
+            text,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _text_argument(

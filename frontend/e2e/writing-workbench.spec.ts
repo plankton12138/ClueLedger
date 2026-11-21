@@ -33,18 +33,18 @@ test("空作品只有对话可创作，章节正文以只读稿纸呈现", async
   await expect(page.getByRole("button", { name: /新建章节|导入正文|登记为章节|添加模块/ })).toHaveCount(0);
   const structure = page.getByRole("region", { name: "全书结构", exact: true });
   await expect(structure.getByText("尚未建立")).toBeVisible();
-  await expect(structure.getByText("写正文前，要先有这本书的结构。")).toBeVisible();
+  await expect(structure.getByText("全书结构可选，不影响开始写正文。")).toBeVisible();
   await expect(structure.getByRole("button", { name: "在对话里建立结构" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "先定结构，再写正文" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "从正文或故事想法开始" })).toBeVisible();
   await expect(page.getByText(
-    "全书结构是模型写正文前读取的全局依据。说一句你想写什么，模型会先整理结构，再开始第一章。",
+    "可以直接写第一章，也可以先聊想法或整理全书结构。",
     { exact: true },
   )).toBeVisible();
   const starter = page.getByRole("button", { name: "“我还没想好，带我一步步想。”" });
   await starter.click();
   await expect(chat).toHaveValue("我还没想好，带我一步步想。");
   await expect(chat).toBeFocused();
-  await page.getByRole("button", { name: "“我想写一个暴雪封山旅馆里的失踪案。”" }).click();
+  await page.getByRole("button", { name: "“写第一章：主角抵达旅馆，雪已经封路。”" }).click();
   await expect(chat).toHaveValue("我还没想好，带我一步步想。");
   const conversations = await request.get(`${base}/conversations`).then(response => response.json());
   expect(conversations.items).toEqual([]);
@@ -64,7 +64,7 @@ test("空作品只有对话可创作，章节正文以只读稿纸呈现", async
 
   await page.reload();
   await expect(structure.getByText("已就绪")).toBeVisible();
-  await expect(structure.getByText("写正文的依据，模型每轮都会读取。")).toBeVisible();
+  await expect(structure.getByText("可作为写作参考。")).toBeVisible();
   const chapterButton = page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 雨夜", exact: true });
   await expect(chapterButton).toBeVisible();
   await chapterButton.click();
@@ -127,7 +127,7 @@ test("章节列表里的正文文件可以直接修改首行标题", async ({ pa
   await expect(page.getByRole("heading", { name: "新稿", exact: true })).toBeVisible();
 });
 
-test("章节较多时写作侧栏可以滚动，全书结构保持可见", async ({ page, request }) => {
+test("章节较多时全书结构随普通侧栏内容滚动", async ({ page, request }) => {
   const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
   mkdirSync(parent, { recursive: true });
   const root = join(mkdtempSync(join(parent, "writing-scroll-")), "长篇");
@@ -148,9 +148,8 @@ test("章节较多时写作侧栏可以滚动，全书结构保持可见", async
   await expect.poll(() => scroller.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
 
   const structure = page.locator(".writing-navigator").getByRole("button", { name: "全书结构", exact: true });
-  await expect(structure).toBeInViewport();
-  const extras = page.locator(".writing-nav-extras");
-  if (!(await extras.evaluate(node => (node as HTMLDetailsElement).open))) await extras.locator("summary").click();
+  await expect(structure).not.toBeInViewport();
+  await scroller.evaluate(node => { node.scrollTop = 0; });
   await expect(structure).toBeInViewport();
 });
 

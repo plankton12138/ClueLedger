@@ -71,6 +71,7 @@ export interface Catalog {
   chapters: FileEntry[];
   characters: FileEntry[];
   settings: FileEntry[];
+  documents?: FileEntry[];
 }
 
 export interface FileView {

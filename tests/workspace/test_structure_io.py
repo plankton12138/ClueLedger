@@ -56,13 +56,33 @@ def test_describe_structure_after_write(workspace: Workspace) -> None:
     assert view.text.strip() == GOOD.strip()
 
 
-def test_write_structure_create_requires_marker(workspace: Workspace) -> None:
+def test_write_structure_create_allows_title_before_rules(workspace: Workspace) -> None:
+    text = "# 我的作品\n\n## 铁律\n规则\n"
+    write_structure_document(workspace, text=text, expected_digest=None, creating=True)
+    saved = read_structure_state(workspace)
+    assert saved.text.strip() == text.strip()
+    rules = split_iron_rules(saved.text)
+    assert rules.rules == ("规则",)
+    assert rules.remainder == "# 我的作品"
+
+
+def test_indented_code_does_not_hide_real_heading(workspace: Workspace) -> None:
+    text = "    ```\n\n## 铁律\n规则。"
+    saved = write_structure_document(workspace, text=text, expected_digest=None, creating=True)
+    assert saved.text.startswith("    ```\n")
+    assert split_iron_rules(saved.text).rules == ("规则。",)
+
+
+def test_html_block_is_not_a_rules_heading(workspace: Workspace) -> None:
     with pytest.raises(WorkspaceError) as exc:
         write_structure_document(
-            workspace, text="# 我的作品\n## 铁律\n规则\n", expected_digest=None, creating=True
+            workspace,
+            text="<pre>\n## 铁律\n这不是规则。\n</pre>",
+            expected_digest=None,
+            creating=True,
         )
     assert exc.value.code == "STRUCTURE_MARKER_REQUIRED"
-    assert read_structure_state(workspace).exists is False
+    assert not read_structure_state(workspace).exists
 
 
 def test_write_structure_create_roundtrip(workspace: Workspace) -> None:

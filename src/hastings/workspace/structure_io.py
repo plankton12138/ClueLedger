@@ -6,7 +6,7 @@
 
 * 预算超限在**写入时**拒绝（``STRUCTURE_BUDGET_CONFLICT``）——压缩版就是一次
   预算内的写入，等效于契约的「入档事务要求先提交压缩版」，且磁盘上不留超限文件；
-* 首次起草必须以铁律段开头（``STRUCTURE_MARKER_REQUIRED``）；更新允许标记丢失
+* 首次起草须有可识别的铁律段（``STRUCTURE_MARKER_REQUIRED``）；更新允许标记丢失
   （外部编辑如实落盘，装配层降级全文注入并提示），不猜、不静默修复。
 """
 
@@ -53,20 +53,19 @@ def write_structure_document(
     expected_digest: str | None,
     creating: bool,
 ) -> FileView:
-    """带门禁的结构写入：预算超限拒绝；首次起草要求铁律段开头。
+    """带门禁的结构写入：预算超限拒绝；首次起草需要铁律段，位置不限。
 
     ``expected_digest=None`` 且文件已存在、或非 ``None`` 且文件不存在，都由
     ``workspace.write`` 的指纹核对拒绝（与正文同一冲突语义）。
     """
-    normalized = text.strip()
-    if not normalized:
+    if not text.strip():
         raise WorkspaceError(
             code="STRUCTURE_EMPTY",
             where=f"tools.write_structure:{STRUCTURE_PATH}",
             why="结构文档不能为空",
             fix="补齐铁律、路线、骨架与模块索引后再写入",
         )
-    report = check_budget(normalized)
+    report = check_budget(text)
     if not report.ok:
         raise WorkspaceError(
             code="STRUCTURE_BUDGET_CONFLICT",
@@ -75,11 +74,11 @@ def write_structure_document(
             fix="先提交压缩版结构（保留铁律与骨架，细节下沉模块），压缩随本次写入入档",
             details={"length": report.length, "limit": report.limit},
         )
-    if creating and not split_iron_rules(normalized).ok:
+    if creating and not split_iron_rules(text).ok:
         raise WorkspaceError(
             code="STRUCTURE_MARKER_REQUIRED",
             where=f"tools.write_structure:{STRUCTURE_PATH}",
-            why="第一版结构必须以「## 铁律」段开头（文件首个非空行）",
-            fix="把铁律段放在文件开头，再依次写路线、骨架与模块索引",
+            why="第一版结构缺少「## 铁律」二级标题",
+            fix="添加独立的「## 铁律」段；可保留文档标题、概览和其他段落的顺序",
         )
-    return workspace.write(STRUCTURE_PATH, normalized, expected_digest=expected_digest)
+    return workspace.write(STRUCTURE_PATH, text, expected_digest=expected_digest)

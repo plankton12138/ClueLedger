@@ -249,6 +249,33 @@ def test_files_lists_chapters_characters_and_fixed_settings(tmp_path: Path) -> N
     ]
 
 
+def test_files_lists_structure_only_when_saved(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "作品"
+    workspace_id = _created(client, root)
+    endpoint = f"/api/file-workspaces/{workspace_id}/files"
+    assert client.get(endpoint).json().get("documents", []) == []
+    Workspace.open(root).write("STRUCTURE.md", "## 铁律\n约定。", expected_digest=None)
+    listing = client.get(endpoint).json()
+    assert [entry["path"] for entry in listing.get("documents", [])] == ["STRUCTURE.md"]
+    assert listing["chapters"] == []
+
+
+def test_files_omits_symlinked_structure(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "作品"
+    workspace_id = _created(client, root)
+    outside = tmp_path / "外部.md"
+    outside.write_text("not managed", encoding="utf-8")
+    try:
+        (root / "STRUCTURE.md").symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    response = client.get(f"/api/file-workspaces/{workspace_id}/files")
+    assert response.status_code == 200
+    assert response.json()["documents"] == []
+
+
 def test_files_and_file_share_display_metadata(tmp_path: Path) -> None:
     client = _client(tmp_path)
     root = tmp_path / "雪山旅馆"

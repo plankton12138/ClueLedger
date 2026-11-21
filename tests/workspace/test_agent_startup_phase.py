@@ -71,7 +71,8 @@ def test_clear_request_injects_structure_prompt_directly(tmp_path: Path) -> None
 
     assert "第一版" in inputs.system
     assert "湿手套" in inputs.system
-    assert "直接写入" in inputs.system
+    assert "只有作者明确要求建立或保存全书结构时" in inputs.system
+    assert "可以建议建立结构，但不擅自保存" in inputs.system
     assert "设定卡" not in inputs.system
     assert "构思任务" not in inputs.system
 

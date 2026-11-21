@@ -445,7 +445,7 @@ export default function ConversationPanel({ onBackToDetail, onRevise }: {
           {entry.loading && <p className="text-[11px] text-mute">正在读取这段讨论…</p>}
           {!entry.loading && entry.turns.length === 0 && (
             <p className="text-xs leading-6 text-sub">
-              直接说你想写什么。写正文前，模型会先确保全书结构已经建立；需要时也会建议辅助资料。
+              直接说你想写什么。可以直接写正文，也可以按需要建立结构或补充资料。
             </p>
           )}
           {entry.turns.map((turn, index) => (

@@ -21,6 +21,7 @@ import codecs
 import hashlib
 import os
 import re
+import stat
 import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
@@ -202,11 +203,12 @@ class FileEntry:
 
 @dataclass(frozen=True, slots=True)
 class Catalog:
-    """章节、角色各按文件名排序，线索与真相缺失时也列出。"""
+    """按用途分组的作品文件目录；可选文档只列已保存的文件。"""
 
     chapters: tuple[FileEntry, ...]
     characters: tuple[FileEntry, ...]
     settings: tuple[FileEntry, ...]
+    documents: tuple[FileEntry, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,11 +299,13 @@ class Workspace:
     # -- 目录与读取 ---------------------------------------------------------
 
     def catalog(self) -> Catalog:
-        """列出两块内容。设定文件缺失时仍列出，界面据此提示补齐。"""
+        """列出正文、人物、设定和已保存的可选文档。"""
+        structure = self._structure_entry()
         return Catalog(
             chapters=self._markdown_entries(BODY_DIR, "chapter"),
             characters=self._markdown_entries(CHARACTERS_DIR, "character"),
             settings=self._settings(),
+            documents=(structure,) if structure.exists else (),
         )
 
     def read(self, path: str) -> FileView:
@@ -319,7 +323,7 @@ class Workspace:
     def describe(self, path: str) -> FileEntry:
         """按目录的方式描述一个文件：显示名、章序与标签与列表完全一致。"""
         if path == STRUCTURE_PATH:
-            # 结构文档不在两块目录里：单独描述，供只读页与文件读取端点取显示信息。
+            # 文件尚未建立时，按路径读取仍可返回准确的缺失状态。
             return self._structure_entry()
         catalog = self.catalog()
         for entry in (*catalog.chapters, *catalog.characters, *catalog.settings):
@@ -335,10 +339,10 @@ class Workspace:
 
     def _structure_entry(self) -> FileEntry:
         """``STRUCTURE.md`` 的目录条目；起步前缺失也列出（``exists=False``）。"""
-        target = self.root / STRUCTURE_PATH
         try:
-            size = target.stat().st_size if target.is_file() else 0
-        except OSError:
+            metadata = self._target(STRUCTURE_PATH).lstat()
+            size = metadata.st_size if stat.S_ISREG(metadata.st_mode) else 0
+        except (WorkspaceError, OSError):
             size = 0
         return FileEntry(
             path=STRUCTURE_PATH,

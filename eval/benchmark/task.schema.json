@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ClueLedger Benchmark Task v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenario", "code_graders", "llm_graders"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "scenario": { "$ref": "#/$defs/scenario" },
+    "code_graders": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": { "$ref": "#/$defs/code_grader" }
+    },
+    "llm_graders": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": { "$ref": "#/$defs/llm_grader" }
+    }
+  },
+  "anyOf": [
+    { "properties": { "code_graders": { "$ref": "#/$defs/has_required_grader" } } },
+    { "properties": { "llm_graders": { "$ref": "#/$defs/has_required_grader" } } }
+  ],
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "title", "description", "risks", "provenance", "environment", "messages", "cases"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^T[0-9]{2,}(?![\\s\\S])" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "title": { "$ref": "#/$defs/text" },
+        "description": { "$ref": "#/$defs/text" },
+        "risks": { "$ref": "#/$defs/text_list" },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "references"],
+          "properties": {
+            "kind": { "enum": ["workflow", "regression"] },
+            "references": { "$ref": "#/$defs/text_list" }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["entrypoint", "model"],
+          "properties": {
+            "entrypoint": { "const": "workspace_chat" },
+            "model": { "const": "online" }
+          }
+        },
+        "messages": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/key" },
+          "additionalProperties": { "$ref": "#/$defs/text" }
+        },
+        "cases": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/key" },
+          "additionalProperties": { "$ref": "#/$defs/case" }
+        }
+      }
+    },
+    "text": { "type": "string", "pattern": "\\S" },
+    "text_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/text" }
+    },
+    "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])" },
+    "path": {
+      "type": "string",
+      "pattern": "^[^/\\\\:<>\"|?*\\x00-\\x1f]+(?:/[^/\\\\:<>\"|?*\\x00-\\x1f]+)*(?![\\s\\S])",
+      "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)" }
+    },
+    "file": {
+      "type": "object",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["text"],
+          "properties": { "text": { "type": "string" } }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["asset", "sha256"],
+          "properties": {
+            "asset": { "$ref": "#/$defs/path" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])", "minLength": 64, "maxLength": 64 }
+          }
+        }
+      ]
+    },
+    "focus": {
+      "type": "object",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "work_home" } }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["kind", "path"],
+          "properties": {
+            "kind": { "const": "file" },
+            "path": { "$ref": "#/$defs/path" },
+            "selection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "type": "integer", "minimum": 0 },
+                "end": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "focus"],
+      "properties": {
+        "files": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/path" },
+          "additionalProperties": { "$ref": "#/$defs/file" }
+        },
+        "focus": { "$ref": "#/$defs/focus" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "fixture", "steps"],
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "fixture": { "$ref": "#/$defs/fixture" },
+        "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "message"],
+      "properties": {
+        "id": { "$ref": "#/$defs/key" },
+        "message": { "$ref": "#/$defs/key" }
+      }
+    },
+    "has_required_grader": {
+      "not": { "additionalProperties": { "properties": { "role": { "const": "diagnostic" } } } }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case", "step"],
+      "properties": {
+        "case": { "$ref": "#/$defs/key" },
+        "step": { "$ref": "#/$defs/key" }
+      }
+    },
+    "grader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint", "role", "evidence", "rule"],
+      "properties": {
+        "checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "role": { "enum": ["required", "diagnostic"] },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["assistant_reply", "workspace_before", "workspace_after", "modules_after", "turn_trace"] }
+        },
+        "rule": { "type": "object" }
+      }
+    },
+    "code_grader": {
+      "$ref": "#/$defs/grader",
+      "oneOf": [
+        {
+          "properties": {
+            "rule": { "$ref": "#/$defs/diff_rule" },
+            "evidence": {
+              "allOf": [
+                { "contains": { "const": "workspace_before" } },
+                { "contains": { "const": "workspace_after" } }
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "rule": { "$ref": "#/$defs/chapter_rule" },
+            "evidence": { "contains": { "const": "workspace_after" } }
+          }
+        },
+        {
+          "properties": {
+            "rule": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type"],
+              "properties": { "type": { "const": "modules_empty" } }
+            },
+            "evidence": { "contains": { "const": "modules_after" } }
+          }
+        }
+      ]
+    },
+    "llm_grader": {
+      "$ref": "#/$defs/grader",
+      "properties": { "rule": { "$ref": "#/$defs/llm_rubric" } }
+    },
+    "llm_rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "pass_examples", "fail_examples"],
+      "properties": {
+        "criterion": { "$ref": "#/$defs/text" },
+        "pass_examples": { "$ref": "#/$defs/text_list" },
+        "fail_examples": { "$ref": "#/$defs/text_list" }
+      }
+    },
+    "diff_rule": {
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": { "type": { "const": "workspace_unchanged" } }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["required", "allow_other_changes"],
+          "properties": {
+            "type": { "const": "workspace_diff" },
+            "required": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": { "$ref": "#/$defs/path" },
+              "additionalProperties": { "enum": ["created", "modified", "deleted"] }
+            },
+            "allow_other_changes": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "chapter_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "chapter"],
+      "properties": {
+        "type": { "const": "chapter_saved" },
+        "chapter": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
